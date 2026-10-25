@@ -62,6 +62,12 @@ export interface AgentSettings {
   maxWorkingTokens: number;
 }
 
+export type ThemePreference = 'system' | 'light' | 'dark';
+
+export interface AppearanceSettings {
+  theme: ThemePreference;
+}
+
 export interface SkillVersion {
   version: number;
   name: string;
@@ -108,7 +114,10 @@ interface AssistantData {
   memories: AssistantMemory[];
   tasks: DailyTask[];
   agent: AgentSettings;
+  appearance: AppearanceSettings;
 }
+
+export type { AssistantData };
 
 interface AssistantContextValue extends AssistantData {
   loading: boolean;
@@ -158,6 +167,7 @@ interface AssistantContextValue extends AssistantData {
     patch: Partial<Pick<ChatSession, 'summary' | 'summarizedCount'>>,
   ) => Promise<void>;
   saveAgentSettings: (patch: Partial<AgentSettings>) => Promise<void>;
+  saveAppearanceSettings: (patch: Partial<AppearanceSettings>) => Promise<void>;
   setPendingPrompt: (prompt: string) => void;
   consumePendingPrompt: () => void;
   exportLocalData: () => string;
@@ -176,6 +186,8 @@ const DEFAULT_AGENT: AgentSettings = {
   maxSteps: 25,
   maxWorkingTokens: 100_000,
 };
+
+const DEFAULT_APPEARANCE: AppearanceSettings = { theme: 'system' };
 
 let idCounter = 0;
 function makeId(prefix: string): string {
@@ -222,6 +234,10 @@ function normalizeData(raw: unknown): AssistantData {
       ...DEFAULT_AGENT,
       ...(value.agent && typeof value.agent === 'object' ? value.agent : {}),
     },
+    appearance: {
+      ...DEFAULT_APPEARANCE,
+      ...(value.appearance && typeof value.appearance === 'object' ? value.appearance : {}),
+    },
   };
 }
 
@@ -245,6 +261,7 @@ export function AssistantProvider({
     memories: [],
     tasks: [],
     agent: DEFAULT_AGENT,
+    appearance: DEFAULT_APPEARANCE,
   });
   const dataRef = useRef(data);
   const writeQueue = useRef<Promise<void>>(Promise.resolve());
@@ -557,6 +574,16 @@ export function AssistantProvider({
     [commit],
   );
 
+  const saveAppearanceSettings = useCallback(
+    async (patch: Partial<AppearanceSettings>) => {
+      await commit({
+        ...dataRef.current,
+        appearance: { ...dataRef.current.appearance, ...patch },
+      });
+    },
+    [commit],
+  );
+
   const activeSession = useMemo(
     () =>
       data.sessions.find((session) => session.id === data.activeSessionId) ??
@@ -589,6 +616,7 @@ export function AssistantProvider({
       deleteTask,
       patchSession,
       saveAgentSettings,
+      saveAppearanceSettings,
       setPendingPrompt: setPendingPromptState,
       consumePendingPrompt: () => setPendingPromptState(''),
       exportLocalData: () =>
@@ -626,6 +654,7 @@ export function AssistantProvider({
       deleteTask,
       patchSession,
       saveAgentSettings,
+      saveAppearanceSettings,
     ],
   );
 

@@ -39,6 +39,8 @@ import {
 import { formatContext } from '@/src/model-catalog';
 import * as Device from '@/src/device';
 import { ApprovalSheet, type PendingApproval } from '@/components/ApprovalSheet';
+import { CodeBlock } from '@/components/CodeBlock';
+import { MermaidBlock } from '@/components/MermaidBlock';
 
 let localMessageCounter = 0;
 function messageId() {
@@ -82,6 +84,89 @@ function StepList({ steps }: { steps: ToolStep[] }) {
   );
 }
 
+type MessageSegment =
+  | { kind: 'text'; text: string }
+  | { kind: 'code'; language?: string; code: string }
+  | { kind: 'mermaid'; source: string };
+
+/** Split a message into prose, fenced code blocks and mermaid diagrams. */
+function parseSegments(content: string): MessageSegment[] {
+  const segments: MessageSegment[] = [];
+  const fence = /```([\w+-]*)\n?([\s\S]*?)(?:```|$)/g;
+  let last = 0;
+  let m: RegExpExecArray | null;
+  while ((m = fence.exec(content)) !== null) {
+    if (m.index > last) {
+      const text = content.slice(last, m.index).trim();
+      if (text) segments.push({ kind: 'text', text });
+    }
+    const lang = (m[1] || '').toLowerCase();
+    const body = (m[2] || '').replace(/\n$/, '');
+    if (lang === 'mermaid' || /^\s*(graph|flowchart)\b/.test(body)) {
+      segments.push({ kind: 'mermaid', source: body });
+    } else if (body.trim()) {
+      segments.push({ kind: 'code', language: m[1] || undefined, code: body });
+    }
+    last = fence.lastIndex;
+  }
+  const tail = content.slice(last).trim();
+  if (tail) segments.push({ kind: 'text', text: tail });
+  return segments;
+}
+
+function MessageBody({ content, user }: { content: string; user?: boolean }) {
+  const segments = parseSegments(content);
+  return (
+    <>
+      {segments.map((seg, i) =>
+        seg.kind === 'text' ? (
+          <MarkdownText key={i} text={seg.text} user={user} />
+        ) : seg.kind === 'code' ? (
+          <CodeBlock key={i} code={seg.code} language={seg.language} />
+        ) : (
+          <MermaidBlock key={i} source={seg.source} />
+        ),
+      )}
+    </>
+  );
+}
+
+/** Inline markdown: **bold** and `code` spans inside prose. */
+function MarkdownText({ text, user }: { text: string; user?: boolean }) {
+  const colors = useColors();
+  const baseColor = user ? colors.primaryForeground : colors.foreground;
+  const parts = text.split(/(\*\*[^*]+\*\*|`[^`]+`)/g).filter(Boolean);
+  return (
+    <Text style={[styles.messageText, { color: baseColor }]}>
+      {parts.map((part, i) => {
+        if (part.startsWith('**') && part.endsWith('**')) {
+          return (
+            <Text key={i} style={{ fontWeight: '700', color: user ? baseColor : colors.primary }}>
+              {part.slice(2, -2)}
+            </Text>
+          );
+        }
+        if (part.startsWith('`') && part.endsWith('`') && part.length > 2) {
+          return (
+            <Text
+              key={i}
+              style={{
+                fontFamily: 'monospace',
+                fontSize: 12.5,
+                backgroundColor: 'rgba(128,128,128,0.16)',
+                color: baseColor,
+              }}
+            >
+              {part.slice(1, -1)}
+            </Text>
+          );
+        }
+        return <Text key={i}>{part}</Text>;
+      })}
+    </Text>
+  );
+}
+
 function MessageBubble({ message }: { message: ChatMessage }) {
   const colors = useColors();
   const user = message.role === 'user';
@@ -102,14 +187,7 @@ function MessageBubble({ message }: { message: ChatMessage }) {
         ]}
       >
         {message.steps?.length ? <StepList steps={message.steps} /> : null}
-        <Text
-          style={[
-            styles.messageText,
-            { color: user ? colors.primaryForeground : colors.foreground },
-          ]}
-        >
-          {message.content}
-        </Text>
+        <MessageBody content={message.content} user={user} />
         {!user ? (
           <Pressable
             accessibilityRole="button"
@@ -215,9 +293,113 @@ export default function ChatScreen() {
     setHistoryVisible(false);
   }
 
+  const SLASH_HELP =
+    '**الأوامر المتاحة:**\n' +
+    '- `/skill اسم` — تحميل مهارة محفوظة وإرسال طلبك مع تعليماتها\n' +
+    '- `/new` — محادثة جديدة\n' +
+    '- `/settings` أو `/tasks` أو `/skills` أو `/memory` — فتح الشاشة مباشرة\n' +
+    '- `/mcp` — عرض الأدوات المتصلة وحالة التحكم\n' +
+    '- `/help` — هذه القائمة';
+
+  /**
+   * Local slash commands handled without touching the model.
+   * Returns {handled:true} when the command is fully processed, or
+   * {handled:false, text} with a rewritten text (for /skill).
+   */
+  async function handleSlashCommand(raw: string): Promise<{ handled: boolean; text?: string }> {
+    const [cmd, ...rest] = raw.slice(1).trim().split(/\s+/);
+    const arg = rest.join(' ').trim();
+    const c = (cmd ?? '').toLowerCase();
+
+    const replyLocal = async (content: string) => {
+      let sessionId = activeSession?.id;
+      if (!sessionId) sessionId = await createSession();
+      const stamp = new Date().toISOString();
+      const userMsg: ChatMessage = { id: messageId(), role: 'user', content: raw, createdAt: stamp };
+      const botMsg: ChatMessage = { id: messageId(), role: 'assistant', content, createdAt: stamp };
+      setMessages((cur) => [...cur, userMsg, botMsg]);
+      await appendMessage(sessionId, userMsg);
+      await appendMessage(sessionId, botMsg);
+    };
+
+    if (c === 'help') {
+      await replyLocal(SLASH_HELP);
+      return { handled: true };
+    }
+    if (c === 'new') {
+      await startNewChat();
+      return { handled: true };
+    }
+    if (c === 'settings' || c === 'tasks' || c === 'skills' || c === 'memory') {
+      router.push(`/(tabs)/${c}`);
+      return { handled: true };
+    }
+    if (c === 'mcp') {
+      const deviceOn = agent.deviceControlEnabled;
+      const available = Device.isAvailable();
+      const serviceOn = Device.isServiceEnabled();
+      const controlState = deviceOn
+        ? available
+          ? serviceOn
+            ? '✅ الخدمة مفعّلة'
+            : '⚠️ مفعّل لكن خدمة إمكانية الوصول غير مشغلة — فعّلها من الإعدادات'
+          : '⚠️ متاح فقط في نسخة Android المثبتة'
+        : '⛔ المفتاح مقفول من الإعدادات';
+      await replyLocal(
+        '**الأدوات المتصلة (خوادم محلية مدمجة):**\n' +
+          '- الذاكرة والمحادثات: `save_memory` · `search_history` · `read_skill` — ✅ جاهزة\n' +
+          '- الويب: `web_search` · `web_fetch` — ✅ جاهزة (بموافقتك)\n' +
+          '- التحكم في الهاتف: `get_screen` · `tap` · `type_text` · `scroll` · `press` · `open_app` — ' +
+          controlState +
+          '\n\n`/help` لكل الأوامر.',
+      );
+      return { handled: true };
+    }
+    if (c === 'skill') {
+      if (!arg) {
+        const activeNames = skills
+          .filter((s) => s.active)
+          .map((s) => s.name)
+          .join(' · ');
+        await replyLocal(
+          skills.length
+            ? `اكتب اسم المهارة بعد الأمر. المتاح: ${activeNames || '(لا مهارات نشطة)'}`
+            : 'لا توجد مهارات محفوظة بعد — أضفها من شاشة المهارات.',
+        );
+        return { handled: true };
+      }
+      const skill = skills.find(
+        (s) => s.active && s.name.trim().toLowerCase() === arg.toLowerCase(),
+      );
+      if (!skill) {
+        await replyLocal('لا توجد مهارة نشطة باسم "' + arg + '".');
+        return { handled: true };
+      }
+      return {
+        handled: false,
+        text:
+          raw +
+          '\n\n[تعليمات المهارة «' +
+          skill.name +
+          '» — اتبعها بدقة]\n' +
+          skill.instructions,
+      };
+    }
+    // Unknown command — treat as normal text so the model still answers.
+    return { handled: false, text: raw };
+  }
+
   async function sendMessage() {
-    const text = draft.trim();
+    let text = draft.trim();
     if (!text || sending) return;
+    if (text.startsWith('/')) {
+      const outcome = await handleSlashCommand(text);
+      if (outcome.handled) {
+        setDraft('');
+        return;
+      }
+      if (outcome.text) text = outcome.text;
+    }
     if (!provider.model.trim() || !apiKeyConfigured) {
       Alert.alert(
         'جهّزي الموديل أولًا',

@@ -39,11 +39,12 @@
     "typescript": "~6.0.3"
   },
   "dependencies": {
+    "device-control": "file:./modules/device-control",
+    "expo": "~57.0.31",
+    "expo-clipboard": "~57.0.0",
     "expo-notifications": "~57.0.24",
     "expo-secure-store": "~57.0.4",
-    "expo": "~57.0.31",
     "react": "19.2.3",
-    "react-native": "0.86.3",
-    "device-control": "file:./modules/device-control"
+    "react-native": "0.86.3"
   }
 }

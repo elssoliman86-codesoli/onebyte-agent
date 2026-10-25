@@ -1,4 +1,4 @@
-import React, { useEffect, useState } from 'react';
+import React, { useEffect, useRef, useState } from 'react';
 import {
   Alert,
   Platform,
@@ -16,10 +16,22 @@ import {
   getStoredModelApiKey,
   useAssistant,
   type ProviderSettings,
+  type ThemePreference,
 } from '@/src/assistant';
-import { streamModelChat } from '@/src/model-provider';
+import { probeModel, streamModelChat, type ProbeResult } from '@/src/model-provider';
+import { PROVIDER_PRESETS } from '@/src/provider-presets';
+import type { ApprovalDecision } from '@/src/agent';
+import type { ToolSpec } from '@/src/tools';
 import { formatContext, formatPrice, type ModelInfo } from '@/src/model-catalog';
 import * as Device from '@/src/device';
+import {
+  configurePcServer,
+  setPcApprovalHandler,
+  startPcControl,
+  stopPcControl,
+  isPcControlRunning,
+  getPcAccess,
+} from '@/src/pc-server';
 import { ModelPicker } from '@/components/ModelPicker';
 import {
   ActionButton,
@@ -40,7 +52,14 @@ export default function SettingsScreen() {
     memories,
     tasks,
     agent,
+    appearance,
+    activeSession,
+    appendMessage,
+    createSession,
+    setActiveSession,
+    createMemory,
     saveAgentSettings,
+    saveAppearanceSettings,
     saveProvider,
     removeApiKey,
     exportLocalData,
@@ -55,6 +74,18 @@ export default function SettingsScreen() {
   const [pickerVisible, setPickerVisible] = useState(false);
   const [picked, setPicked] = useState<ModelInfo | null>(null);
   const [serviceOn, setServiceOn] = useState(Device.isServiceEnabled());
+  const [probe, setProbe] = useState<ProbeResult | null>(null);
+  const [probing, setProbing] = useState(false);
+  const probeAbortRef = useRef<AbortController | null>(null);
+  // PC companion server state
+  const [pcRunning, setPcRunning] = useState(isPcControlRunning());
+  const [pcAccess, setPcAccess] = useState<{ url: string; pin: string }>({ url: '', pin: '' });
+  const [pcBusy, setPcBusy] = useState(false);
+  const [pendingPcApproval, setPendingPcApproval] = useState<{
+    spec: ToolSpec;
+    args: Record<string, unknown>;
+    resolve: (d: ApprovalDecision) => void;
+  } | null>(null);
   // Local text buffers so the 1.5s service-status re-render never wipes what the
   // user is typing; values are committed only when a field is finished.
   const [workingTokensText, setWorkingTokensText] = useState(
@@ -67,6 +98,68 @@ export default function SettingsScreen() {
     const id = setInterval(() => setServiceOn(Device.isServiceEnabled()), 1500);
     return () => clearInterval(id);
   }, []);
+
+  // Keep the PC server wired to the freshest data + callbacks, and route its
+  // approval requests into a sheet on this screen (decided on the phone).
+  useEffect(() => {
+    configurePcServer({
+      getData: () => ({
+        sessions,
+        activeSessionId: activeSession?.id ?? null,
+        provider,
+        skills,
+        memories,
+        tasks,
+        agent,
+        appearance,
+      }),
+      appendMessage,
+      createSession,
+      setActiveSession,
+      createMemory,
+    });
+    setPcApprovalHandler((spec, args) =>
+      new Promise<ApprovalDecision>((resolve) => {
+        setPendingPcApproval({ spec, args, resolve });
+      }),
+    );
+    return () => setPcApprovalHandler(null);
+  }, [
+    sessions,
+    activeSession?.id,
+    provider,
+    skills,
+    memories,
+    tasks,
+    agent,
+    appearance,
+    appendMessage,
+    createSession,
+    setActiveSession,
+    createMemory,
+  ]);
+
+  async function togglePcServer(next: boolean) {
+    setPcBusy(true);
+    try {
+      if (next) {
+        const access = await startPcControl();
+        setPcAccess(access);
+        setPcRunning(true);
+      } else {
+        await stopPcControl();
+        setPcRunning(false);
+        setPcAccess({ url: '', pin: '' });
+      }
+    } catch (error) {
+      Alert.alert(
+        'خادم الكمبيوتر',
+        error instanceof Error ? error.message : 'حاولي مرة أخرى.',
+      );
+    } finally {
+      setPcBusy(false);
+    }
+  }
 
   async function openPicker() {
     if (!baseUrl.trim()) {
@@ -104,6 +197,63 @@ export default function SettingsScreen() {
     setWorkingTokensText(String(agent.maxWorkingTokens));
     setMaxStepsText(String(agent.maxSteps));
   }, [agent.maxWorkingTokens, agent.maxSteps]);
+
+  // Auto-test: once a base URL + model + key exist, probe the provider (debounced)
+  // and surface the actual HTTP status next to the price so the user can see
+  // which model actually works without manual trial and error.
+  useEffect(() => {
+    const cleanBaseUrl = baseUrl.trim();
+    const modelId = model.trim();
+    const key = apiKey.trim();
+    const hasStoredKey = apiKeyConfigured && Platform.OS !== 'web';
+    if (!cleanBaseUrl || !modelId || (!key && !hasStoredKey)) {
+      probeAbortRef.current?.abort();
+      setProbing(false);
+      setProbe(null);
+      return;
+    }
+    const controller = new AbortController();
+    probeAbortRef.current?.abort();
+    probeAbortRef.current = controller;
+    setProbing(true);
+    const timer = setTimeout(() => {
+      void (async () => {
+        try {
+          const resolvedKey = key || (await getStoredModelApiKey());
+          const result = await probeModel({
+            settings: { providerName: providerName.trim() || 'Custom', baseUrl: cleanBaseUrl, model: modelId },
+            apiKey: resolvedKey,
+            signal: controller.signal,
+          });
+          if (!controller.signal.aborted) {
+            setProbe(result);
+            setProbing(false);
+          }
+        } catch {
+          if (!controller.signal.aborted) {
+            setProbe({ status: null, ok: false, message: 'تعذّر جلب المفتاح المحفوظ.' });
+            setProbing(false);
+          }
+        }
+      })();
+    }, 900);
+    return () => {
+      clearTimeout(timer);
+      controller.abort();
+    };
+  }, [baseUrl, model, apiKey, apiKeyConfigured, providerName]);
+
+  function applyPreset(name: string, presetBaseUrl: string) {
+    setProviderName(name);
+    setBaseUrl(presetBaseUrl);
+    setModel('');
+    setPicked(null);
+    // The key is the only thing left to fill: if it is already saved, jump
+    // straight to the model list; otherwise guide the user to the key field.
+    if (apiKeyConfigured && Platform.OS !== 'web') {
+      setPickerVisible(true);
+    }
+  }
 
   function commitWorkingTokens() {
     const n = Number(workingTokensText.replace(/[^0-9]/g, ''));
@@ -280,6 +430,56 @@ export default function SettingsScreen() {
       <View style={styles.section}>
         <SectionTitle title="مزود الذكاء الاصطناعي" />
         <Surface style={styles.formCard}>
+          <Text style={[styles.body, { color: colors.mutedForeground }]}>
+            اختاري مزودًا جاهزًا بكبسة، أو اكتبي أي رابط OpenAI-compatible يدويًا:
+          </Text>
+          <View style={styles.presetWrap}>
+            {PROVIDER_PRESETS.map((preset) => {
+              const active = baseUrl.trim().replace(/\/+$/, '') === preset.baseUrl;
+              return (
+                <Pressable
+                  key={preset.baseUrl}
+                  accessibilityRole="button"
+                  accessibilityLabel={`اختيار مزود ${preset.name}`}
+                  onPress={() => applyPreset(preset.name, preset.baseUrl)}
+                  style={[
+                    styles.presetChip,
+                    {
+                      borderColor: active ? colors.primary : colors.border,
+                      backgroundColor: active ? colors.primary + '22' : colors.background,
+                    },
+                  ]}
+                >
+                  <Text
+                    style={[
+                      styles.presetChipText,
+                      { color: active ? colors.primary : colors.foreground },
+                    ]}
+                  >
+                    {preset.name}
+                  </Text>
+                  {preset.note ? (
+                    <Text
+                      style={[
+                        styles.presetChipNote,
+                        { color: active ? colors.primary : colors.mutedForeground },
+                      ]}
+                    >
+                      {preset.note}
+                    </Text>
+                  ) : null}
+                </Pressable>
+              );
+            })}
+          </View>
+          {PROVIDER_PRESETS.find((p) => p.baseUrl === baseUrl.trim().replace(/\/+$/, ''))?.note ? (
+            <Text style={[styles.body, { color: colors.primary }]}>
+              {PROVIDER_PRESETS.find((p) => p.baseUrl === baseUrl.trim().replace(/\/+$/, ''))?.note}
+              {apiKeyConfigured || apiKey.trim()
+                ? ' — افتحي قائمة الموديلات واختاري، والفحص التلقائي هيوضحلك الكود جنب السعر.'
+                : ' — الصقي مفتاح المزود في الحقل الآمن تحت، ثم افتحي قائمة الموديلات.'}
+            </Text>
+          ) : null}
           <FormField
             label="اسم المزود"
             placeholder="مثال: OpenAI أو مزودك الخاص"
@@ -327,6 +527,29 @@ export default function SettingsScreen() {
               })}{' '}
               · {formatContext((picked ?? provider).contextLength)}
             </Text>
+          ) : null}
+          {probing || probe ? (
+            <View style={styles.probeRow}>
+              {probing ? (
+                <Text style={[styles.probeText, { color: colors.mutedForeground }]}>
+                  جارٍ الفحص التلقائي للموديل…
+                </Text>
+              ) : probe ? (
+                <Text
+                  style={[
+                    styles.probeText,
+                    { color: probe.ok ? colors.success : colors.destructive },
+                  ]}
+                >
+                  {probe.status !== null ? `HTTP ${probe.status}` : 'HTTP ✗'}
+                  {probe.ok
+                    ? ' ✓ الموديل شغال — احفظي الإعدادات وابدأي الشات'
+                    : probe.message
+                      ? ` ✗ ${probe.message}`
+                      : ' ✗'}
+                </Text>
+              ) : null}
+            </View>
           ) : null}
           <FormField
             label="مفتاح API"
@@ -418,12 +641,16 @@ export default function SettingsScreen() {
               />
               {!serviceOn ? (
                 <ActionButton
-                  label="تفعيلها من إعدادات النظام"
+                  label="تفعيلها من إعدادات النظام (خطوات موضحة)"
                   icon="shield"
                   onPress={() =>
                     Alert.alert(
-                      'تفعيل إمكانية الوصول',
-                      'سيفتح النظام شاشة إمكانية الوصول. اختر "OneByte Agent" ثم فعّله ووافق على تنبيه النظام. تقدر توقفه من نفس المكان في أي وقت.',
+                      'تفعيل إمكانية الوصول — 3 خطوات',
+                      '1) هتفتح صفحة إعدادات النظام: دوّر على "OneByte Agent" واضغط عليها.\n\n' +
+                        '2) لو المفتاح جنب الاسم رمادي ومش بيتحرك (في أندرويد 13+):\n' +
+                        'ارجع لصفحة التطبيقات ← OneByte Agent ← اضغط تلات النقط (⋮) فوق ← "السماح بالإعدادات المقيدة" ← فعّلها، ثم ارجع وحاول تاني.\n\n' +
+                        '3) شغّل المفتاح ووافق على تنبيه النظام اللي هيظهر.\n\n' +
+                        'تقدر توقفه في أي وقت من نفس المكان.',
                       [
                         { text: 'إلغاء', style: 'cancel' },
                         { text: 'فتح الإعدادات', onPress: () => Device.openAccessibilitySettings() },
@@ -448,6 +675,7 @@ export default function SettingsScreen() {
             value={workingTokensText}
             onChangeText={setWorkingTokensText}
             onEndEditing={commitWorkingTokens}
+            onBlur={commitWorkingTokens}
             keyboardType="number-pad"
             style={styles.urlInput}
             hint="كلما زاد الرقم زادت التكلفة. يُستخدم الأقل بين هذا الرقم و60% من سياق الموديل."
@@ -457,6 +685,7 @@ export default function SettingsScreen() {
             value={maxStepsText}
             onChangeText={setMaxStepsText}
             onEndEditing={commitMaxSteps}
+            onBlur={commitMaxSteps}
             keyboardType="number-pad"
             style={styles.urlInput}
           />
@@ -489,6 +718,116 @@ export default function SettingsScreen() {
             variant="secondary"
             onPress={() => router.push('/(tabs)/assessments')}
           />
+        </Surface>
+      </View>
+
+      <View style={styles.section}>
+        <SectionTitle title="المظهر" />
+        <Surface style={styles.formCard}>
+          <View style={styles.presetWrap}>
+            {(
+              [
+                ['system', 'تلقائي (النظام)'],
+                ['light', 'فاتح'],
+                ['dark', 'داكن'],
+              ] as [ThemePreference, string][]
+            ).map(([value, label]) => {
+              const active = appearance.theme === value;
+              return (
+                <Pressable
+                  key={value}
+                  accessibilityRole="button"
+                  accessibilityLabel={`ثيم ${label}`}
+                  onPress={() =>
+                    void saveAppearanceSettings({ theme: value }).catch(() =>
+                      Alert.alert('تعذّر الحفظ', 'حاولي مرة أخرى.'),
+                    )
+                  }
+                  style={[
+                    styles.presetChip,
+                    {
+                      borderColor: active ? colors.primary : colors.border,
+                      backgroundColor: active
+                        ? colors.primary + '22'
+                        : colors.background,
+                      minWidth: '30%',
+                    },
+                  ]}
+                >
+                  <Text
+                    style={[
+                      styles.presetChipText,
+                      { color: active ? colors.primary : colors.foreground },
+                    ]}
+                  >
+                    {label}
+                  </Text>
+                </Pressable>
+              );
+            })}
+          </View>
+        </Surface>
+      </View>
+
+      <View style={styles.section}>
+        <SectionTitle title="التحكم من الكمبيوتر" />
+        <Surface style={styles.formCard}>
+          <View style={styles.switchRow}>
+            <Switch
+              value={pcRunning}
+              onValueChange={(v) => void togglePcServer(v)}
+              disabled={pcBusy}
+            />
+            <View style={styles.connectionCopy}>
+              <Text style={[styles.cardTitle, { color: colors.foreground }]}>
+                تشغيل خادم ويب للكمبيوتر
+              </Text>
+              <Text style={[styles.body, { color: colors.mutedForeground }]}>
+                افتحي المتصفح على الكمبيوتر (نفس الواي فاي) وادخلي الرابط ورمز التفويض. نفس تصميم التطبيق ونفس المهام، وطلبات الموافقة تظهر هنا على الهاتف.
+              </Text>
+            </View>
+          </View>
+          {pcRunning ? (
+            <>
+              <StatusPill label={`الرمز: ${getPcAccess().pin || pcAccess.pin || '—'}`} tone="success" />
+              <Text style={[styles.body, { color: colors.primary, textAlign: 'left', writingDirection: 'ltr' }]}>
+                {getPcAccess().url || pcAccess.url || '—'}
+              </Text>
+              {pendingPcApproval ? (
+                <View style={[styles.pcApproval, { borderColor: colors.warning }]}>
+                  <Text style={[styles.cardTitle, { color: colors.foreground }]}>
+                    طلب من الكمبيوتر: {pendingPcApproval.spec.label}
+                  </Text>
+                  <Text style={[styles.body, { color: colors.mutedForeground, textAlign: 'left', writingDirection: 'ltr' }]}>
+                    {JSON.stringify(pendingPcApproval.args).slice(0, 300)}
+                  </Text>
+                  <View style={{ flexDirection: 'row-reverse', gap: 8 }}>
+                    <ActionButton
+                      label="موافق (هذه المرة)"
+                      icon="check"
+                      onPress={() => {
+                        pendingPcApproval.resolve('once');
+                        setPendingPcApproval(null);
+                      }}
+                    />
+                    <ActionButton
+                      label="رفض"
+                      icon="x"
+                      variant="danger"
+                      onPress={() => {
+                        pendingPcApproval.resolve('deny');
+                        setPendingPcApproval(null);
+                      }}
+                    />
+                  </View>
+                </View>
+              ) : null}
+            </>
+          ) : !Device.pcServerAvailable() ? (
+            <Text style={[styles.body, { color: colors.warning }]}>
+              متاح فقط في نسخة Android المثبتة.
+            </Text>
+          ) : null}
         </Surface>
       </View>
 
@@ -545,6 +884,21 @@ const styles = StyleSheet.create({
   countLabel: { fontSize: 10 },
   section: { gap: 10 },
   formCard: { gap: 14 },
+  presetWrap: { flexDirection: 'row-reverse', flexWrap: 'wrap', gap: 8 },
+  presetChip: {
+    borderWidth: 1,
+    borderRadius: 12,
+    paddingHorizontal: 12,
+    paddingVertical: 7,
+    minWidth: '30%',
+    alignItems: 'center',
+  },
+  presetChipText: { fontSize: 12, fontWeight: '700', textAlign: 'center' },
+  presetChipNote: { fontSize: 9, marginTop: 2, textAlign: 'center' },
+  pcApproval: { borderWidth: 1, borderRadius: 14, padding: 12, gap: 10 },
+  priceRow: { gap: 4, alignItems: 'flex-end' },
+  probeRow: { alignItems: 'flex-end' },
+  probeText: { fontSize: 12, fontWeight: '700', textAlign: 'right' },
   rtlInput: { textAlign: 'right', writingDirection: 'rtl' },
   urlInput: { textAlign: 'left', writingDirection: 'ltr' },
   secretInput: { textAlign: 'left', writingDirection: 'ltr' },

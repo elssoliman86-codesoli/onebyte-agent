@@ -20,7 +20,9 @@ export function ApprovalSheet({ pending }: { pending: PendingApproval | null }) 
       ? 'eye'
       : spec.group === 'memory'
         ? 'bookmark'
-        : 'smartphone';
+        : spec.group === 'net'
+          ? 'globe'
+          : 'smartphone';
   return (
     <Modal transparent animationType="fade" visible onRequestClose={() => resolve('deny')}>
       <View style={styles.backdrop}>

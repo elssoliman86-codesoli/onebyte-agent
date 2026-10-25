@@ -1,6 +1,9 @@
 {
   "platforms": ["android"],
   "android": {
-    "modules": ["expo.modules.devicecontrol.DeviceControlModule"]
+    "modules": [
+      "expo.modules.devicecontrol.DeviceControlModule",
+      "expo.modules.devicecontrol.PcServerModule"
+    ]
   }
 }

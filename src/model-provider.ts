@@ -58,6 +58,7 @@ export function buildAssistantSystemPrompt(
           .join('\n')
       : 'التحكم في الجهاز معطّل حاليًا. لا تدّعِ أنك نفّذت أي إجراء خارجي؛ قدّم مسودة وخطوات واضحة. يمكنك استخدام أدوات الذاكرة والبحث في المحادثات القديمة.',
     'للمحادثات الطويلة: قد تُضغط الرسائل القديمة في ملخص. إن احتجت تفصيلة قديمة فاستخدم search_history.',
+    'لديك أدوات ويب: web_search للبحث عن معلومات حديثة وweb_fetch لقراءة رابط معين. كل استدعاء يظهر للمستخدم للموافقة. عند كتابة كود ضعه في كتلة ``` مع اسم اللغة، وعند شرح بنية أو تدفق استخدم كتلة ```mermaid برسم graph TD/LR.',
     active.length
       ? inline
         ? `\nالمهارات النشطة:\n${skillBlock.join('\n\n')}`
@@ -181,4 +182,64 @@ export function toProviderMessages(messages: ChatMessage[]): ProviderChatMessage
   return messages
     .filter((message) => message.content.trim())
     .map(({ role, content }) => ({ role, content }));
+}
+
+export interface ProbeResult {
+  /** HTTP status returned by the provider; null when the request never completed. */
+  status: number | null;
+  ok: boolean;
+  message?: string;
+}
+
+function probeHint(status: number): string {
+  if (status === 401 || status === 403) return 'المفتاح مرفوض أو ناقص الصلاحيات.';
+  if (status === 404) return 'المسار أو اسم الموديل غير صحيح.';
+  if (status === 429) return 'تجاوزت حد الاستخدام لدى المزود.';
+  if (status >= 500) return 'المزود نفسه به مشكلة حاليًا.';
+  return 'المزود رفض الطلب.';
+}
+
+/**
+ * Minimal non-streaming chat call used by the settings auto-test so the user can
+ * see the provider's actual HTTP status code next to the price without guessing.
+ */
+export async function probeModel({
+  settings,
+  apiKey,
+  signal,
+}: {
+  settings: ProviderSettings;
+  apiKey: string;
+  signal?: AbortSignal;
+}): Promise<ProbeResult> {
+  if (!settings.model.trim()) {
+    return { status: null, ok: false, message: 'اكتبي اسم الموديل أولًا.' };
+  }
+  try {
+    const response = await fetch(endpointFor(settings.baseUrl), {
+      method: 'POST',
+      headers: {
+        Authorization: `Bearer ${apiKey}`,
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify({
+        model: settings.model.trim(),
+        messages: [{ role: 'user', content: 'ping' }],
+      }),
+      signal,
+    });
+    if (!response.ok) {
+      return { status: response.status, ok: false, message: probeHint(response.status) };
+    }
+    const data = (await response.json().catch(() => null)) as {
+      choices?: { message?: { content?: string } }[];
+    } | null;
+    const text = data?.choices?.[0]?.message?.content;
+    if (typeof text !== 'string' || !text.trim()) {
+      return { status: response.status, ok: false, message: 'الرد جاء فاضي من المزود.' };
+    }
+    return { status: response.status, ok: true };
+  } catch {
+    return { status: null, ok: false, message: 'تعذّر الوصول للشبكة أو الرابط غير صحيح.' };
+  }
 }

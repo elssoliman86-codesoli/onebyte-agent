@@ -1,20 +1,23 @@
 import { useColorScheme } from 'react-native';
 import colors from '@/constants/colors';
+import { useAssistant } from '@/src/assistant';
 
 /**
- * Returns the design tokens for the current color scheme.
+ * Returns the design tokens for the active palette.
  *
- * The returned object contains all color tokens for the active palette
- * plus scheme-independent values like `radius`.
- *
- * Falls back to the light palette when no dark key is defined in
- * constants/colors.ts (the scaffold ships light-only by default).
- * When a sibling web artifact's dark tokens are synced into a `dark`
- * key, this hook will automatically switch palettes based on the
- * device's appearance setting.
+ * The user's theme preference (system/light/dark) is stored in the assistant
+ * settings; "system" follows the device appearance. Falls back to the light
+ * palette when no dark key is defined in constants/colors.ts.
  */
 export function useColors() {
-  const scheme = useColorScheme();
+  const systemScheme = useColorScheme();
+  let preference: 'system' | 'light' | 'dark' = 'system';
+  try {
+    preference = useAssistant().appearance?.theme ?? 'system';
+  } catch {
+    // Used outside AssistantProvider (e.g. early error screens) — follow system.
+  }
+  const scheme = preference === 'system' ? systemScheme : preference;
   const palette = scheme === 'dark' ? colors.dark : colors.light;
   return { ...palette, radius: colors.radius };
 }

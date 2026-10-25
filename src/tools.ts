@@ -1,4 +1,5 @@
 import { Linking, Platform } from 'react-native';
+import { fetch } from 'expo/fetch';
 import * as Device from './device';
 import type {
   AssistantMemory,
@@ -7,7 +8,8 @@ import type {
 } from './assistant';
 
 /** 'memory' tools run on-device and are always offered, even when device control is off. */
-export type ToolGroup = 'local' | 'memory' | 'device_read' | 'device_act';
+/** 'net' tools reach the public web from the user's device and always ask first. */
+export type ToolGroup = 'local' | 'memory' | 'net' | 'device_read' | 'device_act';
 
 export interface ToolSpec {
   name: string;
@@ -122,11 +124,28 @@ export const TOOL_SPECS: ToolSpec[] = [
     description: 'Wait up to 5000 ms for the screen to settle (e.g. after opening an app).',
     parameters: obj({ ms: { type: 'integer' } }, ['ms']),
   },
+  {
+    name: 'web_search',
+    group: 'net',
+    label: 'بحث في الويب',
+    description:
+      'Search the public web (DuckDuckGo) and return the top results with titles, URLs and snippets. Use for current information.',
+    parameters: obj({ query: { type: 'string' } }, ['query']),
+  },
+  {
+    name: 'web_fetch',
+    group: 'net',
+    label: 'قراءة رابط ويب',
+    description:
+      'Download a web page and return its readable text (HTML stripped). Use after web_search to read a specific result.',
+    parameters: obj({ url: { type: 'string' } }, ['url']),
+  },
 ];
 
 export function toolsForRequest(deviceEnabled: boolean): ToolSpec[] {
   return TOOL_SPECS.filter(
-    (t) => deviceEnabled || t.group === 'local' || t.group === 'memory',
+    (t) =>
+      deviceEnabled || t.group === 'local' || t.group === 'memory' || t.group === 'net',
   );
 }
 
@@ -138,7 +157,7 @@ export function toOpenAITools(specs: ToolSpec[]) {
 }
 
 export function needsApproval(spec: ToolSpec): boolean {
-  return spec.group === 'device_read' || spec.group === 'device_act';
+  return spec.group === 'device_read' || spec.group === 'device_act' || spec.group === 'net';
 }
 
 function str(args: Record<string, unknown>, key: string): string {
@@ -164,6 +183,135 @@ function safeUrl(raw: string): string {
     throw new Error('مسموح فقط بروابط http/https.');
   }
   return url.toString();
+}
+
+const MAX_WEB_TEXT = 6000;
+const BROWSER_HEADERS = {
+  'User-Agent':
+    'Mozilla/5.0 (Linux; Android 13) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124 Mobile Safari/537.36',
+  'Accept-Language': 'ar,en;q=0.8',
+};
+
+function decodeEntities(s: string): string {
+  return s
+    .replace(/&nbsp;/g, ' ')
+    .replace(/&amp;/g, '&')
+    .replace(/&lt;/g, '<')
+    .replace(/&gt;/g, '>')
+    .replace(/&quot;/g, '"')
+    .replace(/&#39;/g, "'")
+    .replace(/&#x27;/g, "'");
+}
+
+function htmlToText(html: string): string {
+  return decodeEntities(
+    html
+      .replace(/<script[\s\S]*?<\/script>/gi, ' ')
+      .replace(/<style[\s\S]*?<\/style>/gi, ' ')
+      .replace(/<noscript[\s\S]*?<\/noscript>/gi, ' ')
+      .replace(/<br\s*\/?>/gi, '\n')
+      .replace(/<\/(p|div|li|h[1-6]|tr|section|article)>/gi, '\n')
+      .replace(/<[^>]+>/g, ' '),
+  )
+    .replace(/[ \t]+/g, ' ')
+    .replace(/\n{3,}/g, '\n\n')
+    .trim();
+}
+
+/** DDG wraps result URLs in a redirect; unwrap the real target. */
+function unwrapDdgLink(href: string): string {
+  if (href.startsWith('//')) href = 'https:' + href;
+  try {
+    const u = new URL(href, 'https://duckduckgo.com');
+    const uddg = u.searchParams.get('uddg');
+    return uddg ? decodeURIComponent(uddg) : u.toString();
+  } catch {
+    return href;
+  }
+}
+
+interface SearchHit {
+  title: string;
+  url: string;
+  snippet: string;
+}
+
+function parseDdgHtml(html: string): SearchHit[] {
+  const hits: SearchHit[] = [];
+  const linkRe = /class="result__a"[^>]*href="([^"]+)"[^>]*>([\s\S]*?)<\/a>/g;
+  const snippetRe = /class="result__snippet"[^>]*>([\s\S]*?)<\/a>/g;
+  const snippets: string[] = [];
+  let s: RegExpExecArray | null;
+  while ((s = snippetRe.exec(html)) !== null) {
+    snippets.push(decodeEntities(s[1].replace(/<[^>]+>/g, '')).trim());
+  }
+  let m: RegExpExecArray | null;
+  let i = 0;
+  while ((m = linkRe.exec(html)) !== null) {
+    const title = decodeEntities(m[2].replace(/<[^>]+>/g, '')).trim();
+    if (title) {
+      hits.push({ title, url: unwrapDdgLink(m[1]), snippet: snippets[i] ?? '' });
+    }
+    i += 1;
+    if (hits.length >= 6) break;
+  }
+  return hits;
+}
+
+function parseDdgLite(html: string): SearchHit[] {
+  const hits: SearchHit[] = [];
+  const linkRe = /<a[^>]*class="result-link"[^>]*href="([^"]+)"[^>]*>([\s\S]*?)<\/a>/g;
+  let m: RegExpExecArray | null;
+  while ((m = linkRe.exec(html)) !== null) {
+    const title = decodeEntities(m[2].replace(/<[^>]+>/g, '')).trim();
+    if (title) hits.push({ title, url: unwrapDdgLink(m[1]), snippet: '' });
+    if (hits.length >= 6) break;
+  }
+  return hits;
+}
+
+async function webSearch(query: string): Promise<string> {
+  const endpoints = [
+    `https://html.duckduckgo.com/html/?q=${encodeURIComponent(query)}`,
+    `https://lite.duckduckgo.com/lite/?q=${encodeURIComponent(query)}`,
+  ];
+  let lastError = '';
+  for (const endpoint of endpoints) {
+    try {
+      const response = await fetch(endpoint, { headers: BROWSER_HEADERS });
+      if (!response.ok) {
+        lastError = `HTTP ${response.status}`;
+        continue;
+      }
+      const html = await response.text();
+      const hits = endpoint.includes('lite') ? parseDdgLite(html) : parseDdgHtml(html);
+      if (hits.length) {
+        return hits
+          .map((h, idx) => `[${idx + 1}] ${h.title}\n${h.url}${h.snippet ? `\n${h.snippet.slice(0, 220)}` : ''}`)
+          .join('\n\n');
+      }
+      lastError = 'لا نتائج';
+    } catch {
+      lastError = 'فشل الطلب (قيود شبكة أو CORS في نسخة الويب — جرّب داخل التطبيق المثبت)';
+    }
+  }
+  return `تعذّر البحث: ${lastError}`;
+}
+
+async function webFetch(rawUrl: string): Promise<string> {
+  const url = safeUrl(rawUrl);
+  try {
+    const response = await fetch(url, { headers: BROWSER_HEADERS });
+    if (!response.ok) return `تعذّر جلب الصفحة (HTTP ${response.status}).`;
+    const html = await response.text();
+    const text = htmlToText(html);
+    if (!text) return 'الصفحة ليس بها نص قابل للقراءة.';
+    return text.length > MAX_WEB_TEXT
+      ? `${text.slice(0, MAX_WEB_TEXT)}\n…(مقتطع)`
+      : text;
+  } catch {
+    return 'فشل جلب الرابط (قيود شبكة أو CORS في نسخة الويب — جرّب داخل التطبيق المثبت).';
+  }
 }
 
 export function searchHistory(sessions: ChatSession[], query: string, limit = 8): string {
@@ -221,6 +369,10 @@ export async function executeTool(
       await Linking.openURL(url);
       return `فُتح الرابط في المتصفح الافتراضي: ${url}`;
     }
+    case 'web_search':
+      return await webSearch(str(args, 'query'));
+    case 'web_fetch':
+      return await webFetch(str(args, 'url'));
     default:
       break;
   }

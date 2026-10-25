@@ -42,12 +42,13 @@ function NotificationsBootstrap() {
   }, [tasks]);
 
   useEffect(() => {
-    if (Platform.OS === 'android') {
-      void Notifications.setNotificationChannelAsync('daily-tasks', {
-        name: 'تذكيرات المهام',
-        importance: Notifications.AndroidImportance.DEFAULT,
-      });
-    }
+    // Notification APIs have no web implementation; guard so the web build stays clean.
+    if (Platform.OS === 'web') return;
+
+    void Notifications.setNotificationChannelAsync('daily-tasks', {
+      name: 'تذكيرات المهام',
+      importance: Notifications.AndroidImportance.DEFAULT,
+    });
     Notifications.setNotificationHandler({
       handleNotification: async () => ({
         shouldShowBanner: true,

@@ -52,6 +52,76 @@ function need(): DeviceControlNative {
   return native;
 }
 
+export interface PcRequestEvent {
+  id: string;
+  method: string;
+  path: string;
+  route: string;
+  body: string;
+}
+
+interface PcServerNative {
+  start(port: number): Promise<boolean>;
+  stop(): Promise<boolean>;
+  isRunning(): boolean;
+  getPort(): number;
+  getLocalIp(): string;
+  respond(id: string, status: number, contentType: string, body: string): boolean;
+  addListener(
+    eventName: 'pcRequest',
+    listener: (event: PcRequestEvent) => void,
+  ): { remove: () => void };
+}
+
+const pc: PcServerNative | null =
+  Platform.OS === 'android'
+    ? requireOptionalNativeModule<PcServerNative>('PcControl')
+    : null;
+
+export function pcServerAvailable(): boolean {
+  return pc !== null;
+}
+
+export async function startPcServer(port: number): Promise<boolean> {
+  if (!pc) throw new Error('خادم الكمبيوتر متاح فقط في نسخة Android المثبتة.');
+  return pc.start(port);
+}
+
+export async function stopPcServer(): Promise<boolean> {
+  if (!pc) return false;
+  return pc.stop();
+}
+
+export function isPcServerRunning(): boolean {
+  return pc?.isRunning() ?? false;
+}
+
+export function pcServerPort(): number {
+  return pc?.getPort() ?? 0;
+}
+
+export function pcServerLocalIp(): string {
+  return pc?.getLocalIp() ?? '';
+}
+
+export function respondToPc(
+  id: string,
+  status: number,
+  contentType: string,
+  body: string,
+): void {
+  pc?.respond(id, status, contentType, body);
+}
+
+/** Subscribe to incoming PC requests. Returns an unsubscribe function. */
+export function onPcRequest(
+  listener: (event: PcRequestEvent) => void,
+): () => void {
+  if (!pc) return () => undefined;
+  const subscription = pc.addListener('pcRequest', listener);
+  return () => subscription.remove();
+}
+
 export const listApps = () => need().listApps();
 export const launchApp = (pkg: string) => need().launchApp(pkg);
 export const openUrl = (url: string, pkg: string | null) => need().openUrl(url, pkg);
