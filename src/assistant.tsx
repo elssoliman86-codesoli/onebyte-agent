@@ -30,6 +30,12 @@ export interface ChatMessage {
   steps?: ToolStep[];
   /** Reasoning-model thinking captured while streaming (DeepSeek-R1 style). */
   thinking?: string;
+  /** Name of the skill auto-applied to this message (display chip). */
+  skill?: string;
+  /** Attached image (data or file URI) sent with this message, if any. */
+  imageUri?: string;
+  /** Names of text files attached to this message (display chips). */
+  files?: string[];
 }
 
 export interface ChatSession {

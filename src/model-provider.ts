@@ -6,9 +6,13 @@ import type {
   ProviderSettings,
 } from './assistant';
 
+export type ProviderContentPart =
+  | { type: 'text'; text: string }
+  | { type: 'image_url'; image_url: { url: string } };
+
 export interface ProviderChatMessage {
   role: 'system' | 'user' | 'assistant';
-  content: string;
+  content: string | ProviderContentPart[];
 }
 
 export function endpointFor(baseUrl: string): string {
@@ -182,8 +186,18 @@ export async function streamModelChat({
 
 export function toProviderMessages(messages: ChatMessage[]): ProviderChatMessage[] {
   return messages
-    .filter((message) => message.content.trim())
-    .map(({ role, content }) => ({ role, content }));
+    .filter((message) => message.content.trim() || message.imageUri)
+    .map(({ role, content, imageUri }) => {
+      if (imageUri) {
+        // Vision format (OpenAI-compatible): text part + image part as a data URL.
+        const parts: ProviderContentPart[] = [
+          { type: 'text', text: content.trim() || 'صف هذه الصورة' },
+          { type: 'image_url', image_url: { url: imageUri } },
+        ];
+        return { role, content: parts };
+      }
+      return { role, content };
+    });
 }
 
 export interface ProbeResult {

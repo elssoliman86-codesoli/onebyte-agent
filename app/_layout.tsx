@@ -30,6 +30,27 @@ function RootLayoutNav() {
 }
 
 /**
+ * On phone browsers the virtual keyboard overlaps fixed-position inputs.
+ * `interactive-widget=resizes-content` makes Chrome resize the visual viewport
+ * instead, so the composer stays visible with a natural, small gap.
+ */
+function useWebKeyboardViewport() {
+  useEffect(() => {
+    if (Platform.OS !== 'web' || typeof document === 'undefined') return;
+    const meta = document.querySelector('meta[name="viewport"]');
+    if (meta) {
+      const current = meta.getAttribute('content') ?? '';
+      if (!current.includes('interactive-widget')) {
+        meta.setAttribute(
+          'content',
+          current.replace(/,\s*$/, '') + ', interactive-widget=resizes-content',
+        );
+      }
+    }
+  }, []);
+}
+
+/**
  * App-wide notification setup: the Android channel, the foreground-display handler,
  * and opening the task's prompt in the chat when its reminder is tapped — including
  * the cold-start case via getLastNotificationResponseAsync.
@@ -88,6 +109,7 @@ export default function RootLayout() {
     Inter_600SemiBold,
     Inter_700Bold,
   });
+  useWebKeyboardViewport();
 
   useEffect(() => {
     if (fontsLoaded || fontError) {

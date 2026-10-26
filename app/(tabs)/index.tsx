@@ -19,10 +19,15 @@ import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context'
 import { Feather } from '@expo/vector-icons';
 import { router } from 'expo-router';
 import * as Notifications from 'expo-notifications';
+import * as ImagePicker from 'expo-image-picker';
+import * as DocumentPicker from 'expo-document-picker';
+import * as FileSystem from 'expo-file-system/legacy';
+import { Image as RNImage } from 'react-native';
 import { useColors } from '@/hooks/useColors';
 import {
   useAssistant,
   getStoredModelApiKey,
+  type AssistantSkill,
   type ChatMessage,
   type ToolStep,
 } from '@/src/assistant';
@@ -221,6 +226,33 @@ function MessageBubble({
           },
         ]}
       >
+        {message.skill ? (
+          <View style={[styles.skillChip, { backgroundColor: colors.accent }]}>
+            <Feather name="zap" size={11} color={colors.primary} />
+            <Text style={[styles.skillChipText, { color: colors.primary }]}>
+              استخدمت المهارة: {message.skill}
+            </Text>
+          </View>
+        ) : null}
+        {user && message.files?.length ? (
+          <View style={styles.fileChipsRow}>
+            {message.files.map((name, i) => (
+              <View key={i} style={[styles.fileChip, { backgroundColor: 'rgba(255,255,255,0.18)' }]}>
+                <Feather name="file-text" size={11} color={colors.primaryForeground} />
+                <Text style={[styles.fileChipText, { color: colors.primaryForeground }]} numberOfLines={1}>
+                  {name}
+                </Text>
+              </View>
+            ))}
+          </View>
+        ) : null}
+        {user && message.imageUri ? (
+          <RNImage
+            source={{ uri: message.imageUri }}
+            style={styles.bubbleImage}
+            resizeMode="cover"
+          />
+        ) : null}
         {message.steps?.length ? <StepList steps={message.steps} /> : null}
         {message.thinking ? (
           <Pressable
@@ -318,6 +350,8 @@ export default function ChatScreen() {
   const [runPlan, setRunPlan] = useState<string | null>(null);
   const [planDone, setPlanDone] = useState<null | 'ok' | 'fail'>(null);
   const [contextInfo, setContextInfo] = useState('');
+  const [attachUri, setAttachUri] = useState<string | null>(null);
+  const [attachFiles, setAttachFiles] = useState<{ name: string; content: string }[]>([]);
   const abortRef = useRef<AbortController | null>(null);
   const inputRef = useRef<TextInput>(null);
   const queueRunningRef = useRef(false);
@@ -407,10 +441,40 @@ export default function ChatScreen() {
 
   async function pickSkill(name: string) {
     setShowSkillMenu(false);
-    setDraft('');
-    const outcome = await handleSlashCommand('/skill ' + name);
-    if (outcome.handled) return;
-    if (outcome.text) void sendMessage(outcome.text);
+    // Fill the draft so the user continues typing their request right
+    // after the skill name — the enrichment happens at send time.
+    setDraft(`/skill ${name} `);
+    requestAnimationFrame(() => inputRef.current?.focus());
+  }
+
+  /**
+   * Smart skill detection: if the user's text clearly refers to an active
+   * skill (its name / enough of its words appear), its instructions are
+   * injected automatically — no manual /skill invocation needed.
+   */
+  function autoMatchSkill(text: string): AssistantSkill | null {
+    const normalize = (s: string) =>
+      s
+        .toLowerCase()
+        .replace(/[^\p{L}\p{N}\s]/gu, ' ')
+        .split(/\s+/)
+        .filter((w) => w.length >= 3);
+    const words = new Set(normalize(text));
+    if (!words.size) return null;
+    let best: { skill: AssistantSkill; score: number } | null = null;
+    for (const skill of skills) {
+      if (!skill.active) continue;
+      const tokens = normalize(skill.name + ' ' + skill.description);
+      if (!tokens.length) continue;
+      const hits = tokens.filter((t) => words.has(t)).length;
+      const ratio = hits / tokens.length;
+      // Require a strong signal: ≥2 keyword hits, or most of the skill tokens.
+      const confident = hits >= 2 || (ratio >= 0.5 && hits >= 1);
+      if (confident && (!best || hits > best.score)) {
+        best = { skill, score: hits };
+      }
+    }
+    return best?.skill ?? null;
   }
 
   /** create_task tool callback: store the task + try to schedule its reminder. */
@@ -441,6 +505,72 @@ export default function ChatScreen() {
       await setTaskActive(taskId, true, notificationId);
     } catch {
       // task is stored even if reminders are unavailable
+    }
+  }
+
+  /** Pick an image, compress it to a data URL, attach to the next message. */
+  async function attachImage() {
+    try {
+      const result = await ImagePicker.launchImageLibraryAsync({
+        mediaTypes: ['images'],
+        quality: 0.5,
+        allowsMultipleSelection: false,
+        base64: true,
+      });
+      if (result.canceled || !result.assets?.length) return;
+      const asset = result.assets[0];
+      let dataUrl = asset.base64
+        ? `data:${asset.mimeType ?? 'image/jpeg'};base64,${asset.base64}`
+        : asset.uri;
+      // Web picker returns a blob/file URI — convert to a data URL for the wire.
+      if (!dataUrl.startsWith('data:') && Platform.OS === 'web') {
+        const blob = await (await fetch(asset.uri)).blob();
+        dataUrl = await new Promise<string>((resolve, reject) => {
+          const reader = new FileReader();
+          reader.onload = () => resolve(String(reader.result));
+          reader.onerror = () => reject(new Error('تعذّر قراءة الصورة.'));
+          reader.readAsDataURL(blob);
+        });
+      }
+      if (dataUrl.length > 2_600_000) {
+        Alert.alert('الصورة كبيرة', 'اختاري صورة أصغر — الحد حوالي 2MB.');
+        return;
+      }
+      setAttachUri(dataUrl);
+    } catch (error) {
+      Alert.alert('تعذّر إرفاق الصورة', error instanceof Error ? error.message : 'حاولي مرة أخرى.');
+    }
+  }
+
+  /** Attach text-based files (.md/.txt/code/csv/json) whose content is embedded in the prompt. */
+  async function attachFilesPicker() {
+    try {
+      const result = await DocumentPicker.getDocumentAsync({
+        type: [
+          'text/*', 'text/markdown', 'text/plain', 'text/csv',
+          'application/json', 'application/xml', 'application/javascript',
+          'application/x-yaml', 'application/octet-stream',
+        ],
+        copyToCacheDirectory: true,
+        multiple: true,
+      });
+      if (result.canceled || !result.assets?.length) return;
+      const loaded: { name: string; content: string }[] = [];
+      for (const file of result.assets) {
+        if ((file.size ?? 0) > 400_000) {
+          Alert.alert('ملف كبير', `"${file.name}" أكبر من 400KB — تم تجاهله.`);
+          continue;
+        }
+        const response = await fetch(file.uri);
+        let content = await response.text();
+        if (content.length > 30_000) {
+          content = content.slice(0, 30_000) + '\n…(مقتطع)';
+        }
+        loaded.push({ name: file.name, content });
+      }
+      if (loaded.length) setAttachFiles((cur) => [...cur, ...loaded].slice(0, 5));
+    } catch (error) {
+      Alert.alert('تعذّر إرفاق الملفات', error instanceof Error ? error.message : 'حاولي مرة أخرى.');
     }
   }
 
@@ -593,20 +723,45 @@ export default function ChatScreen() {
     return { handled: false, text: raw };
   }
 
-  async function sendMessage(explicitText?: string) {
+  async function sendMessage(explicitText?: string, alreadyEnriched = false) {
     let text = (explicitText ?? draft).trim();
     if (!text || sending) {
       // While a run is active, new messages join the queue instead of being lost.
       if (sending && text) setQueue((q) => [...q, text]);
       return;
     }
-    if (text.startsWith('/')) {
+    if (text.startsWith('/') && !alreadyEnriched) {
       const outcome = await handleSlashCommand(text);
       if (outcome.handled) {
         setDraft('');
         return;
       }
-      if (outcome.text) text = outcome.text;
+      // /skill N <request> — keep the user's request, drop the command token so
+      // the message reads naturally, and mark as enriched to avoid double handling.
+      if (outcome.text && outcome.text !== text) {
+        return sendMessage(outcome.text.replace(/^\/skill\s+\S+\s*/, '').trim() || outcome.text, true);
+      }
+    }
+    // Smart skill detection: instructions go to the MODEL only — the user's
+    // stored/displayed message stays clean.
+    let enrichedSkill: string | null = null;
+    const displayText = text;
+    let wireText = text;
+    // Attached files: their content rides along to the model.
+    for (const f of attachFiles) {
+      wireText += `\n\n[ملف مرفق: ${f.name}]\n${f.content}`;
+    }
+    if (!alreadyEnriched) {
+      const matched = autoMatchSkill(text);
+      if (matched) {
+        enrichedSkill = matched.name;
+        wireText =
+          text +
+          '\n\n[تعليمات المهارة «' +
+          matched.name +
+          '» — اتبعها بدقة أثناء تنفيذ الطلب]\n' +
+          matched.instructions;
+      }
     }
     if (!provider.model.trim() || (!apiKeyConfigured && !provider.keyless)) {
       Alert.alert(
@@ -627,9 +782,15 @@ export default function ChatScreen() {
     const userMessage: ChatMessage = {
       id: messageId(),
       role: 'user',
-      content: text,
+      content: displayText,
       createdAt: new Date().toISOString(),
+      skill: enrichedSkill ?? undefined,
+      imageUri: attachUri ?? undefined,
+      files: attachFiles.length ? attachFiles.map((f) => f.name) : undefined,
     };
+    setAttachUri(null);
+    setAttachFiles([]);
+    const wireUserMessage: ChatMessage = { ...userMessage, content: wireText };
     const nextMessages = [...messages, userMessage];
     setMessages(nextMessages);
     setDraft('');
@@ -685,7 +846,7 @@ export default function ChatScreen() {
 
       // Auto-compaction: the chat never "fills up". Old turns are folded into a summary.
       const budget = workingBudget(provider, agent.maxWorkingTokens);
-      const plan = planContext(activeSession, [userMessage], estimateTokens(system), budget);
+      const plan = planContext(activeSession, [wireUserMessage], estimateTokens(system), budget);
       setContextInfo(
         `السياق: ${Math.round(plan.usedTokens / 1000)}K / ${Math.round(budget / 1000)}K توكن`,
       );
@@ -824,8 +985,8 @@ export default function ChatScreen() {
     >
       <KeyboardAvoidingView
         style={styles.keyboard}
-        behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
-        keyboardVerticalOffset={Platform.OS === 'ios' ? 0 : 24}
+        behavior={Platform.OS === 'ios' ? 'padding' : undefined}
+        keyboardVerticalOffset={Platform.OS === 'ios' ? 0 : 0}
       >
         <View style={styles.header}>
           <View style={styles.headerCopy}>
@@ -1080,6 +1241,24 @@ export default function ChatScreen() {
               { backgroundColor: colors.card, borderColor: colors.border },
             ]}
           >
+            <View style={styles.composerButtons}>
+              <Pressable
+                accessibilityRole="button"
+                accessibilityLabel="إرفاق صورة"
+                onPress={() => void attachImage()}
+                style={[styles.attachBtn, { borderColor: colors.border }]}
+              >
+                <Feather name="image" size={18} color={colors.primary} />
+              </Pressable>
+              <Pressable
+                accessibilityRole="button"
+                accessibilityLabel="إرفاق ملفات"
+                onPress={() => void attachFilesPicker()}
+                style={[styles.attachBtn, { borderColor: colors.border }]}
+              >
+                <Feather name="paperclip" size={18} color={colors.primary} />
+              </Pressable>
+            </View>
             <TextInput
               ref={inputRef}
               value={draft}
@@ -1092,9 +1271,41 @@ export default function ChatScreen() {
               keyboardAppearance={Platform.OS === 'ios' ? 'light' : undefined}
               returnKeyType="default"
               style={[styles.input, { color: colors.foreground }]}
-              textAlignVertical="center"
-              accessibilityLabel="رسالتك للمساعد"
-            />
+            textAlignVertical="center"
+            accessibilityLabel="رسالتك للمساعد"
+          />
+            {attachFiles.length ? (
+              <View style={styles.fileChipsRow}>
+                {attachFiles.map((f, i) => (
+                  <View key={i} style={[styles.fileChip, { backgroundColor: colors.accent }]}>
+                    <Feather name="file-text" size={11} color={colors.primary} />
+                    <Text style={[styles.fileChipText, { color: colors.primary }]} numberOfLines={1}>
+                      {f.name}
+                    </Text>
+                    <Pressable
+                      accessibilityRole="button"
+                      accessibilityLabel={`إزالة ${f.name}`}
+                      onPress={() => setAttachFiles((cur) => cur.filter((_, idx) => idx !== i))}
+                    >
+                      <Feather name="x" size={13} color={colors.mutedForeground} />
+                    </Pressable>
+                  </View>
+                ))}
+              </View>
+            ) : null}
+            {attachUri ? (
+              <View style={styles.attachPreviewWrap}>
+                <RNImage source={{ uri: attachUri }} style={styles.attachPreview} />
+                <Pressable
+                  accessibilityRole="button"
+                  accessibilityLabel="إزالة الصورة"
+                  onPress={() => setAttachUri(null)}
+                  style={styles.attachRemove}
+                >
+                  <Feather name="x-circle" size={17} color={colors.destructive} />
+                </Pressable>
+              </View>
+            ) : null}
             {sending && draft.trim() ? (
               <Pressable
                 accessibilityRole="button"
@@ -1341,6 +1552,41 @@ const styles = StyleSheet.create({
   slashHeader: { fontSize: 11, fontWeight: '700', padding: 8, textAlign: 'right' },
   slashItem: { borderBottomWidth: 1, paddingHorizontal: 12, paddingVertical: 10 },
   slashText: { fontSize: 13, fontWeight: '600', textAlign: 'right' },
+  attachBtn: {
+    width: 38,
+    height: 38,
+    borderRadius: 12,
+    borderWidth: 1,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  attachPreviewWrap: { position: 'relative' },
+  composerButtons: { flexDirection: 'row-reverse', alignItems: 'flex-end', gap: 6 },
+  fileChipsRow: { flexDirection: 'row-reverse', flexWrap: 'wrap', gap: 6, marginTop: 8 },
+  fileChip: {
+    flexDirection: 'row-reverse',
+    alignItems: 'center',
+    gap: 5,
+    borderRadius: 10,
+    paddingHorizontal: 8,
+    paddingVertical: 4,
+    maxWidth: 180,
+  },
+  fileChipText: { fontSize: 10, fontWeight: '700', flexShrink: 1 },
+  attachPreview: { width: 52, height: 52, borderRadius: 12 },
+  attachRemove: { position: 'absolute', top: -6, left: -6 },
+  bubbleImage: { width: 200, height: 200, borderRadius: 12, marginBottom: 8 },
+  skillChip: {
+    flexDirection: 'row-reverse',
+    alignItems: 'center',
+    gap: 5,
+    borderRadius: 10,
+    paddingHorizontal: 8,
+    paddingVertical: 4,
+    alignSelf: 'flex-start',
+    marginBottom: 7,
+  },
+  skillChipText: { fontSize: 10, fontWeight: '700' },
   slashSub: { fontSize: 10, marginTop: 2, textAlign: 'right' },
   shareDraft: { flexDirection: 'row-reverse', alignItems: 'center', justifyContent: 'flex-start', gap: 6, borderTopWidth: 1, marginTop: 9, paddingTop: 8 },
   shareDraftText: { fontSize: 11, fontWeight: '700' },
