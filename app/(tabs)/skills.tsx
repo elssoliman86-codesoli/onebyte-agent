@@ -8,6 +8,7 @@ import {
   Text,
   View,
 } from 'react-native';
+import * as DocumentPicker from 'expo-document-picker';
 import { Feather } from '@expo/vector-icons';
 import { useColors } from '@/hooks/useColors';
 import { useAssistant, type AssistantSkill } from '@/src/assistant';
@@ -39,6 +40,52 @@ export default function SkillsScreen() {
     setSelected(null);
     setForm(emptySkill);
     setVisible(true);
+  }
+
+  /** Import a .md/.txt file as a new skill (name from filename, front-matter title wins). */
+  async function importMarkdown() {
+    try {
+      const result = await DocumentPicker.getDocumentAsync({
+        type: ['text/markdown', 'text/plain', 'application/octet-stream'],
+        copyToCacheDirectory: true,
+        multiple: false,
+      });
+      if (result.canceled || !result.assets?.length) return;
+      const file = result.assets[0];
+      if (!file.name || !/\.(md|markdown|txt)$/i.test(file.name)) {
+        Alert.alert('صيغة غير مدعومة', 'اختاري ملف بصيغة .md أو .txt');
+        return;
+      }
+      if ((file.size ?? 0) > 200_000) {
+        Alert.alert('الملف كبير', 'الحد الأقصى 200KB لكل مهارة.');
+        return;
+      }
+      const response = await fetch(file.uri);
+      const text = await response.text();
+      let title = file.name.replace(/\.(md|markdown|txt)$/i, '');
+      let description = '';
+      let instructions = text.trim();
+      const fm = /^---\n([\s\S]*?)\n---\s*\n([\s\S]*)$/.exec(instructions);
+      if (fm) {
+        const t = /^title:\s*(.+)$/m.exec(fm[1]);
+        const d = /^description:\s*(.+)$/m.exec(fm[1]);
+        if (t) title = t[1].trim().replace(/^["']|["']$/g, '');
+        if (d) description = d[1].trim().replace(/^["']|["']$/g, '');
+        instructions = fm[2].trim();
+      }
+      if (!instructions) {
+        Alert.alert('الملف فاضي', 'محتوى الملف لا يحتوي تعليمات.');
+        return;
+      }
+      await createSkill({
+        name: title.slice(0, 60),
+        description: description.slice(0, 120),
+        instructions,
+      });
+      Alert.alert('تم الاستيراد', `أُضيفت المهارة "${title.slice(0, 40)}".`);
+    } catch (error) {
+      Alert.alert('تعذّر الاستيراد', error instanceof Error ? error.message : 'حاولي مرة أخرى.');
+    }
   }
 
   function openEdit(skill: AssistantSkill) {
@@ -176,6 +223,12 @@ export default function SkillsScreen() {
               }
             />
           )}
+          <ActionButton
+            label="استيراد ملف .md / .txt (يستخلص الاسم والوصف تلقائيًا)"
+            icon="upload"
+            variant="secondary"
+            onPress={() => void importMarkdown()}
+          />
         </View>
 
         {archivedSkills.length ? (

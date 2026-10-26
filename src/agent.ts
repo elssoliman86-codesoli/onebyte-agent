@@ -60,13 +60,15 @@ export async function streamCompletion({
     body.tools = toOpenAITools(specs);
     body.tool_choice = 'auto';
   }
+  const headers: Record<string, string> = {
+    'Content-Type': 'application/json',
+    Accept: 'text/event-stream',
+  };
+  // Keyless providers (Free OneByte) skip auth entirely.
+  if (apiKey) headers.Authorization = `Bearer ${apiKey}`;
   const response = await fetch(endpointFor(settings.baseUrl), {
     method: 'POST',
-    headers: {
-      Authorization: `Bearer ${apiKey}`,
-      'Content-Type': 'application/json',
-      Accept: 'text/event-stream',
-    },
+    headers,
     body: JSON.stringify(body),
     signal,
   });
@@ -123,6 +125,9 @@ export async function streamCompletion({
     // Non-streaming fallback shape.
     const msg = choice?.message;
     if (msg) {
+      if (typeof msg.reasoning_content === 'string' && msg.reasoning_content) {
+        onThinking?.(msg.reasoning_content);
+      }
       if (typeof msg.content === 'string' && msg.content) {
         text += msg.content;
         onText(msg.content);

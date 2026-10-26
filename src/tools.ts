@@ -25,6 +25,7 @@ export interface ToolContext {
   memories: AssistantMemory[];
   sessions: ChatSession[];
   createMemory: (input: { title: string; content: string }) => Promise<void>;
+  createTask: (input: { title: string; time: string; prompt: string }) => Promise<void>;
 }
 
 const obj = (properties: Record<string, unknown>, required: string[] = []) => ({
@@ -56,6 +57,17 @@ export const TOOL_SPECS: ToolSpec[] = [
     label: 'حفظ ذكرى',
     description: 'Save a durable fact about the user to local memory.',
     parameters: obj({ title: { type: 'string' }, content: { type: 'string' } }, ['title', 'content']),
+  },
+  {
+    name: 'create_task',
+    group: 'memory',
+    label: 'إنشاء مهمة يومية',
+    description:
+      'Create a daily reminder task that opens its prompt in the chat. Use when the user says "اعمل/ضيف مهمة/تذكير ...". time is HH:MM 24h; default "18:00" when unspecified.',
+    parameters: obj(
+      { title: { type: 'string' }, time: { type: 'string' }, prompt: { type: 'string' } },
+      ['title', 'prompt'],
+    ),
   },
   {
     name: 'open_url',
@@ -351,6 +363,16 @@ export async function executeTool(
     case 'save_memory':
       await ctx.createMemory({ title: str(args, 'title'), content: str(args, 'content') });
       return 'تم حفظ الذكرى.';
+    case 'create_task': {
+      const timeRaw = typeof args.time === 'string' ? args.time.trim() : '';
+      const time = /^([01]\d|2[0-3]):[0-5]\d$/.test(timeRaw) ? timeRaw : '18:00';
+      await ctx.createTask({
+        title: str(args, 'title'),
+        time,
+        prompt: str(args, 'prompt'),
+      });
+      return `تمت إضافة المهمة اليومية "${str(args, 'title')}" عند ${time}. افتحيها من تبويب المهام.`;
+    }
     case 'wait': {
       // ms is optional in the schema; models frequently omit it.
       const ms =

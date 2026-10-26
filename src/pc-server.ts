@@ -23,6 +23,8 @@ export interface PcServerContext {
   createSession: () => Promise<string>;
   setActiveSession: (id: string) => Promise<void>;
   createMemory: (input: { title: string; content: string }) => Promise<void>;
+  createTask: (input: { title: string; time: string; prompt: string }) => Promise<string>;
+  setTaskActive: (id: string, active: boolean, notificationId?: string) => Promise<void>;
 }
 
 export type PcApprovalHandler = (
@@ -240,7 +242,7 @@ async function runPcChat(text: string): Promise<void> {
   let settingsApiKey = '';
   try {
     const { getStoredModelApiKey } = await import('./assistant');
-    settingsApiKey = await getStoredModelApiKey();
+    settingsApiKey = data.provider.keyless ? '' : await getStoredModelApiKey();
   } catch {
     liveText = '⛔ المفتاح غير محفوظ — أضيفيه من إعدادات الهاتف.';
     abortRef = null;
@@ -296,6 +298,7 @@ async function runPcChat(text: string): Promise<void> {
           memories: fresh.memories,
           sessions: ctx.getData().sessions,
           createMemory: ctx.createMemory,
+          createTask: (input) => ctx.createTask(input).then(() => undefined),
         }),
       requestApproval: async (spec, args) => {
         approvalPending = true;

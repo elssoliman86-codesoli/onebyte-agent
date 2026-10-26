@@ -113,23 +113,39 @@ export function parseModels(payload: unknown): ModelInfo[] {
   return out.sort((a, b) => Number(b.free) - Number(a.free) || a.id.localeCompare(b.id));
 }
 
+/** Known keyless models when the provider has no OpenAI-style /models endpoint. */
+const FREE_ONEBYTE_MODELS: ModelInfo[] = [
+  { id: 'openai', name: 'openai (مجاني)', contextLength: 32000, promptPrice: 0, completionPrice: 0, free: true, supportsTools: null },
+  { id: 'openai-reasoning', name: 'openai-reasoning (مجاني)', contextLength: 32000, promptPrice: 0, completionPrice: 0, free: true, supportsTools: null },
+  { id: 'openai-large', name: 'openai-large (مجاني)', contextLength: 32000, promptPrice: 0, completionPrice: 0, free: true, supportsTools: null },
+  { id: 'qwen-coder', name: 'qwen-coder (مجاني)', contextLength: 32000, promptPrice: 0, completionPrice: 0, free: true, supportsTools: null },
+  { id: 'mistral', name: 'mistral (مجاني)', contextLength: 32000, promptPrice: 0, completionPrice: 0, free: true, supportsTools: null },
+];
+
 export async function fetchModels(
   baseUrl: string,
   apiKey: string,
   signal?: AbortSignal,
 ): Promise<ModelInfo[]> {
+  const headers: Record<string, string> = {};
+  if (apiKey) headers.Authorization = `Bearer ${apiKey}`;
   const response = await fetch(modelsEndpoint(baseUrl), {
-    headers: apiKey ? { Authorization: `Bearer ${apiKey}` } : {},
+    headers,
     signal,
   });
   if (response.status === 401 || response.status === 403) {
     throw new Error('المزود رفض المفتاح. راجع المفتاح والصلاحيات.');
   }
   if (!response.ok) {
+    // Keyless free endpoint has no models list — fall back to known models.
+    if (baseUrl.includes('pollinations.ai')) return FREE_ONEBYTE_MODELS;
     throw new Error(`تعذّر جلب قائمة الموديلات (HTTP ${response.status}). تأكد من الرابط.`);
   }
   const models = parseModels(await response.json());
-  if (models.length === 0) throw new Error('المزود لم يرجع أي موديلات.');
+  if (models.length === 0) {
+    if (baseUrl.includes('pollinations.ai')) return FREE_ONEBYTE_MODELS;
+    throw new Error('المزود لم يرجع أي موديلات.');
+  }
   return models;
 }
 

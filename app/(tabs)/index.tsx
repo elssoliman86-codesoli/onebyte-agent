@@ -18,6 +18,7 @@ import { KeyboardAvoidingView } from 'react-native-keyboard-controller';
 import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
 import { Feather } from '@expo/vector-icons';
 import { router } from 'expo-router';
+import * as Notifications from 'expo-notifications';
 import { useColors } from '@/hooks/useColors';
 import {
   useAssistant,
@@ -290,6 +291,8 @@ export default function ChatScreen() {
     apiKeyConfigured,
     pendingPrompt,
     createMemory,
+    createTask: createTaskInStore,
+    setTaskActive,
     patchSession,
     createSession,
     setActiveSession,
@@ -408,6 +411,37 @@ export default function ChatScreen() {
     const outcome = await handleSlashCommand('/skill ' + name);
     if (outcome.handled) return;
     if (outcome.text) void sendMessage(outcome.text);
+  }
+
+  /** create_task tool callback: store the task + try to schedule its reminder. */
+  async function handleCreateTask(input: { title: string; time: string; prompt: string }) {
+    const taskId = await createTaskInStore(input);
+    if (Platform.OS === 'web') return;
+    try {
+      const permission = await Notifications.getPermissionsAsync();
+      const granted =
+        permission.granted ||
+        (await Notifications.requestPermissionsAsync()).granted;
+      if (!granted) return;
+      const match = /^([01]\d|2[0-3]):([0-5]\d)$/.exec(input.time);
+      if (!match) return;
+      const notificationId = await Notifications.scheduleNotificationAsync({
+        content: {
+          title: 'حان وقت مهمتك',
+          body: input.title,
+          data: { taskId },
+        },
+        trigger: {
+          type: Notifications.SchedulableTriggerInputTypes.DAILY,
+          hour: Number(match[1]),
+          minute: Number(match[2]),
+          channelId: 'daily-tasks',
+        },
+      });
+      await setTaskActive(taskId, true, notificationId);
+    } catch {
+      // task is stored even if reminders are unavailable
+    }
   }
 
   function requestApproval(
@@ -574,7 +608,7 @@ export default function ChatScreen() {
       }
       if (outcome.text) text = outcome.text;
     }
-    if (!provider.model.trim() || !apiKeyConfigured) {
+    if (!provider.model.trim() || (!apiKeyConfigured && !provider.keyless)) {
       Alert.alert(
         'جهّزي الموديل أولًا',
         'أضيفي رابط الخدمة واسم الموديل ومفتاح API من الإعدادات.',
@@ -640,7 +674,7 @@ export default function ChatScreen() {
 
     try {
       await appendMessage(sessionId, userMessage);
-      const apiKey = await getStoredModelApiKey();
+      const apiKey = provider.keyless ? '' : await getStoredModelApiKey();
 
       const deviceOn = agent.deviceControlEnabled;
       const system = buildAssistantSystemPrompt(skills, memories, {
@@ -691,7 +725,13 @@ export default function ChatScreen() {
         specs: toolsForRequest(deviceOn),
         maxSteps: agent.maxSteps,
         execute: (name, args) =>
-          executeTool(name, args, { skills, memories, sessions, createMemory }),
+          executeTool(name, args, {
+            skills,
+            memories,
+            sessions,
+            createMemory,
+            createTask: (input) => handleCreateTask(input),
+          }),
         requestApproval,
         onText: (text) => {
           fullResponse = text;

@@ -53,6 +53,8 @@ export interface ProviderSettings {
   promptPrice?: number | null;
   completionPrice?: number | null;
   free?: boolean;
+  /** Keyless providers (Free OneByte) need no API key at all. */
+  keyless?: boolean;
 }
 
 export interface AgentSettings {
@@ -182,10 +184,14 @@ interface AssistantContextValue extends AssistantData {
 
 const DATA_KEY = '@onebyte-agent/assistant-v1';
 const API_KEY_ID = 'onebyte-agent.model-provider-key.v1';
+// Out of the box the app works on Free OneByte: a keyless free endpoint
+// that runs entirely from the phone — no key, no external device.
 const DEFAULT_PROVIDER: ProviderSettings = {
-  baseUrl: 'https://api.openai.com/v1',
-  model: '',
-  providerName: 'OpenAI-compatible',
+  baseUrl: 'https://text.pollinations.ai/openai',
+  model: 'openai',
+  providerName: 'Free OneByte',
+  keyless: true,
+  free: true,
 };
 
 const DEFAULT_AGENT: AgentSettings = {

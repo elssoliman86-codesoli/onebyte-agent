@@ -58,6 +58,8 @@ export default function SettingsScreen() {
     createSession,
     setActiveSession,
     createMemory,
+    createTask,
+    setTaskActive,
     saveAgentSettings,
     saveAppearanceSettings,
     saveProvider,
@@ -117,6 +119,8 @@ export default function SettingsScreen() {
       createSession,
       setActiveSession,
       createMemory,
+      createTask,
+      setTaskActive,
     });
     setPcApprovalHandler((spec, args) =>
       new Promise<ApprovalDecision>((resolve) => {
@@ -137,6 +141,8 @@ export default function SettingsScreen() {
     createSession,
     setActiveSession,
     createMemory,
+    createTask,
+    setTaskActive,
   ]);
 
   async function togglePcServer(next: boolean) {

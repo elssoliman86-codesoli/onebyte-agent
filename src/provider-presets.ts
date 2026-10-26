@@ -10,12 +10,27 @@ export interface ProviderPreset {
   note?: string;
 }
 
+export interface ProviderPreset {
+  name: string;
+  baseUrl: string;
+  /** Short Arabic hint shown under the chips row when selected. */
+  note?: string;
+  /** Keyless providers work with zero setup — no API key required. */
+  keyless?: boolean;
+}
+
 export const PROVIDER_PRESETS: ProviderPreset[] = [
+  {
+    name: '⭐ Free OneByte (مجاني بدون مفتاح)',
+    baseUrl: 'https://text.pollinations.ai/openai',
+    note: 'مدمج في التطبيق — يعمل على الهاتف مباشرة بدون أي مفتاح أو جهاز خارجي',
+    keyless: true,
+  },
   { name: 'OpenRouter', baseUrl: 'https://openrouter.ai/api/v1', note: 'أكبر تجميعة وفيه موديلات مجانية' },
   {
-    name: 'Free OneByte (OmniRoute)',
+    name: 'OmniRoute (سيرفر خاص)',
     baseUrl: 'http://192.168.1.10:20128/v1',
-    note: 'بوابة OmniRoute المجانية — شغّلها على كمبيوترك وبدّلي الـ IP بمكان جهازك',
+    note: 'شغّل بوابة OmniRoute على أي جهاز وبدّلي الـ IP',
   },
   { name: 'OpenAI', baseUrl: 'https://api.openai.com/v1' },
   { name: 'DeepSeek', baseUrl: 'https://api.deepseek.com/v1', note: 'رخيص وقوي' },

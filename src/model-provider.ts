@@ -104,13 +104,14 @@ export async function streamModelChat({
   if (!settings.model.trim()) {
     throw new Error('اكتبي اسم الموديل في الإعدادات أولًا.');
   }
+  const headers: Record<string, string> = {
+    'Content-Type': 'application/json',
+    Accept: 'text/event-stream',
+  };
+  if (apiKey) headers.Authorization = `Bearer ${apiKey}`;
   const response = await fetch(endpointFor(settings.baseUrl), {
     method: 'POST',
-    headers: {
-      Authorization: `Bearer ${apiKey}`,
-      'Content-Type': 'application/json',
-      Accept: 'text/event-stream',
-    },
+    headers,
     body: JSON.stringify({
       model: settings.model.trim(),
       messages,
