@@ -42,6 +42,14 @@
 |:---:|:---:|:---:|
 | ![](./.github/assets/screenshot-skills.png) | ![](./.github/assets/screenshot-memory.png) | ![](./.github/assets/screenshot-tasks.png) |
 
+### 💻 نسخة الكمبيوتر (خادم الويب المدمج)
+
+نفس التطبيق من متصفح الكمبيوتر على نفس الواي فاي — نفس التصميم، نفس المهام، حماية بـ PIN، والموافقات تظهر على الهاتف:
+
+| شاشة الدخول (PIN) | الشات من الكمبيوتر | المهام بالإنجليزية |
+|:---:|:---:|:---:|
+| ![](./.github/assets/screenshot-pc-login.png) | ![](./.github/assets/screenshot-pc-chat.png) | ![](./.github/assets/screenshot-pc-tasks-english.png) |
+
 ---
 
 <div dir="rtl">
