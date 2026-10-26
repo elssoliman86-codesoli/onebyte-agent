@@ -4,17 +4,20 @@ import { Feather } from '@expo/vector-icons';
 import { useColors } from '@/hooks/useColors';
 import { describeCall, type ToolSpec } from '@/src/tools';
 import type { ApprovalDecision } from '@/src/agent';
+import type { InstalledApp } from '@/src/device';
 
 export interface PendingApproval {
   spec: ToolSpec;
   args: Record<string, unknown>;
+  /** Apps the user previously marked "دائمًا" (shown as quick chips). */
+  savedApps?: InstalledApp[];
   resolve: (decision: ApprovalDecision) => void;
 }
 
 export function ApprovalSheet({ pending }: { pending: PendingApproval | null }) {
   const colors = useColors();
   if (!pending) return null;
-  const { spec, args, resolve } = pending;
+  const { spec, args, savedApps, resolve } = pending;
   const icon =
     spec.group === 'device_read'
       ? 'eye'
@@ -54,6 +57,14 @@ export function ApprovalSheet({ pending }: { pending: PendingApproval | null }) 
           >
             <Text style={[styles.btnText, { color: colors.secondaryForeground }]}>
               موافق على هذه الأداة حتى تنتهي المهمة
+            </Text>
+          </Pressable>
+          <Pressable
+            onPress={() => resolve('always')}
+            style={[styles.btn, { borderWidth: 1, borderColor: colors.success }]}
+          >
+            <Text style={[styles.btnText, { color: colors.success }]}>
+              موافق دائمًا (يُحفظ — يمكن التراجع من الإعدادات)
             </Text>
           </Pressable>
           <Pressable onPress={() => resolve('deny')} style={styles.btn}>

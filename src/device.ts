@@ -9,6 +9,7 @@ export interface InstalledApp {
 interface DeviceControlNative {
   isServiceEnabled(): boolean;
   openAccessibilitySettings(): void;
+  openAppDetailsSettings(): void;
   listApps(): Promise<InstalledApp[]>;
   launchApp(pkg: string): Promise<boolean>;
   openUrl(url: string, pkg: string | null): Promise<boolean>;
@@ -45,6 +46,11 @@ export function assertServiceEnabled(): void {
 
 export function openAccessibilitySettings(): void {
   native?.openAccessibilitySettings();
+}
+
+/** Opens this app's own details page (restricted-settings unlock path on Android 13+). */
+export function openAppDetailsSettings(): void {
+  native?.openAppDetailsSettings();
 }
 
 function need(): DeviceControlNative {

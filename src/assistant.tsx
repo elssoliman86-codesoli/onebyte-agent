@@ -28,6 +28,8 @@ export interface ChatMessage {
   createdAt: string;
   /** Tools the assistant used while producing this message (for display only). */
   steps?: ToolStep[];
+  /** Reasoning-model thinking captured while streaming (DeepSeek-R1 style). */
+  thinking?: string;
 }
 
 export interface ChatSession {
@@ -60,6 +62,11 @@ export interface AgentSettings {
   maxSteps: number;
   /** Upper bound of tokens sent per request; older turns are summarised past this. */
   maxWorkingTokens: number;
+  /**
+   * Tools the user marked "دائمًا" — approval is skipped for these keys.
+   * Key format: tool name, or `open_app:<package>` for a specific app.
+   */
+  autoApprovedTools: string[];
 }
 
 export type ThemePreference = 'system' | 'light' | 'dark';
@@ -185,6 +192,7 @@ const DEFAULT_AGENT: AgentSettings = {
   deviceControlEnabled: false,
   maxSteps: 25,
   maxWorkingTokens: 100_000,
+  autoApprovedTools: [],
 };
 
 const DEFAULT_APPEARANCE: AppearanceSettings = { theme: 'system' };
@@ -233,6 +241,9 @@ function normalizeData(raw: unknown): AssistantData {
     agent: {
       ...DEFAULT_AGENT,
       ...(value.agent && typeof value.agent === 'object' ? value.agent : {}),
+      autoApprovedTools: Array.isArray(value.agent?.autoApprovedTools)
+        ? value.agent.autoApprovedTools.filter((x): x is string => typeof x === 'string')
+        : [],
     },
     appearance: {
       ...DEFAULT_APPEARANCE,

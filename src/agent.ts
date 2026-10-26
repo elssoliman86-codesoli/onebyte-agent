@@ -22,7 +22,7 @@ type WireMessage =
     }
   | { role: 'tool'; tool_call_id: string; content: string };
 
-export type ApprovalDecision = 'once' | 'turn' | 'deny';
+export type ApprovalDecision = 'once' | 'turn' | 'always' | 'deny';
 
 export class ToolsUnsupportedError extends Error {}
 
@@ -40,6 +40,7 @@ export async function streamCompletion({
   messages,
   specs,
   onText,
+  onThinking,
   signal,
 }: {
   settings: ProviderSettings;
@@ -47,6 +48,7 @@ export async function streamCompletion({
   messages: WireMessage[];
   specs: ToolSpec[];
   onText: (chunk: string) => void;
+  onThinking?: (chunk: string) => void;
   signal?: AbortSignal;
 }): Promise<{ text: string; toolCalls: ToolCall[] }> {
   const body: Record<string, unknown> = {
@@ -83,10 +85,13 @@ export async function streamCompletion({
       choices?: {
         delta?: {
           content?: string;
+          reasoning_content?: string;
+          reasoning?: string;
           tool_calls?: { index?: number; id?: string; function?: { name?: string; arguments?: string } }[];
         };
         message?: {
           content?: string;
+          reasoning_content?: string;
           tool_calls?: { id?: string; function?: { name?: string; arguments?: string } }[];
         };
       }[];
@@ -100,6 +105,9 @@ export async function streamCompletion({
     if (parsed.error?.message) throw new Error('المزود أرسل خطأ أثناء توليد الرد.');
     const choice = parsed.choices?.[0];
     const delta = choice?.delta;
+    // Reasoning models (DeepSeek-R1 style) stream their thinking separately.
+    const think = delta?.reasoning_content ?? delta?.reasoning;
+    if (typeof think === 'string' && think) onThinking?.(think);
     if (typeof delta?.content === 'string' && delta.content) {
       text += delta.content;
       onText(delta.content);
@@ -167,6 +175,7 @@ const MAX_TOOL_RESULT = 8000;
 
 export interface AgentRunResult {
   text: string;
+  thinking: string;
   steps: ToolStep[];
   toolsWereUnsupported: boolean;
 }
@@ -185,6 +194,7 @@ export async function runAgent({
   execute,
   requestApproval,
   onText,
+  onThinking,
   onStep,
   signal,
 }: {
@@ -196,6 +206,7 @@ export async function runAgent({
   execute: (name: string, args: Record<string, unknown>) => Promise<string>;
   requestApproval: (spec: ToolSpec, args: Record<string, unknown>) => Promise<ApprovalDecision>;
   onText: (fullTextSoFar: string) => void;
+  onThinking?: (chunk: string) => void;
   onStep: (steps: ToolStep[]) => void;
   signal?: AbortSignal;
 }): Promise<AgentRunResult> {
@@ -205,6 +216,7 @@ export async function runAgent({
   // action for the rest of the run must never silently authorize a different action.
   const allowedForTurn = new Set<string>();
   let finalText = '';
+  let finalThinking = '';
   let activeSpecs = specs;
   let toolsWereUnsupported = false;
 
@@ -221,6 +233,10 @@ export async function runAgent({
         onText: (chunk) => {
           roundText += chunk;
           onText(finalText + roundText);
+        },
+        onThinking: (chunk) => {
+          finalThinking += chunk;
+          onThinking?.(chunk);
         },
         signal,
       });
@@ -273,7 +289,8 @@ export async function runAgent({
             output = 'رفض المستخدم هذا الإجراء. لا تكرره؛ اسأل المستخدم عن البديل.';
             status = 'denied';
           } else {
-            if (decision === 'turn') allowedForTurn.add(spec.name);
+            // 'always' behaves like 'turn' for this run; the caller persists it.
+            if (decision === 'turn' || decision === 'always') allowedForTurn.add(spec.name);
             allowed = true;
           }
         }
@@ -296,5 +313,5 @@ export async function runAgent({
       });
     }
   }
-  return { text: finalText.trim(), steps, toolsWereUnsupported };
+  return { text: finalText.trim(), thinking: finalThinking.trim(), steps, toolsWereUnsupported };
 }

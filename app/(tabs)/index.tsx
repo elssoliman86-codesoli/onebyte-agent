@@ -7,6 +7,7 @@ import {
   Modal,
   Platform,
   Pressable,
+  ScrollView,
   Share,
   StyleSheet,
   Text,
@@ -131,45 +132,78 @@ function MessageBody({ content, user }: { content: string; user?: boolean }) {
   );
 }
 
-/** Inline markdown: **bold** and `code` spans inside prose. */
+/** Inline markdown: **bold**, `code`, +green/-red diff lines inside prose. */
 function MarkdownText({ text, user }: { text: string; user?: boolean }) {
   const colors = useColors();
   const baseColor = user ? colors.primaryForeground : colors.foreground;
-  const parts = text.split(/(\*\*[^*]+\*\*|`[^`]+`)/g).filter(Boolean);
   return (
-    <Text style={[styles.messageText, { color: baseColor }]}>
-      {parts.map((part, i) => {
-        if (part.startsWith('**') && part.endsWith('**')) {
-          return (
-            <Text key={i} style={{ fontWeight: '700', color: user ? baseColor : colors.primary }}>
-              {part.slice(2, -2)}
-            </Text>
-          );
-        }
-        if (part.startsWith('`') && part.endsWith('`') && part.length > 2) {
+    <>
+      {text.split('\n').map((line, li) => {
+        const rendered = line
+          .split(/(\*\*[^*]+\*\*|`[^`]+`)/g)
+          .filter(Boolean)
+          .map((part, i) => {
+            if (part.startsWith('**') && part.endsWith('**')) {
+              return (
+                <Text key={i} style={{ fontWeight: '700', color: user ? baseColor : colors.primary }}>
+                  {part.slice(2, -2)}
+                </Text>
+              );
+            }
+            if (part.startsWith('`') && part.endsWith('`') && part.length > 2) {
+              return (
+                <Text
+                  key={i}
+                  style={{
+                    fontFamily: 'monospace',
+                    fontSize: 12.5,
+                    backgroundColor: 'rgba(128,128,128,0.16)',
+                    color: baseColor,
+                  }}
+                >
+                  {part.slice(1, -1)}
+                </Text>
+              );
+            }
+            return <Text key={i}>{part}</Text>;
+          });
+        // Diff coloring for +/- lines that appear outside fenced blocks.
+        const isAdd = /^\+\s/.test(line) && !/^\+\+\+/.test(line);
+        const isDel = /^-\s/.test(line) && !/^---/.test(line);
+        if ((isAdd || isDel) && !user) {
           return (
             <Text
-              key={i}
-              style={{
-                fontFamily: 'monospace',
-                fontSize: 12.5,
-                backgroundColor: 'rgba(128,128,128,0.16)',
-                color: baseColor,
-              }}
+              key={li}
+              style={[
+                styles.messageText,
+                styles.diffLine,
+                { color: isAdd ? colors.success : colors.destructive },
+              ]}
             >
-              {part.slice(1, -1)}
+              {line}
             </Text>
           );
         }
-        return <Text key={i}>{part}</Text>;
+        return (
+          <Text key={li} style={[styles.messageText, { color: baseColor }]}>
+            {rendered}
+          </Text>
+        );
       })}
-    </Text>
+    </>
   );
 }
 
-function MessageBubble({ message }: { message: ChatMessage }) {
+function MessageBubble({
+  message,
+  onEditMessage,
+}: {
+  message: ChatMessage;
+  onEditMessage?: (content: string) => void;
+}) {
   const colors = useColors();
   const user = message.role === 'user';
+  const [showThinking, setShowThinking] = useState(false);
   return (
     <View style={[styles.messageRow, user && styles.userMessageRow]}>
       {!user ? (
@@ -187,7 +221,40 @@ function MessageBubble({ message }: { message: ChatMessage }) {
         ]}
       >
         {message.steps?.length ? <StepList steps={message.steps} /> : null}
+        {message.thinking ? (
+          <Pressable
+            accessibilityRole="button"
+            accessibilityLabel="عرض التفكير"
+            onPress={() => setShowThinking(!showThinking)}
+            style={[styles.thinkingToggle, { borderTopColor: colors.border }]}
+          >
+            <Feather name="cpu" size={12} color={colors.mutedForeground} />
+            <Text style={[styles.thinkingToggleText, { color: colors.mutedForeground }]}>
+              {showThinking ? 'إخفاء التفكير' : 'عرض التفكير'}
+            </Text>
+          </Pressable>
+        ) : null}
+        {showThinking && message.thinking ? (
+          <View style={[styles.thinkingBox, { borderColor: colors.border }]}>
+            <Text style={[styles.thinkingText, { color: colors.mutedForeground }]} selectable>
+              {message.thinking}
+            </Text>
+          </View>
+        ) : null}
         <MessageBody content={message.content} user={user} />
+        {user && onEditMessage ? (
+          <Pressable
+            accessibilityRole="button"
+            accessibilityLabel="تعديل وإعادة إرسال"
+            onPress={() => onEditMessage(message.content)}
+            style={[styles.userActions, { borderTopColor: 'rgba(255,255,255,0.25)' }]}
+          >
+            <Feather name="edit-2" size={12} color={colors.primaryForeground} />
+            <Text style={[styles.userActionText, { color: colors.primaryForeground }]}>
+              تعديل وإعادة إرسال
+            </Text>
+          </Pressable>
+        ) : null}
         {!user ? (
           <Pressable
             accessibilityRole="button"
@@ -229,6 +296,7 @@ export default function ChatScreen() {
     deleteSession,
     appendMessage,
     consumePendingPrompt,
+    saveAgentSettings,
     storageError,
   } = useAssistant();
   const [messages, setMessages] = useState<ChatMessage[]>([]);
@@ -240,8 +308,16 @@ export default function ChatScreen() {
   const [liveSteps, setLiveSteps] = useState<ToolStep[]>([]);
   const [pending, setPending] = useState<PendingApproval | null>(null);
   const [status, setStatus] = useState('');
+  const [showSlash, setShowSlash] = useState(false);
+  const [showSkillMenu, setShowSkillMenu] = useState(false);
+  const [thinkingPreview, setThinkingPreview] = useState('');
+  const [queue, setQueue] = useState<string[]>([]);
+  const [runPlan, setRunPlan] = useState<string | null>(null);
+  const [planDone, setPlanDone] = useState<null | 'ok' | 'fail'>(null);
+  const [contextInfo, setContextInfo] = useState('');
   const abortRef = useRef<AbortController | null>(null);
   const inputRef = useRef<TextInput>(null);
+  const queueRunningRef = useRef(false);
   // The session a run writes into and the session currently on screen, so streaming
   // updates stop landing in the wrong chat if the user switches away mid-run.
   const runSessionIdRef = useRef<string | null>(null);
@@ -251,17 +327,111 @@ export default function ChatScreen() {
     visibleSessionIdRef.current = activeSession?.id ?? null;
   }, [activeSession?.id]);
 
+  /** "دائمًا" key for a tool: open_app is remembered per package. */
+  function approvalKey(spec: ToolSpec, args: Record<string, unknown>): string {
+    if (spec.name === 'open_app' && typeof args.package === 'string' && args.package) {
+      return `open_app:${args.package}`;
+    }
+    return spec.name;
+  }
+
+  const SLASH_COMMANDS = [
+    { cmd: 'help', label: '/help — قائمة الأوامر' },
+    { cmd: 'skill', label: '/skill — تحميل مهارة' },
+    { cmd: 'mcp', label: '/mcp — حالة الأدوات المتصلة' },
+    { cmd: 'new', label: '/new — محادثة جديدة' },
+    { cmd: 'settings', label: '/settings — الإعدادات' },
+    { cmd: 'tasks', label: '/tasks — المهام اليومية' },
+    { cmd: 'skills', label: '/skills — شاشة المهارات' },
+    { cmd: 'memory', label: '/memory — الذاكرة' },
+  ];
+
+  /** Live plan tracker: extracts the "الخطة" bullet section from streamed text. */
+  function extractPlan(text: string): string | null {
+    const m = /\*?\*?الخطة\*?\*?\s*:?\s*\n([\s\S]*?)(?:\n\s*\n|$)/.exec(text);
+    if (!m) return null;
+    const lines = m[1]
+      .split('\n')
+      .map((l) => l.replace(/^[-*•\d.)\s]+/, '').trim())
+      .filter(Boolean);
+    return lines.length ? lines.join('\n') : null;
+  }
+
+  function updateLivePlan(text: string) {
+    const p = extractPlan(text);
+    if (p) setRunPlan(p);
+  }
+
+  function onDraftChange(v: string) {
+    setDraft(v);
+    if (!v.startsWith('/')) {
+      setShowSlash(false);
+      setShowSkillMenu(false);
+      return;
+    }
+    if (v === '/') {
+      setShowSlash(true);
+      setShowSkillMenu(false);
+      return;
+    }
+    const cmd = v.slice(1).split(' ')[0]?.toLowerCase() ?? '';
+    if ((cmd === 'skill' || cmd === 'مهارة') && v.includes(' ')) {
+      setShowSkillMenu(true);
+      setShowSlash(false);
+      return;
+    }
+    setShowSkillMenu(false);
+    setShowSlash(
+      cmd.length > 0 && SLASH_COMMANDS.some((c) => c.cmd.startsWith(cmd)),
+    );
+  }
+
+  async function pickSlashCommand(cmd: string) {
+    setShowSlash(false);
+    setShowSkillMenu(false);
+    if (cmd === 'skill') {
+      if (skills.filter((s) => s.active).length) {
+        setDraft('/skill ');
+        setShowSkillMenu(true);
+      } else {
+        void handleSlashCommand('/skill');
+      }
+      return;
+    }
+    setDraft('');
+    await handleSlashCommand('/' + cmd);
+  }
+
+  async function pickSkill(name: string) {
+    setShowSkillMenu(false);
+    setDraft('');
+    const outcome = await handleSlashCommand('/skill ' + name);
+    if (outcome.handled) return;
+    if (outcome.text) void sendMessage(outcome.text);
+  }
+
   function requestApproval(
     spec: ToolSpec,
     args: Record<string, unknown>,
   ): Promise<ApprovalDecision> {
+    const key = approvalKey(spec, args);
+    // Saved "دائمًا" approvals skip the sheet entirely.
+    if (agent.autoApprovedTools.includes(key)) return Promise.resolve('once');
     return new Promise((resolve) => {
       setPending({
         spec,
         args,
         resolve: (decision) => {
           setPending(null);
-          resolve(decision);
+          if (decision === 'always') {
+            const next = [...agent.autoApprovedTools, key];
+            void saveAgentSettings({ autoApprovedTools: next }).catch(
+              () => undefined,
+            );
+            resolve('turn');
+          } else {
+            resolve(decision);
+          }
         },
       });
     });
@@ -389,9 +559,13 @@ export default function ChatScreen() {
     return { handled: false, text: raw };
   }
 
-  async function sendMessage() {
-    let text = draft.trim();
-    if (!text || sending) return;
+  async function sendMessage(explicitText?: string) {
+    let text = (explicitText ?? draft).trim();
+    if (!text || sending) {
+      // While a run is active, new messages join the queue instead of being lost.
+      if (sending && text) setQueue((q) => [...q, text]);
+      return;
+    }
     if (text.startsWith('/')) {
       const outcome = await handleSlashCommand(text);
       if (outcome.handled) {
@@ -428,6 +602,9 @@ export default function ChatScreen() {
     setError('');
     setSending(true);
     setStreamText('');
+    setThinkingPreview('');
+    setRunPlan(null);
+    setPlanDone(null);
     Keyboard.dismiss();
 
     const controller = new AbortController();
@@ -437,6 +614,7 @@ export default function ChatScreen() {
     const responseId = messageId();
     let steps: ToolStep[] = [];
     let fullResponse = '';
+    let finalThinking = '';
     let assistantPersisted = false;
 
     const publish = () => {
@@ -474,6 +652,9 @@ export default function ChatScreen() {
       // Auto-compaction: the chat never "fills up". Old turns are folded into a summary.
       const budget = workingBudget(provider, agent.maxWorkingTokens);
       const plan = planContext(activeSession, [userMessage], estimateTokens(system), budget);
+      setContextInfo(
+        `السياق: ${Math.round(plan.usedTokens / 1000)}K / ${Math.round(budget / 1000)}K توكن`,
+      );
       const recent = plan.recent;
       let summary = activeSession?.summary ?? '';
       if (plan.toSummarise.length) {
@@ -514,7 +695,11 @@ export default function ChatScreen() {
         requestApproval,
         onText: (text) => {
           fullResponse = text;
+          updateLivePlan(text);
           publish();
+        },
+        onThinking: (chunk) => {
+          setThinkingPreview((cur) => (cur + chunk).slice(-1800));
         },
         onStep: (next) => {
           steps = next;
@@ -525,6 +710,8 @@ export default function ChatScreen() {
       });
       fullResponse = result.text;
       steps = result.steps;
+      finalThinking = result.thinking;
+      setPlanDone('ok');
       if (result.toolsWereUnsupported) {
         setError('هذا الموديل لا يدعم الأدوات، لذلك رد كنص فقط. اختر موديلًا يدعم Tool calling للتحكم في الجهاز.');
       }
@@ -539,10 +726,12 @@ export default function ChatScreen() {
         content: fullResponse,
         createdAt: new Date().toISOString(),
         steps,
+        thinking: finalThinking || undefined,
       });
       assistantPersisted = true;
     } catch (caught) {
       const stopped = controller.signal.aborted;
+      setPlanDone('fail');
       if (!assistantPersisted && (fullResponse.trim() || steps.length)) {
         // Keep what was already produced so nothing the agent did is lost from history.
         // Skipped if the append above already ran, otherwise a storage failure would
@@ -553,6 +742,7 @@ export default function ChatScreen() {
           content: (fullResponse.trim() || 'توقفت المهمة.') + (stopped ? '\n\n(أوقفتَ المهمة)' : ''),
           createdAt: new Date().toISOString(),
           steps,
+          thinking: finalThinking || undefined,
         }).catch(() => undefined);
       }
       if (!stopped) {
@@ -570,6 +760,18 @@ export default function ChatScreen() {
       setLiveSteps([]);
       setStatus('');
       setPending(null);
+      // Drain the queue: any message sent while a run was active fires now.
+      setQueue((current) => {
+        const [next, ...rest] = current;
+        if (next && !controller.signal.aborted) {
+          queueRunningRef.current = true;
+          setTimeout(() => {
+            queueRunningRef.current = false;
+            void sendMessage(next);
+          }, 50);
+        }
+        return rest;
+      });
     }
   }
 
@@ -582,8 +784,8 @@ export default function ChatScreen() {
     >
       <KeyboardAvoidingView
         style={styles.keyboard}
-        behavior={Platform.OS === 'ios' ? 'padding' : undefined}
-        keyboardVerticalOffset={0}
+        behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
+        keyboardVerticalOffset={Platform.OS === 'ios' ? 0 : 24}
       >
         <View style={styles.header}>
           <View style={styles.headerCopy}>
@@ -597,9 +799,19 @@ export default function ChatScreen() {
               {provider.model
                 ? `${provider.providerName} · ${provider.model} · ${
                     provider.free ? 'مجاني · ' : ''
-                  }${formatContext(provider.contextLength)} · ضغط تلقائي`
+                  }${formatContext(provider.contextLength)}`
                 : 'الموديل غير مضبوط بعد'}
             </Text>
+            {contextInfo ? (
+              <Text style={[styles.contextChip, { color: colors.primary }]}>
+                {contextInfo}
+                {queue.length ? ` · ⏳ في الطابور: ${queue.length}` : ''}
+              </Text>
+            ) : queue.length ? (
+              <Text style={[styles.contextChip, { color: colors.warning }]}>
+                ⏳ في الطابور: {queue.length}
+              </Text>
+            ) : null}
           </View>
           <View style={styles.headerActions}>
             <Pressable
@@ -687,7 +899,12 @@ export default function ChatScreen() {
             style={styles.messages}
             data={reversed}
             keyExtractor={(item) => item.id}
-            renderItem={({ item }) => <MessageBubble message={item} />}
+            renderItem={({ item }) => (
+              <MessageBubble
+                message={item}
+                onEditMessage={item.role === 'user' ? (content) => void sendMessage(content) : undefined}
+              />
+            )}
             inverted
             keyboardDismissMode="interactive"
             keyboardShouldPersistTaps="handled"
@@ -724,6 +941,89 @@ export default function ChatScreen() {
           </View>
         ) : null}
 
+        {runPlan ? (
+          <View style={[styles.planBar, { borderColor: colors.border, backgroundColor: colors.card }]}>
+            <View style={styles.planHead}>
+              <Feather
+                name={planDone === 'ok' ? 'check-circle' : planDone === 'fail' ? 'x-circle' : 'list'}
+                size={14}
+                color={planDone === 'ok' ? colors.success : planDone === 'fail' ? colors.destructive : colors.primary}
+              />
+              <Text style={[styles.planTitle, { color: colors.foreground }]}>
+                {planDone === 'ok' ? 'الخطة — تمت بنجاح' : planDone === 'fail' ? 'الخطة — توقفت' : 'الخطة — جارِ التنفيذ'}
+              </Text>
+              <Pressable
+                accessibilityRole="button"
+                accessibilityLabel="إغلاق الخطة"
+                onPress={() => setRunPlan(null)}
+              >
+                <Feather name="x" size={14} color={colors.mutedForeground} />
+              </Pressable>
+            </View>
+            {runPlan.split('\n').map((line, i) => (
+              <View key={i} style={styles.planRow}>
+                <Feather
+                  name={planDone === 'ok' ? 'check' : 'circle'}
+                  size={12}
+                  color={planDone === 'ok' ? colors.success : colors.mutedForeground}
+                />
+                <Text style={[styles.planText, { color: colors.foreground }]}>{line}</Text>
+              </View>
+            ))}
+          </View>
+        ) : null}
+
+        {showSlash ? (
+          <View style={[styles.slashMenu, { backgroundColor: colors.card, borderColor: colors.border }]}>
+            {SLASH_COMMANDS.filter((c) =>
+              c.cmd.startsWith((draft.slice(1).split(' ')[0] || '').toLowerCase()),
+            ).map((c) => (
+              <Pressable
+                key={c.cmd}
+                accessibilityRole="button"
+                onPress={() => void pickSlashCommand(c.cmd)}
+                style={[styles.slashItem, { borderBottomColor: colors.border }]}
+              >
+                <Text style={[styles.slashText, { color: colors.foreground }]}>{c.label}</Text>
+              </Pressable>
+            ))}
+          </View>
+        ) : null}
+
+        {showSkillMenu ? (
+          <View style={[styles.slashMenu, styles.skillMenu, { backgroundColor: colors.card, borderColor: colors.border }]}>
+            <Text style={[styles.slashHeader, { color: colors.primary }]}>اختاري مهارة:</Text>
+            <ScrollView style={{ maxHeight: 220 }}>
+              {skills
+                .filter((s) => s.active)
+                .map((s) => (
+                  <Pressable
+                    key={s.id}
+                    accessibilityRole="button"
+                    onPress={() => void pickSkill(s.name)}
+                    style={[styles.slashItem, { borderBottomColor: colors.border }]}
+                  >
+                    <Text style={[styles.slashText, { color: colors.foreground }]}>{s.name}</Text>
+                    {s.description ? (
+                      <Text style={[styles.slashSub, { color: colors.mutedForeground }]} numberOfLines={1}>
+                        {s.description}
+                      </Text>
+                    ) : null}
+                  </Pressable>
+                ))}
+            </ScrollView>
+          </View>
+        ) : null}
+
+        {thinkingPreview && sending ? (
+          <View style={[styles.thinkingBar, { borderColor: colors.border }]}>
+            <Feather name="cpu" size={13} color={colors.primary} />
+            <Text style={[styles.thinkingBarText, { color: colors.mutedForeground }]} numberOfLines={1}>
+              {thinkingPreview.slice(-140)}
+            </Text>
+          </View>
+        ) : null}
+
         <View
           style={[
             styles.composerWrap,
@@ -743,8 +1043,8 @@ export default function ChatScreen() {
             <TextInput
               ref={inputRef}
               value={draft}
-              onChangeText={setDraft}
-              placeholder="اكتبي رسالتك هنا..."
+              onChangeText={onDraftChange}
+              placeholder="اكتبي رسالتك هنا... (اكتبي / للأوامر)"
               placeholderTextColor={colors.mutedForeground}
               multiline
               maxLength={12000}
@@ -755,6 +1055,21 @@ export default function ChatScreen() {
               textAlignVertical="center"
               accessibilityLabel="رسالتك للمساعد"
             />
+            {sending && draft.trim() ? (
+              <Pressable
+                accessibilityRole="button"
+                accessibilityLabel="إضافة للطابور"
+                onPress={() => {
+                  setQueue((q) => [...q, draft.trim()]);
+                  setDraft('');
+                  setShowSlash(false);
+                  setShowSkillMenu(false);
+                }}
+                style={[styles.sendButton, { backgroundColor: colors.secondary }]}
+              >
+                <Feather name="plus" size={19} color={colors.secondaryForeground} />
+              </Pressable>
+            ) : null}
             <Pressable
               accessibilityRole="button"
               accessibilityLabel={sending ? 'إيقاف المهمة' : 'إرسال الرسالة'}
@@ -946,6 +1261,47 @@ const styles = StyleSheet.create({
     borderRadius: 17,
   },
   messageText: { fontSize: 14, lineHeight: 22, textAlign: 'auto' },
+  diffLine: { fontFamily: 'monospace', fontSize: 12.5, lineHeight: 19, textAlign: 'left', writingDirection: 'ltr' },
+  thinkingToggle: { flexDirection: 'row-reverse', alignItems: 'center', gap: 6, borderTopWidth: 1, paddingTop: 8, marginTop: 8 },
+  thinkingToggleText: { fontSize: 11, fontWeight: '700' },
+  thinkingBox: { borderWidth: 1, borderRadius: 12, padding: 10, marginTop: 8, marginBottom: 8, maxHeight: 220, overflow: 'hidden' },
+  thinkingText: { fontSize: 12, lineHeight: 19, textAlign: 'right' },
+  thinkingBar: {
+    flexDirection: 'row-reverse',
+    alignItems: 'center',
+    gap: 8,
+    borderWidth: 1,
+    borderRadius: 12,
+    paddingHorizontal: 12,
+    paddingVertical: 8,
+    marginHorizontal: 14,
+    marginBottom: 6,
+  },
+  thinkingBarText: { flex: 1, fontSize: 11 },
+  userActions: { flexDirection: 'row-reverse', alignItems: 'center', gap: 5, borderTopWidth: 1, marginTop: 8, paddingTop: 7 },
+  userActionText: { fontSize: 11, fontWeight: '700' },
+  contextChip: { fontSize: 10, fontWeight: '700', marginTop: 3, textAlign: 'right' },
+  planBar: { borderWidth: 1, borderRadius: 14, marginHorizontal: 14, marginBottom: 8, padding: 12, gap: 7 },
+  planHead: { flexDirection: 'row-reverse', alignItems: 'center', justifyContent: 'space-between', gap: 8 },
+  planTitle: { flex: 1, fontSize: 12, fontWeight: '700', textAlign: 'right' },
+  planRow: { flexDirection: 'row-reverse', alignItems: 'flex-start', gap: 7 },
+  planText: { flex: 1, fontSize: 12, lineHeight: 18, textAlign: 'right' },
+  slashMenu: {
+    position: 'absolute',
+    bottom: '78%',
+    right: 14,
+    left: 14,
+    borderWidth: 1,
+    borderRadius: 14,
+    maxHeight: 300,
+    zIndex: 50,
+    elevation: 50,
+  },
+  skillMenu: { maxHeight: 300, paddingVertical: 6, paddingHorizontal: 4 },
+  slashHeader: { fontSize: 11, fontWeight: '700', padding: 8, textAlign: 'right' },
+  slashItem: { borderBottomWidth: 1, paddingHorizontal: 12, paddingVertical: 10 },
+  slashText: { fontSize: 13, fontWeight: '600', textAlign: 'right' },
+  slashSub: { fontSize: 10, marginTop: 2, textAlign: 'right' },
   shareDraft: { flexDirection: 'row-reverse', alignItems: 'center', justifyContent: 'flex-start', gap: 6, borderTopWidth: 1, marginTop: 9, paddingTop: 8 },
   shareDraftText: { fontSize: 11, fontWeight: '700' },
   steps: { gap: 5, marginBottom: 8 },

@@ -641,23 +641,46 @@ export default function SettingsScreen() {
               />
               {!serviceOn ? (
                 <ActionButton
-                  label="تفعيلها من إعدادات النظام (خطوات موضحة)"
+                  label="فتح صفحة التطبيق في إعدادات النظام (المسار الأسرع)"
                   icon="shield"
                   onPress={() =>
                     Alert.alert(
                       'تفعيل إمكانية الوصول — 3 خطوات',
-                      '1) هتفتح صفحة إعدادات النظام: دوّر على "OneByte Agent" واضغط عليها.\n\n' +
-                        '2) لو المفتاح جنب الاسم رمادي ومش بيتحرك (في أندرويد 13+):\n' +
-                        'ارجع لصفحة التطبيقات ← OneByte Agent ← اضغط تلات النقط (⋮) فوق ← "السماح بالإعدادات المقيدة" ← فعّلها، ثم ارجع وحاول تاني.\n\n' +
-                        '3) شغّل المفتاح ووافق على تنبيه النظام اللي هيظهر.\n\n' +
-                        'تقدر توقفه في أي وقت من نفس المكان.',
+                      '1) من صفحة التطبيق اللي هتفتح: اضغطي "إمكانية الوصول" (أو من إعدادات النظام ← إمكانية الوصول) ← دوّري على "OneByte Agent" وشغّلي مفتاحه.\n\n' +
+                        '2) لو المفتاح رمادي ومش بيتحرك (أندرويد 13+): من نفس صفحة التطبيقات ← اضغطي ⋮ (تلات نقط فوق) ← "السماح بالإعدادات المقيدة" ← فعّليها، ثم ارجعي للمفتاح.\n\n' +
+                        '3) وافقي على تنبيه النظام. تقدري توقفيه في أي وقت من نفس المكان.',
                       [
                         { text: 'إلغاء', style: 'cancel' },
-                        { text: 'فتح الإعدادات', onPress: () => Device.openAccessibilitySettings() },
+                        { text: 'فتح صفحة التطبيق', onPress: () => Device.openAppDetailsSettings() },
+                        { text: 'صفحة إمكانية الوصول', onPress: () => Device.openAccessibilitySettings() },
                       ],
                     )
                   }
                 />
+              ) : null}
+              {agent.autoApprovedTools.length ? (
+                <View style={{ gap: 6 }}>
+                  <Text style={[styles.cardTitle, { color: colors.foreground }]}>
+                    موافقات محفوظة "دائمًا" (اضغطي للتراجع):
+                  </Text>
+                  <View style={styles.presetWrap}>
+                    {agent.autoApprovedTools.map((key) => (
+                      <Pressable
+                        key={key}
+                        accessibilityRole="button"
+                        accessibilityLabel={`إزالة الموافقة الدائمة على ${key}`}
+                        onPress={() =>
+                          void saveAgentSettings({
+                            autoApprovedTools: agent.autoApprovedTools.filter((k) => k !== key),
+                          }).catch(() => Alert.alert('تعذّر الحفظ', 'حاولي مرة أخرى.'))
+                        }
+                        style={[styles.presetChip, { borderColor: colors.success, minWidth: '45%' }]}
+                      >
+                        <Text style={[styles.presetChipText, { color: colors.success }]}>{key}</Text>
+                      </Pressable>
+                    ))}
+                  </View>
+                </View>
               ) : null}
             </>
           )}

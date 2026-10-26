@@ -26,6 +26,15 @@ class DeviceControlModule : Module() {
       context.startActivity(intent)
     }
 
+    Function("openAppDetailsSettings") {
+      // The app's own details page — the shortest path to "السماح بالإعدادات المقيدة"
+      // on Android 13+ and to the app's accessibility entry on many launchers.
+      val intent = Intent(Settings.ACTION_APPLICATION_DETAILS_SETTINGS)
+        .setData(android.net.Uri.parse("package:" + context.packageName))
+        .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+      context.startActivity(intent)
+    }
+
     AsyncFunction("listApps") {
       val pm = context.packageManager
       val launcher = Intent(Intent.ACTION_MAIN).addCategory(Intent.CATEGORY_LAUNCHER)

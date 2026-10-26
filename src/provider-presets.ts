@@ -12,6 +12,11 @@ export interface ProviderPreset {
 
 export const PROVIDER_PRESETS: ProviderPreset[] = [
   { name: 'OpenRouter', baseUrl: 'https://openrouter.ai/api/v1', note: 'أكبر تجميعة وفيه موديلات مجانية' },
+  {
+    name: 'Free OneByte (OmniRoute)',
+    baseUrl: 'http://192.168.1.10:20128/v1',
+    note: 'بوابة OmniRoute المجانية — شغّلها على كمبيوترك وبدّلي الـ IP بمكان جهازك',
+  },
   { name: 'OpenAI', baseUrl: 'https://api.openai.com/v1' },
   { name: 'DeepSeek', baseUrl: 'https://api.deepseek.com/v1', note: 'رخيص وقوي' },
   { name: 'Google Gemini', baseUrl: 'https://generativelanguage.googleapis.com/v1beta/openai', note: 'مدخل OpenAI-compatible' },
