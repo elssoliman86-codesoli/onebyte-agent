@@ -26,11 +26,17 @@ export const PROVIDER_PRESETS: ProviderPreset[] = [
     note: 'مدمج في التطبيق — يعمل على الهاتف مباشرة بدون أي مفتاح أو جهاز خارجي',
     keyless: true,
   },
+  {
+    name: '⭐ OpenCode Zen (مجاني بحدود)',
+    baseUrl: 'https://opencode.ai/zen/v1',
+    note: 'موديلات قوية مجانًا (GPT-5/Claude/DeepSeek-Free/GLM-Free) — بدون مفتاح مع حدود استخدام',
+    keyless: true,
+  },
   { name: 'OpenRouter', baseUrl: 'https://openrouter.ai/api/v1', note: 'أكبر تجميعة وفيه موديلات مجانية' },
   {
     name: 'OmniRoute (سيرفر خاص)',
     baseUrl: 'http://192.168.1.10:20128/v1',
-    note: 'شغّل بوابة OmniRoute على أي جهاز وبدّلي الـ IP',
+    note: 'بوابة OmniRoute — شغّلها على أي جهاز (npm i -g omniroute ثم localhost:20128) وبدّلي الـ IP',
   },
   { name: 'OpenAI', baseUrl: 'https://api.openai.com/v1' },
   { name: 'DeepSeek', baseUrl: 'https://api.deepseek.com/v1', note: 'رخيص وقوي' },
