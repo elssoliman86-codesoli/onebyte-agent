@@ -48,6 +48,7 @@ import * as Device from '@/src/device';
 import { ApprovalSheet, type PendingApproval } from '@/components/ApprovalSheet';
 import { CodeBlock } from '@/components/CodeBlock';
 import { MermaidBlock } from '@/components/MermaidBlock';
+import { HtmlPreview } from '@/components/HtmlPreview';
 
 let localMessageCounter = 0;
 function messageId() {
@@ -121,7 +122,15 @@ function parseSegments(content: string): MessageSegment[] {
   return segments;
 }
 
-function MessageBody({ content, user }: { content: string; user?: boolean }) {
+function MessageBody({
+  content,
+  user,
+  onPreview,
+}: {
+  content: string;
+  user?: boolean;
+  onPreview?: (html: string) => void;
+}) {
   const segments = parseSegments(content);
   return (
     <>
@@ -129,7 +138,18 @@ function MessageBody({ content, user }: { content: string; user?: boolean }) {
         seg.kind === 'text' ? (
           <MarkdownText key={i} text={seg.text} user={user} />
         ) : seg.kind === 'code' ? (
-          <CodeBlock key={i} code={seg.code} language={seg.language} />
+          <CodeBlock
+            key={i}
+            code={seg.code}
+            language={seg.language}
+            onPreview={
+              onPreview &&
+              ((seg.language ?? '').toLowerCase() === 'html' ||
+              /^\s*<!DOCTYPE html/i.test(seg.code))
+                ? onPreview
+                : undefined
+            }
+          />
         ) : (
           <MermaidBlock key={i} source={seg.source} />
         ),
@@ -145,6 +165,50 @@ function MarkdownText({ text, user }: { text: string; user?: boolean }) {
   return (
     <>
       {text.split('\n').map((line, li) => {
+        // Markdown structure: headings and bullets/numbered lists.
+        const heading = /^(#{1,4})\s+(.*)$/.exec(line);
+        if (heading && !user) {
+          const level = heading[1].length;
+          return (
+            <Text
+              key={li}
+              style={[
+                styles.messageText,
+                {
+                  color: colors.primary,
+                  fontWeight: '700',
+                  fontSize: level <= 1 ? 17 : level === 2 ? 15.5 : 14.5,
+                  marginTop: level <= 2 ? 8 : 4,
+                  textAlign: 'right',
+                },
+              ]}
+            >
+              {heading[2]}
+            </Text>
+          );
+        }
+        const bullet = /^[-•]\s+(.*)$/.exec(line.trim());
+        if (bullet) {
+          return (
+            <View key={li} style={styles.bulletRow}>
+              <View style={[styles.bulletDot, { backgroundColor: colors.primary }]} />
+              <Text style={[styles.messageText, { color: baseColor, flex: 1 }]}>
+                {bullet[1]}
+              </Text>
+            </View>
+          );
+        }
+        const numbered = /^(\d{1,2})[.)]\s+(.*)$/.exec(line.trim());
+        if (numbered && !user) {
+          return (
+            <View key={li} style={styles.bulletRow}>
+              <Text style={[styles.listNumber, { color: colors.primary }]}>{numbered[1]}.</Text>
+              <Text style={[styles.messageText, { color: baseColor, flex: 1 }]}>
+                {numbered[2]}
+              </Text>
+            </View>
+          );
+        }
         const rendered = line
           .split(/(\*\*[^*]+\*\*|`[^`]+`)/g)
           .filter(Boolean)
@@ -203,9 +267,11 @@ function MarkdownText({ text, user }: { text: string; user?: boolean }) {
 function MessageBubble({
   message,
   onEditMessage,
+  onPreview,
 }: {
   message: ChatMessage;
   onEditMessage?: (content: string) => void;
+  onPreview?: (html: string) => void;
 }) {
   const colors = useColors();
   const user = message.role === 'user';
@@ -274,7 +340,7 @@ function MessageBubble({
             </Text>
           </View>
         ) : null}
-        <MessageBody content={message.content} user={user} />
+        <MessageBody content={message.content} user={user} onPreview={onPreview} />
         {user && onEditMessage ? (
           <Pressable
             accessibilityRole="button"
@@ -352,6 +418,7 @@ export default function ChatScreen() {
   const [contextInfo, setContextInfo] = useState('');
   const [attachUri, setAttachUri] = useState<string | null>(null);
   const [attachFiles, setAttachFiles] = useState<{ name: string; content: string }[]>([]);
+  const [previewHtml, setPreviewHtml] = useState<string | null>(null);
   const abortRef = useRef<AbortController | null>(null);
   const inputRef = useRef<TextInput>(null);
   const queueRunningRef = useRef(false);
@@ -1104,6 +1171,7 @@ export default function ChatScreen() {
               <MessageBubble
                 message={item}
                 onEditMessage={item.role === 'user' ? (content) => void sendMessage(content) : undefined}
+                onPreview={setPreviewHtml}
               />
             )}
             inverted
@@ -1349,6 +1417,12 @@ export default function ChatScreen() {
 
       <ApprovalSheet pending={pending} />
 
+      <HtmlPreview
+        visible={previewHtml !== null}
+        html={previewHtml ?? ''}
+        onClose={() => setPreviewHtml(null)}
+      />
+
       <Modal
         visible={historyVisible}
         transparent
@@ -1587,6 +1661,9 @@ const styles = StyleSheet.create({
     marginBottom: 7,
   },
   skillChipText: { fontSize: 10, fontWeight: '700' },
+  bulletRow: { flexDirection: 'row-reverse', alignItems: 'flex-start', gap: 7 },
+  bulletDot: { width: 6, height: 6, borderRadius: 3, marginTop: 9 },
+  listNumber: { fontSize: 13, fontWeight: '700', marginTop: 1 },
   slashSub: { fontSize: 10, marginTop: 2, textAlign: 'right' },
   shareDraft: { flexDirection: 'row-reverse', alignItems: 'center', justifyContent: 'flex-start', gap: 6, borderTopWidth: 1, marginTop: 9, paddingTop: 8 },
   shareDraftText: { fontSize: 11, fontWeight: '700' },

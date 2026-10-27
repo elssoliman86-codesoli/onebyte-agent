@@ -20,7 +20,16 @@ const EXT_MAP: Record<string, string> = {
  * dark editor surface (matching the app palette), a copy button, and a
  * download button that saves the snippet as a real file on the device.
  */
-export function CodeBlock({ code, language }: { code: string; language?: string }) {
+export function CodeBlock({
+  code,
+  language,
+  onPreview,
+}: {
+  code: string;
+  language?: string;
+  /** Set for HTML blocks — shows the live-preview button. */
+  onPreview?: (html: string) => void;
+}) {
   const colors = useColors();
   const [copied, setCopied] = useState(false);
   const [saved, setSaved] = useState(false);
@@ -71,6 +80,17 @@ export function CodeBlock({ code, language }: { code: string; language?: string 
           {language || 'code'}
         </Text>
         <View style={styles.headerActions}>
+          {onPreview ? (
+            <Pressable
+              accessibilityRole="button"
+              accessibilityLabel="معاينة حية"
+              onPress={() => onPreview(code)}
+              style={styles.copyBtn}
+            >
+              <Feather name="play-circle" size={13} color={colors.success} />
+              <Text style={[styles.copyText, { color: colors.success }]}>معاينة</Text>
+            </Pressable>
+          ) : null}
           <Pressable
             accessibilityRole="button"
             accessibilityLabel="تحميل الكود كملف"
