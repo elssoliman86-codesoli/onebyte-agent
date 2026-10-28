@@ -1,14 +1,13 @@
 import React, { useState } from 'react';
-import { Modal, Pressable, StyleSheet, Text, View } from 'react-native';
+import { Modal, Platform, Pressable, StyleSheet, Text, View } from 'react-native';
 import { WebView } from 'react-native-webview';
 import { Feather } from '@expo/vector-icons';
 import { useColors } from '@/hooks/useColors';
 
 /**
- * Full-screen live preview for runnable HTML code blocks. Renders in a sandboxed
- * WebView with a reload control. On web the preview opens in a new browser tab
- * (a Modal there would still need the same iframe, and the app runs on web too,
- * so we use the browser's own renderer).
+ * Full-screen live preview for runnable HTML code blocks (and mermaid
+ * diagrams). Renders in a sandboxed WebView on native; on web the same inline
+ * iframe is used, with an extra button to open it in a browser tab.
  */
 export function HtmlPreview({
   visible,
@@ -21,9 +20,10 @@ export function HtmlPreview({
 }) {
   const colors = useColors();
   const [reloadKey, setReloadKey] = useState(0);
+  const isWeb = Platform.OS === 'web';
 
   function openInBrowserTab() {
-    if (PlatformWeb()) {
+    if (isWeb && typeof window !== 'undefined') {
       const blob = new Blob([html], { type: 'text/html' });
       const url = URL.createObjectURL(blob);
       window.open(url, '_blank');
@@ -47,7 +47,7 @@ export function HtmlPreview({
             >
               <Feather name="refresh-cw" size={17} color={colors.primary} />
             </Pressable>
-            {PlatformWeb() ? (
+            {isWeb ? (
               <Pressable
                 accessibilityRole="button"
                 accessibilityLabel="فتح في تبويب المتصفح"
@@ -67,13 +67,18 @@ export function HtmlPreview({
             </Pressable>
           </View>
         </View>
-        {PlatformWeb() ? (
-          <View style={styles.webFallback}>
-            <Feather name="monitor" size={26} color={colors.mutedForeground} />
-            <Text style={[styles.fallbackText, { color: colors.mutedForeground }]}>
-              افتحي المعاينة في تبويب متصفح جديد من الزر أعلاه.
-            </Text>
-          </View>
+        {isWeb ? (
+          <iframe
+            key={reloadKey}
+            srcDoc={html}
+            sandbox="allow-scripts allow-modals allow-popups"
+            style={{
+              flex: 1,
+              width: '100%',
+              border: 'none',
+              backgroundColor: '#0d1117',
+            }}
+          />
         ) : (
           <WebView
             key={reloadKey}
@@ -88,11 +93,6 @@ export function HtmlPreview({
       </View>
     </Modal>
   );
-}
-
-function PlatformWeb(): boolean {
-  // Avoid importing react-native Platform again; check via a cheap marker.
-  return typeof navigator !== 'undefined' && navigator.product === 'Web';
 }
 
 const styles = StyleSheet.create({
@@ -110,6 +110,4 @@ const styles = StyleSheet.create({
   actions: { flexDirection: 'row-reverse', gap: 14 },
   btn: { padding: 4 },
   webview: { flex: 1 },
-  webFallback: { flex: 1, alignItems: 'center', justifyContent: 'center', gap: 10, padding: 24 },
-  fallbackText: { fontSize: 13, textAlign: 'center' },
 });

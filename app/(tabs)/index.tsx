@@ -202,7 +202,7 @@ function MessageBody({
             }
           />
         ) : (
-          <MermaidBlock key={i} source={seg.source} />
+          <MermaidBlock key={i} source={seg.source} onPreview={onPreview} />
         ),
       )}
     </>
@@ -334,6 +334,7 @@ function MessageBubble({
   const user = message.role === 'user';
   const [speaking, setSpeaking] = useState(false);
   const [copied, setCopied] = useState(false);
+  const [rating, setRating] = useState<'up' | 'down' | null>(null);
   // Code blocks are not meant to be read aloud; keep prose only.
   const speakableText = message.content.replace(/```[\s\S]*?(?:```|$)/g, ' ').replace(/\s+/g, ' ').trim();
 
@@ -354,23 +355,12 @@ function MessageBubble({
   }
   return (
     <View style={[styles.messageRow, user && styles.userMessageRow]}>
-      {!user ? (
-        <View style={[styles.avatar, { backgroundColor: colors.accentSubtle }]}>
-          <Feather name="star" size={14} color={colors.primary} />
-        </View>
-      ) : null}
       <View
-        style={[
-          styles.bubble,
-          {
-            backgroundColor: user ? colors.primary : colors.card,
-            borderColor: user ? colors.primary : colors.border,
-            borderWidth: 1,
-            borderRadius: 20,
-            paddingVertical: 12,
-            paddingHorizontal: 16,
-          },
-        ]}
+        style={
+          user
+            ? [styles.bubbleUser, { backgroundColor: colors.primary, borderColor: colors.primary }]
+            : styles.bubbleAssistant
+        }
       >
         {message.skill ? (
           <View style={[styles.skillChip, { backgroundColor: colors.accentSubtle }]}>
@@ -451,17 +441,6 @@ function MessageBubble({
           <View style={styles.assistantActions}>
             <Pressable
               accessibilityRole="button"
-              accessibilityLabel={speaking ? t('stopListen') : t('listen')}
-              onPress={() => void toggleSpeak()}
-              style={[styles.shareDraft, { borderTopColor: colors.border }]}
-            >
-              <Feather name={speaking ? 'volume-x' : 'volume-2'} size={13} color={colors.primary} />
-              <Text style={[styles.shareDraftText, { color: colors.primary }]}>
-                {speaking ? t('stopListen') : t('listen')}
-              </Text>
-            </Pressable>
-            <Pressable
-              accessibilityRole="button"
               accessibilityLabel={t('copy')}
               onPress={() => {
                 void Clipboard.setStringAsync(message.content).then(() => {
@@ -469,27 +448,66 @@ function MessageBubble({
                   setTimeout(() => setCopied(false), 1400);
                 });
               }}
-              style={[styles.shareDraft, styles.shareDraftStart, { borderTopColor: colors.border }]}
+              hitSlop={6}
+              style={styles.assistantActionIcon}
             >
-              <Feather name={copied ? 'check' : 'copy'} size={13} color={colors.primary} />
-              <Text style={[styles.shareDraftText, { color: colors.primary }]}>
-                {copied ? t('copied') : t('copy')}
-              </Text>
+              <Feather
+                name={copied ? 'check' : 'copy'}
+                size={16}
+                color={copied ? colors.primary : colors.mutedForeground}
+              />
+            </Pressable>
+            <Pressable
+              accessibilityRole="button"
+              accessibilityLabel="تقييم: رد مفيد"
+              onPress={() => setRating((r) => (r === 'up' ? null : 'up'))}
+              hitSlop={6}
+              style={styles.assistantActionIcon}
+            >
+              <Feather
+                name="thumbs-up"
+                size={16}
+                color={rating === 'up' ? colors.primary : colors.mutedForeground}
+              />
+            </Pressable>
+            <Pressable
+              accessibilityRole="button"
+              accessibilityLabel="تقييم: رد غير مفيد"
+              onPress={() => setRating((r) => (r === 'down' ? null : 'down'))}
+              hitSlop={6}
+              style={styles.assistantActionIcon}
+            >
+              <Feather
+                name="thumbs-down"
+                size={16}
+                color={rating === 'down' ? colors.primary : colors.mutedForeground}
+              />
+            </Pressable>
+            <Pressable
+              accessibilityRole="button"
+              accessibilityLabel={speaking ? t('stopListen') : t('listen')}
+              onPress={() => void toggleSpeak()}
+              hitSlop={6}
+              style={styles.assistantActionIcon}
+            >
+              <Feather
+                name={speaking ? 'volume-x' : 'volume-2'}
+                size={16}
+                color={speaking ? colors.primary : colors.mutedForeground}
+              />
             </Pressable>
             <Pressable
               accessibilityRole="button"
               onPress={() =>
                 void Share.share({
-                  title: 'مسودة من OneByte Agent',
+                  title: 'رد من OneByte Agent',
                   message: message.content,
                 })
               }
-              style={[styles.shareDraft, styles.shareDraftStart, { borderTopColor: colors.border }]}
+              hitSlop={6}
+              style={styles.assistantActionIcon}
             >
-              <Feather name="share-2" size={13} color={colors.primary} />
-              <Text style={[styles.shareDraftText, { color: colors.primary }]}>
-                {t('shareDraft')}
-              </Text>
+              <Feather name="share-2" size={16} color={colors.mutedForeground} />
             </Pressable>
           </View>
         ) : null}
@@ -1666,44 +1684,40 @@ export default function ChatScreen() {
                 </Pressable>
               </View>
             ) : null}
-            <View style={styles.composerButtons}>
+            {sending && draft.trim() ? (
               <Pressable
                 accessibilityRole="button"
-                accessibilityLabel={t('attach')}
-                onPress={() => setAttachMenuVisible((v) => !v)}
-                style={[
-                  styles.attachBtn,
-                  {
-                    borderColor: attachMenuVisible ? colors.primary : colors.border,
-                    backgroundColor: attachMenuVisible ? colors.primary : colors.secondary,
-                  },
-                ]}
+                accessibilityLabel="إضافة للطابور"
+                onPress={() => {
+                  setQueue((q) => [...q, draft.trim()]);
+                  setDraft('');
+                  setShowSlash(false);
+                  setShowSkillMenu(false);
+                }}
+                style={[styles.sendButton, { backgroundColor: colors.secondary }]}
               >
-                <Feather
-                  name="plus"
-                  size={19}
-                  color={attachMenuVisible ? colors.primaryForeground : colors.textSecondary}
-                />
+                <Feather name="plus" size={19} color={colors.secondaryForeground} />
               </Pressable>
-              <Pressable
-                accessibilityRole="button"
-                accessibilityLabel="محادثة صوتية"
-                onPress={() => setVoiceChatVisible(true)}
-                style={[
-                  styles.voiceBtn,
-                  {
-                    borderColor: colors.border,
-                    backgroundColor: colors.secondary,
-                  },
-                ]}
-              >
-                <Feather
-                  name="mic"
-                  size={18}
-                  color={colors.textSecondary}
-                />
-              </Pressable>
-            </View>
+            ) : null}
+            <Pressable
+              accessibilityRole="button"
+              accessibilityLabel={sending ? t('stop') : t('send')}
+              disabled={!sending && !draft.trim()}
+              onPress={() => (sending ? stopRun() : void sendMessage())}
+              style={[
+                styles.sendButton,
+                {
+                  backgroundColor: sending ? colors.destructive : colors.primary,
+                  opacity: !sending && !draft.trim() ? 0.5 : 1,
+                },
+              ]}
+            >
+              {sending ? (
+                <Feather name="stop-circle" size={17} color={colors.destructiveForeground} />
+              ) : (
+                <Feather name="arrow-up-circle" size={20} color={colors.primaryForeground} />
+              )}
+            </Pressable>
             <TextInput
               ref={inputRef}
               value={draft}
@@ -1755,40 +1769,44 @@ export default function ChatScreen() {
                 ))}
               </View>
             ) : null}
-            {sending && draft.trim() ? (
+            <View style={styles.composerButtons}>
               <Pressable
                 accessibilityRole="button"
-                accessibilityLabel="إضافة للطابور"
-                onPress={() => {
-                  setQueue((q) => [...q, draft.trim()]);
-                  setDraft('');
-                  setShowSlash(false);
-                  setShowSkillMenu(false);
-                }}
-                style={[styles.sendButton, { backgroundColor: colors.secondary }]}
+                accessibilityLabel={t('attach')}
+                onPress={() => setAttachMenuVisible((v) => !v)}
+                style={[
+                  styles.attachBtn,
+                  {
+                    borderColor: attachMenuVisible ? colors.primary : colors.border,
+                    backgroundColor: attachMenuVisible ? colors.primary : colors.secondary,
+                  },
+                ]}
               >
-                <Feather name="plus" size={19} color={colors.secondaryForeground} />
+                <Feather
+                  name="plus"
+                  size={19}
+                  color={attachMenuVisible ? colors.primaryForeground : colors.textSecondary}
+                />
               </Pressable>
-            ) : null}
-            <Pressable
-              accessibilityRole="button"
-              accessibilityLabel={sending ? t('stop') : t('send')}
-              disabled={!sending && !draft.trim()}
-              onPress={() => (sending ? stopRun() : void sendMessage())}
-              style={[
-                styles.sendButton,
-                {
-                  backgroundColor: sending ? colors.destructive : colors.primary,
-                  opacity: !sending && !draft.trim() ? 0.5 : 1,
-                },
-              ]}
-            >
-              {sending ? (
-                <Feather name="stop-circle" size={17} color={colors.destructiveForeground} />
-              ) : (
-                <Feather name="arrow-up-circle" size={20} color={colors.primaryForeground} />
-              )}
-            </Pressable>
+              <Pressable
+                accessibilityRole="button"
+                accessibilityLabel="محادثة صوتية"
+                onPress={() => setVoiceChatVisible(true)}
+                style={[
+                  styles.voiceBtn,
+                  {
+                    borderColor: colors.border,
+                    backgroundColor: colors.secondary,
+                  },
+                ]}
+              >
+                <Feather
+                  name="mic"
+                  size={18}
+                  color={colors.textSecondary}
+                />
+              </Pressable>
+            </View>
           </View>
           <Text style={[styles.privacyNote, { color: colors.mutedForeground }]}>
             المحادثة محفوظة على جهازك، والرسالة تُرسل مباشرةً لمزود الموديل عند الإرسال.
@@ -1999,6 +2017,22 @@ const styles = StyleSheet.create({
     paddingHorizontal: spacing.sm + spacing.xs + 1,
     borderRadius: radius.lg - 1,
   },
+  bubbleUser: {
+    maxWidth: '85%',
+    paddingVertical: 12,
+    paddingHorizontal: 16,
+    borderRadius: 20,
+    borderWidth: 1,
+  },
+  /** Flat chat-app look: the assistant's reply is plain text on the screen — no card. */
+  bubbleAssistant: {
+    maxWidth: '96%',
+    paddingVertical: 2,
+    paddingHorizontal: 0,
+    borderWidth: 0,
+    borderRadius: 0,
+    backgroundColor: 'transparent',
+  },
   messageText: { fontFamily: typography.fontFamily, fontSize: typography.md, lineHeight: 23, textAlign: 'auto' },
   diffLine: { fontFamily: 'monospace', fontSize: 12.5, lineHeight: 19, textAlign: 'left', writingDirection: 'ltr' },
   thinkingToggle: { flexDirection: 'row-reverse', alignItems: 'center', gap: spacing.xs + 2, borderTopWidth: 1, paddingTop: spacing.sm, marginTop: spacing.sm },
@@ -2116,7 +2150,14 @@ const styles = StyleSheet.create({
     maxWidth: '100%',
   },
   selectedSkillText: { fontFamily: typography.fontFamily, fontSize: typography.xs + 1, fontWeight: typography.weightSemiBold, flexShrink: 1 },
-  assistantActions: { flexDirection: 'row-reverse', alignItems: 'center', gap: spacing.md, borderTopWidth: 1, marginTop: spacing.xs + 5, paddingTop: spacing.sm },
+  assistantActions: { flexDirection: 'row-reverse', alignItems: 'center', gap: spacing.md, marginTop: spacing.xs + 2 },
+  assistantActionIcon: {
+    width: 30,
+    height: 26,
+    alignItems: 'center',
+    justifyContent: 'center',
+    borderRadius: radius.sm,
+  },
   shareDraftStart: { borderTopWidth: 0, marginTop: 0, paddingTop: 0 },
   attachPreviewWrap: { flexDirection: 'row', flexWrap: 'wrap', gap: spacing.xs, paddingHorizontal: spacing.sm + 2, paddingTop: spacing.xs },
   composerButtons: { flexDirection: 'row-reverse', alignItems: 'flex-end', gap: spacing.xs + 2 },
