@@ -213,6 +213,10 @@ function MessageBody({
 function MarkdownText({ text, user }: { text: string; user?: boolean }) {
   const colors = useColors();
   const baseColor = user ? colors.primaryForeground : colors.foreground;
+  if (user) {
+    // Keep user-authored line breaks and paragraphs in one native text block.
+    return <Text style={[styles.messageText, { color: baseColor }]}>{text}</Text>;
+  }
   return (
     <>
       {text.split('\n').map((line, li) => {
@@ -1847,6 +1851,7 @@ export default function ChatScreen() {
         modelLabel={provider.model}
         onClose={() => setVoiceChatVisible(false)}
         onSend={sendMessage}
+        onStop={stopRun}
         onUseKeyboard={(transcript) => {
           setVoiceChatVisible(false);
           setDraft(transcript);
