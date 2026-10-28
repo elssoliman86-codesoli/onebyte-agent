@@ -226,8 +226,8 @@ export default function TasksScreen() {
             <Feather name="plus" size={19} color={colors.primaryForeground} />
           </Pressable>
         }
+        topBar={<ScreenTopBar active="tasks" />}
       >
-        <ScreenTopBar active="tasks" />
         <Surface style={styles.localOnlyCard}>
               <View style={[styles.localIcon, { backgroundColor: colors.accentSubtle }]}>
             <Feather name="smartphone" size={17} color={colors.primary} />

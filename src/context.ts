@@ -289,6 +289,7 @@ export async function summariseBacklog({
   messages,
   chunkTokens,
   signal,
+  preserveVerbatim = true,
 }: {
   settings: ProviderSettings;
   apiKey: string;
@@ -296,6 +297,8 @@ export async function summariseBacklog({
   messages: ChatMessage[];
   chunkTokens: number;
   signal?: AbortSignal;
+  /** Keep the verbatim appendix for durable history compaction. */
+  preserveVerbatim?: boolean;
 }): Promise<string> {
   let summary = previousSummary;
   let chunk: ChatMessage[] = [];
@@ -305,25 +308,55 @@ export async function summariseBacklog({
 
   const flush = async () => {
     if (!chunk.length) return;
-    // Extract critical content from this chunk before summarising
-    allCriticalContent.push(...extractCriticalContent(chunk));
+    // Extract critical content before summarising. Large one-off prompts can
+    // skip the final verbatim appendix to keep the model input compact.
+    if (preserveVerbatim) allCriticalContent.push(...extractCriticalContent(chunk));
     summary = await summarise({ settings, apiKey, previousSummary: summary, messages: chunk, signal });
     chunk = [];
     size = 0;
   };
   
   for (const message of messages) {
-    // A single giant message is truncated rather than blocking the chat forever.
-    const content = message.content.length > chunkTokens * 3 ? message.content.slice(0, chunkTokens * 3) + '…' : message.content;
-    const t = estimateTokens(content);
-    if (size + t > chunkTokens) await flush();
-    chunk.push({ ...message, content });
-    size += t;
+    // Never truncate a large message during compaction: split it into ordered,
+    // explicitly labelled pieces so every original character reaches the summary.
+    const maxChars = Math.max(1_200, chunkTokens * 3);
+    const parts: string[] = [];
+    let offset = 0;
+    while (offset < message.content.length) {
+      let end = Math.min(offset + maxChars, message.content.length);
+      if (end < message.content.length) {
+        const boundary = Math.max(
+          message.content.lastIndexOf("\n", end),
+          message.content.lastIndexOf(" ", end),
+        );
+        if (boundary > offset + Math.floor(maxChars * 0.65)) end = boundary;
+      }
+      parts.push(message.content.slice(offset, end));
+      offset = end;
+    }
+    if (!parts.length) parts.push(message.content);
+
+    for (let index = 0; index < parts.length; index += 1) {
+      const content = parts.length > 1
+        ? `[رسالة واحدة طويلة — الجزء ${index + 1} من ${parts.length}; تابع الأجزاء بالترتيب دون إسقاط التفاصيل.]\n${parts[index]}`
+        : parts[index];
+      const t = estimateTokens(content);
+      if (size + t > chunkTokens) await flush();
+      chunk.push({
+        ...message,
+        id: parts.length > 1 ? `${message.id}-part-${index + 1}` : message.id,
+        content,
+        // Keep any non-text payload only on the first summary piece.
+        imageUri: index === 0 ? message.imageUri : undefined,
+        images: index === 0 ? message.images : undefined,
+      });
+      size += t;
+    }
   }
   await flush();
   
   // If we accumulated significant critical content, append it to the final summary
-  if (allCriticalContent.length > 0) {
+  if (preserveVerbatim && allCriticalContent.length > 0) {
     const uniqueCritical = [...new Set(allCriticalContent)];
     const criticalSection = `\n\n--- محتوى حرفي محفوظ من المحادثة الكاملة ---\n${uniqueCritical.join('\n')}\n--- نهاية المحتوى الحرفي ---\n`;
     summary = summary.trim() + criticalSection;

@@ -140,6 +140,9 @@ function errorForStatus(status: number, keyless = false): Error {
   if (status === 404) {
     return new Error('لم يتم العثور على المسار. راجعي Base URL للمزود.');
   }
+  if (status === 413) {
+    return new Error('الطلب أكبر من الحد الذي يقبله مزود الموديل (قد يكون بسبب حجم الصور أو النص). قلّل حجم المرفقات أو جرّب مزودًا يدعم طلبات أكبر.');
+  }
   if (status === 429) {
     return new Error('وصلتِ إلى حد الاستخدام لدى المزود. حاولي لاحقًا.');
   }
@@ -251,19 +254,53 @@ export async function streamModelChat({
   }
 }
 
+const LONG_USER_MESSAGE_CHARS = 12_000;
+
+/**
+ * Split only oversized user text into consecutive context-preserving parts.
+ * Original text is retained verbatim; image payloads stay attached to part 1.
+ */
+function splitLongUserText(text: string, maxChars = LONG_USER_MESSAGE_CHARS): string[] {
+  if (text.length <= maxChars) return [text];
+  const parts: string[] = [];
+  let offset = 0;
+  while (offset < text.length) {
+    let end = Math.min(offset + maxChars, text.length);
+    if (end < text.length) {
+      const boundary = Math.max(
+        text.lastIndexOf("\n", end),
+        text.lastIndexOf(" ", end),
+        text.lastIndexOf("\t", end),
+      );
+      if (boundary > offset + Math.floor(maxChars * 0.65)) end = boundary;
+    }
+    parts.push(text.slice(offset, end));
+    offset = end;
+  }
+  return parts;
+}
+
 export function toProviderMessages(messages: ChatMessage[]): ProviderChatMessage[] {
   return messages
     .filter((message) => message.content.trim() || message.imageUri || message.images?.length)
-    .map(({ role, content, imageUri, images }) => {
+    .flatMap(({ role, content, imageUri, images }) => {
       const imageUris = images?.length ? images : imageUri ? [imageUri] : [];
-      if (imageUris.length) {
-        const parts: ProviderContentPart[] = [
-          { type: 'text', text: content.trim() || 'صف هذه الصورة' },
-          ...imageUris.map((uri) => ({ type: 'image_url' as const, image_url: { url: uri } })),
-        ];
-        return { role, content: parts };
-      }
-      return { role, content };
+      const textParts = role === 'user' ? splitLongUserText(content) : [content];
+      return textParts.map((part, index) => {
+        const partText = textParts.length > 1
+          ? `[طلب واحد طويل — الجزء ${index + 1} من ${textParts.length}. تعامل مع جميع الأجزاء كتعليمات متصلة، ولا تعتبر هذا الجزء طلبًا مستقلًا. حافظ على التفاصيل حرفيًا.]\n${part}`
+          : part;
+        // Sending images once avoids duplicate image payloads and excess request size.
+        const imagesForPart = index === 0 ? imageUris : [];
+        if (imagesForPart.length) {
+          const parts: ProviderContentPart[] = [
+            { type: 'text', text: partText.trim() || 'صف هذه الصورة' },
+            ...imagesForPart.map((uri) => ({ type: 'image_url' as const, image_url: { url: uri } })),
+          ];
+          return { role, content: parts };
+        }
+        return { role, content: partText };
+      });
     });
 }
 

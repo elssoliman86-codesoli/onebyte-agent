@@ -140,10 +140,10 @@ export function CommandPalette({ onClose }: { onClose: () => void }) {
                     cmd.run();
                     onClose();
                   }}
-                  style={({ hovered }) => [
+                  style={({ pressed }) => [
                     styles.row,
                     i === cursor && styles.rowActive,
-                    hovered && i !== cursor && styles.rowHover,
+                    pressed && i !== cursor && styles.rowHover,
                   ]}
                 >
                   <Feather name={cmd.icon} size={15} color={i === cursor ? desktopColors.accentHover : desktopColors.textMuted} />

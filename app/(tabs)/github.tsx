@@ -295,7 +295,7 @@ export default function GithubProjectsScreen() {
               {shownFiles.length ? shownFiles.map((file) => (
                 <Pressable key={file.path} disabled={busy} onPress={() => void openFile(file)}
                   style={[styles.fileRow, { borderBottomColor: colors.border }, selectedPath === file.path ? { backgroundColor: colors.accentSubtle } : null]}>
-                  <Feather name="file-code" size={14} color={selectedPath === file.path ? accent : muted} />
+                  <Feather name="code" size={14} color={selectedPath === file.path ? accent : muted} />
                   <Text style={[styles.fileName, { color: fg }]} numberOfLines={1}>{file.path}</Text>
                   <Text style={[styles.help, { color: muted }]}>{formatBytes(file.size ?? 0)}</Text>
                 </Pressable>

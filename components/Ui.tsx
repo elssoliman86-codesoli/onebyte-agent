@@ -22,6 +22,7 @@ export function AppScreen({
   subtitle,
   children,
   action,
+  topBar,
   scroll = true,
   compact = false,
 }: {
@@ -30,6 +31,8 @@ export function AppScreen({
   subtitle?: string;
   children: React.ReactNode;
   action?: React.ReactNode;
+  /** A fixed, screen-level toolbar rendered outside the scrollable page content. */
+  topBar?: React.ReactNode;
   scroll?: boolean;
   /** Skip the big heading block — the screen renders its own compact top-bar row instead. */
   compact?: boolean;
@@ -66,6 +69,7 @@ export function AppScreen({
       edges={['top']}
       style={[styles.safe, { backgroundColor: colors.background }]}
     >
+      {topBar ? <View>{topBar}</View> : null}
       {scroll ? (
         <ScrollView
           contentContainerStyle={styles.scrollContent}
