@@ -1750,7 +1750,7 @@ export default function ChatScreen() {
               placeholder="اكتبي رسالتك هنا..."
               placeholderTextColor={colors.mutedForeground}
               multiline
-              maxLength={12000}
+              maxLength={60000}
               blurOnSubmit={false}
               keyboardAppearance={Platform.OS === 'ios' ? 'light' : undefined}
               returnKeyType="default"
