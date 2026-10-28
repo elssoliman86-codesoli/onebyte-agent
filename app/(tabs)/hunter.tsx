@@ -10,6 +10,7 @@ import {
   isAuthorized,
   loadHunterLog,
   loadTargets,
+  saveTargets,
   runRequest,
   saveHunterLog,
   type HunterLogEntry,
@@ -171,7 +172,7 @@ export default function CyberSecurityScreen() {
     >
       <Surface style={styles.scopeCard}>
         <View style={styles.sectionHeading}>
-          <Feather name="shield-check" size={18} color={colors.primary} />
+          <Feather name="shield" size={18} color={colors.primary} />
           <Text style={[styles.sectionTitle, { color: colors.foreground }]}>نطاقات الاختبار المصرّح بها</Text>
         </View>
         <TextInput
@@ -308,7 +309,7 @@ export default function CyberSecurityScreen() {
               <Text style={[styles.methodText, { color: colors.primary }]}>{entry.method}</Text>
             </View>
             <View style={{ flex: 1, gap: 3 }}>
-              <Text numberOfLines={1} style={[styles.scopeHost, { color: colors.foreground }]}>{hostOf(entry.url)}{new URLSafePath(entry.url)}</Text>
+              <Text numberOfLines={1} style={[styles.scopeHost, { color: colors.foreground }]}>{hostOf(entry.url)}{URLSafePath(entry.url)}</Text>
               <Text style={[styles.muted, { color: colors.mutedForeground }]}>{entry.detail}</Text>
             </View>
             <Feather name="chevron-left" size={16} color={colors.mutedForeground} />
