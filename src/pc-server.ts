@@ -254,7 +254,7 @@ async function route(event: {
     if (method !== 'GET' && method !== 'POST') {
       return json(id, 405, { error: 'method' });
     }
-    if (path === '/' || path === '/index.html') {
+    if (path === '/' || path === '/index.html' || path === '/desktop' || path === '/desktop/') {
       return html(id, PAGE_HTML);
     }
     if (path === '/api/login') {
@@ -753,7 +753,9 @@ html.desktop-mode #login{
 (function(){
   // The phone-linked PC server is separate from the Expo web shell. Honor the same desktop query here.
   var desktopMode = false;
-  try { desktopMode = new URLSearchParams(window.location.search).get('desktop') === '1'; } catch (_) {}
+  try {
+    desktopMode = new URLSearchParams(window.location.search).get('desktop') === '1' || /\\/desktop\\/?$/.test(window.location.pathname);
+  } catch (_) {}
   document.documentElement.classList.toggle('desktop-mode', desktopMode);
   var token = sessionStorage.getItem('ob_token') || '';
   var lang = localStorage.getItem('ob_lang') || 'ar';
