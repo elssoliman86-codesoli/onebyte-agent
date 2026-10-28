@@ -140,6 +140,9 @@ function errorForStatus(status: number, keyless = false): Error {
   if (status === 404) {
     return new Error('لم يتم العثور على المسار. راجعي Base URL للمزود.');
   }
+  if (status === 413) {
+    return new Error('الطلب أكبر من الحد الذي يقبله مزود الموديل (قد يكون بسبب حجم الصور أو النص). قلّل حجم المرفقات أو جرّب مزودًا يدعم طلبات أكبر.');
+  }
   if (status === 429) {
     return new Error('وصلتِ إلى حد الاستخدام لدى المزود. حاولي لاحقًا.');
   }
