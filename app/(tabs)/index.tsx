@@ -1027,8 +1027,13 @@ export default function ChatScreen() {
     skillOverride?: string,
   ): Promise<string> {
     let text = (explicitText ?? draft).trim();
-    if (!text || sending) {
-      // While a run is active, new messages join the queue instead of being lost.
+    if (!text && (attachImages.length || attachFiles.length)) {
+      text = attachImages.length
+        ? 'حلّل الصور المرفقة معًا، واشرح محتوى كل صورة والتفاصيل والاختلافات بينها.'
+        : 'حلّل الملفات المرفقة وقدم خلاصة واضحة ومتكاملة.';
+    }
+    if ((!text && !attachImages.length && !attachFiles.length) || sending) {
+      // While a run is active, new text messages join the queue instead of being lost.
       if (sending && text) setQueue((q) => [...q, text]);
       return '';
     }
