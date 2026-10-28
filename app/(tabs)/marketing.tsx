@@ -66,7 +66,7 @@ export default function MarketingScreen() {
       topBar={<ScreenTopBar active="marketing" />}
     >
       <Surface style={styles.notice}>
-        <Feather name="shield-check" size={18} color={colors.primary} />
+        <Feather name="shield" size={18} color={colors.primary} />
         <Text style={[styles.noticeText, { color: colors.foreground }]}>
           المنصات تفتح من روابطها الرسمية. لو أنت مسجل الدخول في المتصفح أو التطبيق، قد تفتح جلستك الحالية؛ وإلا سجّل الدخول بنفسك. OneByte لا يطلب كلمة السر ولا يتجاوز تسجيل الدخول أو صلاحيات المنصة.
         </Text>
