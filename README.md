@@ -14,7 +14,7 @@
 [![TypeScript](https://img.shields.io/badge/TypeScript-React_Native-3178C6?style=for-the-badge&logo=typescript&logoColor=white)](https://www.typescriptlang.org/)
 [![License: MIT](https://img.shields.io/badge/License-MIT-f43f5e?style=for-the-badge)](./LICENSE)
 
-**[تنزيل آخر إصدار منشور](https://github.com/elssoliman86-codesoli/onebyte-agent/releases/latest) · [سجل التغييرات](https://github.com/elssoliman86-codesoli/onebyte-agent/commits/main) · [الإبلاغ عن مشكلة](https://github.com/elssoliman86-codesoli/onebyte-agent/issues)**
+**[⬇️ تنزيل APK — OneByte Agent v1.4.1](https://github.com/elssoliman86-codesoli/onebyte-agent/releases/download/v1.4.1/onebyte-agent-v1.4.1.apk) · [📦 تفاصيل الإصدار v1.4.1](https://github.com/elssoliman86-codesoli/onebyte-agent/releases/tag/v1.4.1) · [🧾 سجل التغييرات](https://github.com/elssoliman86-codesoli/onebyte-agent/commits/main) · [🐞 الإبلاغ عن مشكلة](https://github.com/elssoliman86-codesoli/onebyte-agent/issues)**
 
 </div>
 
