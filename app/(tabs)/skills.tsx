@@ -385,8 +385,8 @@ export default function SkillsScreen() {
             <Feather name="plus" size={19} color={colors.primaryForeground} />
           </Pressable>
         }
+        topBar={<ScreenTopBar active="skills" />}
       >
-        <ScreenTopBar active="skills" />
         <Surface style={styles.infoCard}>
           <Feather name="layers" size={18} color={colors.primary} />
           <Text style={[styles.infoText, { color: colors.foreground }]}>
