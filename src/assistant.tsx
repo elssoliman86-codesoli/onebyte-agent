@@ -384,6 +384,12 @@ export function AssistantProvider({
               updatedAt: now(),
             };
           });
+          const existingCoreNames = new Set(skills.filter((skill) => skill.core).map((skill) => skill.name));
+          const missingSeeds = seeds.filter((seed) => !existingCoreNames.has(seed.name));
+          if (missingSeeds.length) {
+            skills = [...skills, ...missingSeeds];
+            changed = true;
+          }
           if (changed) {
             restored.skills = skills;
             void storage.setSkills(skills);
