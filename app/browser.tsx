@@ -14,7 +14,7 @@ import { router, useLocalSearchParams } from 'expo-router';
 import { WebView } from 'react-native-webview';
 import { useColors } from '@/hooks/useColors';
 import { alertCompat } from '@/src/web-alert';
-import { registerEmbeddedBrowser, type EmbeddedBrowserDriver, type EmbeddedBrowserElement, type EmbeddedBrowserSnapshot } from '@/src/embedded-browser';
+import { registerEmbeddedBrowser, type EmbeddedBrowserDriver, type EmbeddedBrowserElement, type EmbeddedBrowserSnapshot, type EmbeddedBrowserRequestResult } from '@/src/embedded-browser';
 import { isAuthorized, loadTargets } from '@/src/hunter';
 
 export default function BrowserScreen() {
