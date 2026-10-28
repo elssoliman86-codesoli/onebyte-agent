@@ -1176,6 +1176,31 @@ export default function ChatScreen() {
       };
       const system = buildAssistantSystemPrompt(skills, memories, promptOptions);
 
+      // Compact exceptionally large one-off prompts before passing them to the agent.
+      // Keep the original text in chat history; only the working context is summarised.
+      const oneOffPromptBudget = Math.max(18_000, Math.floor(agent.maxWorkingTokens * 0.72));
+      let requestForContext = wireUserMessage;
+      if (estimateTokens(wireUserMessage.content) > oneOffPromptBudget) {
+        setContextInfo('الطلب كبير — بجهّز ملخصًا يحافظ على التفاصيل المهمة قبل التنفيذ…');
+        const requestSummary = await summariseBacklog({
+          settings: provider,
+          apiKey,
+          previousSummary: '',
+          messages: [{ ...wireUserMessage, images: undefined, imageUri: undefined }],
+          chunkTokens: Math.max(4_000, Math.floor(oneOffPromptBudget * 0.45)),
+          signal: controller.signal,
+          preserveVerbatim: false,
+        });
+        requestForContext = {
+          ...wireUserMessage,
+          content: [
+            'الطلب الأصلي طويل وتم تلخيصه داخليًا للحفاظ على حدود السياق.',
+            'اعتبر الملخص التالي مرجعًا واحدًا للطلب، مع الحفاظ على القيود والمتطلبات والتفاصيل المهمة:',
+            requestSummary,
+            'نفّذ المطلوب بدقة، واذكر أي تفصيل لا يمكن استعادته من الملخص بدل اختلاقه.',
+          ].join('\n\n'),
+        };
+      }
       // Auto-compaction: the chat never "fills up". Old turns are folded into a summary.
       const budget = workingBudget(provider, agent.maxWorkingTokens);
       const runSessionContext = editIndex >= 0 && activeSession
@@ -1187,7 +1212,7 @@ export default function ChatScreen() {
             contextPreservedMessageIds: [],
           }
         : activeSession;
-      const plan = planContext(runSessionContext, [wireUserMessage], estimateTokens(system), budget);
+      const plan = planContext(runSessionContext, [requestForContext], estimateTokens(system), budget);
       setContextInfo(
         `السياق: ${Math.round(plan.usedTokens / 1000)}K / ${Math.round(budget / 1000)}K توكن`,
       );
@@ -1201,6 +1226,7 @@ export default function ChatScreen() {
           messages: plan.toSummarise,
           chunkTokens: Math.floor(budget * 0.5),
           signal: controller.signal,
+          preserveVerbatim: false,
         });
       }
       if (plan.processedCount > 0) {
