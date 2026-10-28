@@ -68,7 +68,14 @@ export default function BrowserScreen() {
         const matchingTarget = targets.find((target) => parsed.hostname.toLowerCase() === target.host.toLowerCase() || parsed.hostname.toLowerCase().endsWith('.' + target.host.toLowerCase()));
         if (!matchingTarget) throw new Error('الرابط خارج النطاق المصرّح به.');
         scopeHostRef.current = matchingTarget.host.toLowerCase();
-        setAddress(parsed.toString()); setUrl(parsed.toString()); currentUrlRef.current = parsed.toString(); pageReadyRef.current = false;
+        const nextUrl = parsed.toString();
+        if (currentUrlRef.current === nextUrl && pageReadyRef.current) {
+          return driver.readPage();
+        }
+        setAddress(nextUrl);
+        setUrl(nextUrl);
+        currentUrlRef.current = nextUrl;
+        pageReadyRef.current = false;
         return readPageAfterNavigation(driver);
       },
       readPage: async () => JSON.parse(await evaluate(`JSON.stringify({url:location.href,title:document.title,text:(document.body?.innerText||'').slice(0,24000),elements:Array.from(document.querySelectorAll('a,button,input,textarea,select,[role=button],[contenteditable=true]')).slice(0,160).map((el,i)=>({index:i,tag:el.tagName.toLowerCase(),role:el.getAttribute('role')||'',label:(el.innerText||el.getAttribute('aria-label')||el.getAttribute('name')||el.getAttribute('placeholder')||el.value||'').toString().trim().slice(0,240),type:el.type||'',placeholder:el.getAttribute('placeholder')||'',href:el.href||'',disabled:!!el.disabled,password:el.type==='password'}))})`)) as EmbeddedBrowserSnapshot,
