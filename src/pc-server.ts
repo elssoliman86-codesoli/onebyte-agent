@@ -595,6 +595,120 @@ header .s{font-size:11px;color:var(--mutedFg)}
 .pill.warn{color:var(--warning);border-color:var(--warning)}
 .banner{font-size:12px;color:var(--warning);padding:8px 12px;border:1px dashed var(--warning);border-radius:10px;margin:10px 16px;display:none}
 select{background:var(--muted);color:var(--fg);border:1px solid var(--border);border-radius:8px;padding:4px 8px;font-family:inherit}
+
+/* Dedicated desktop bridge layout, activated with ?desktop=1. */
+html.desktop-mode,html.desktop-mode body{height:100%;min-height:100%}
+html.desktop-mode body{
+  overflow:hidden;
+  background:
+    radial-gradient(ellipse at 72% 0%,rgba(16,185,129,.14),transparent 44%),
+    radial-gradient(ellipse at 0% 100%,rgba(52,211,153,.07),transparent 36%),
+    #050D0A;
+}
+html.desktop-mode #app{
+  width:100%;max-width:none;height:100vh;height:100dvh;min-height:0;margin:0;padding:16px;
+  display:grid;gap:12px;
+  grid-template-columns:252px minmax(0,1fr);
+  grid-template-rows:62px auto minmax(0,1fr) auto;
+  grid-template-areas:"sidebar header" "sidebar banner" "sidebar content" "sidebar composer";
+  direction:ltr;
+}
+html.desktop-mode header{
+  grid-area:header;min-width:0;margin:0;padding:0 18px;direction:rtl;
+  background:rgba(10,26,19,.92);border:1px solid var(--border);border-radius:16px;
+  box-shadow:0 8px 28px rgba(0,0,0,.18),inset 0 1px rgba(255,255,255,.025);
+}
+html.desktop-mode header .t{font-size:16px;letter-spacing:.25px}
+html.desktop-mode header .s{margin-top:4px;max-width:56vw;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+html.desktop-mode #approveBanner{grid-area:banner;align-self:center;margin:0;direction:rtl}
+html.desktop-mode #chat,
+html.desktop-mode .panel{
+  grid-area:content;min-width:0;min-height:0;width:auto;max-width:none;margin:0;padding:22px;
+  border:1px solid var(--border);border-radius:18px;
+  background:linear-gradient(180deg,rgba(10,26,19,.97),rgba(5,13,10,.97));
+  box-shadow:0 14px 40px rgba(0,0,0,.2),inset 0 1px rgba(255,255,255,.018);
+  direction:rtl;
+}
+html.desktop-mode #chat{display:flex;overflow-y:auto}
+html.desktop-mode #chat:empty::before{
+  content:"⚡  ONEBYTE AGENT\Aمساعدك جاهز للانطلاق";
+  white-space:pre-line;align-self:center;margin:auto;text-align:center;
+  color:#86A99A;font-size:19px;line-height:2.1;letter-spacing:.3px;
+}
+html.desktop-mode .panel{overflow-y:auto}
+html.desktop-mode .msg{
+  max-width:min(82%,900px);padding:14px 18px;border-radius:16px;
+  box-shadow:0 6px 20px rgba(0,0,0,.12);font-size:14px;line-height:1.8;
+}
+html.desktop-mode .msg.user{box-shadow:0 0 22px rgba(16,185,129,.09)}
+html.desktop-mode #live{max-width:min(82%,900px);padding:12px 16px;border-radius:14px}
+html.desktop-mode #composer{
+  grid-area:composer;min-width:0;align-items:stretch;padding:0;border:0;direction:rtl;
+}
+html.desktop-mode #composer textarea{
+  min-width:0;min-height:50px;max-height:140px;padding:14px 16px;border-radius:14px;
+  border-color:#1F4A33;background:#0A1A13;line-height:1.6;
+}
+html.desktop-mode #composer textarea:focus{
+  outline:none;border-color:#34D399;box-shadow:0 0 0 3px rgba(16,185,129,.12),0 0 22px rgba(16,185,129,.08);
+}
+html.desktop-mode #composer .btn{min-width:96px}
+html.desktop-mode #tabs{
+  grid-area:sidebar;min-width:0;min-height:0;display:flex;flex-direction:column;align-items:stretch;
+  gap:7px;padding:16px 12px;border:1px solid var(--border);border-radius:18px;
+  background:linear-gradient(180deg,#0A1A13 0%,#07110C 100%);
+  box-shadow:0 14px 40px rgba(0,0,0,.24),inset 0 1px rgba(255,255,255,.025);
+  direction:rtl;
+}
+html.desktop-mode #tabs::before{
+  content:"ONEBYTE";display:block;padding:5px 9px 13px;margin:0 2px 8px;
+  border-bottom:1px solid var(--border);color:#E9F6F0;font-size:17px;font-weight:800;
+  letter-spacing:2px;text-shadow:0 0 20px rgba(52,211,153,.2);
+}
+html.desktop-mode #tabs::after{
+  content:"ELECTRIC WORKSPACE  •  LOCAL-FIRST";
+  display:block;margin-top:auto;padding:15px 8px 3px;border-top:1px solid var(--border);
+  color:#547B68;font-size:9px;line-height:1.8;letter-spacing:1px;text-align:center;
+}
+html.desktop-mode #tabs button{
+  flex:0 0 auto;display:flex;align-items:center;gap:10px;width:100%;min-height:44px;
+  padding:11px 12px;text-align:right;border:1px solid transparent;border-radius:12px;
+  color:#86A99A;font-size:13px;transition:background .15s,border-color .15s,color .15s;
+}
+html.desktop-mode #tabs button::before{
+  display:inline-grid;place-items:center;flex:0 0 25px;width:25px;height:25px;
+  border-radius:8px;background:rgba(16,185,129,.07);color:#6EE7B7;font-size:15px;
+}
+html.desktop-mode #tabs button[data-tab="chat"]::before{content:"◈"}
+html.desktop-mode #tabs button[data-tab="tasks"]::before{content:"◷"}
+html.desktop-mode #tabs button[data-tab="skills"]::before{content:"ϟ"}
+html.desktop-mode #tabs button[data-tab="memory"]::before{content:"◇"}
+html.desktop-mode #tabs button[data-tab="settings"]::before{content:"⚙"}
+html.desktop-mode #tabs button:hover{
+  background:rgba(16,185,129,.08);border-color:rgba(52,211,153,.12);color:#D1FAE5;
+}
+html.desktop-mode #tabs button.on{
+  color:#6EE7B7;background:linear-gradient(90deg,rgba(16,185,129,.16),rgba(16,185,129,.06));
+  border-color:rgba(52,211,153,.23);box-shadow:inset 3px 0 0 #10B981,0 0 20px rgba(16,185,129,.05);
+}
+html.desktop-mode #tabs button.on::before{background:rgba(16,185,129,.17);box-shadow:0 0 16px rgba(16,185,129,.1)}
+html.desktop-mode #login{
+  position:fixed;z-index:100;left:50%;top:50%;transform:translate(-50%,-50%);
+  width:min(420px,calc(100vw - 32px));max-width:420px;margin:0;
+  box-shadow:0 24px 90px rgba(0,0,0,.52),0 0 55px rgba(16,185,129,.08);
+}
+@media(max-width:900px){
+  html.desktop-mode #app{padding:10px;gap:8px;grid-template-columns:190px minmax(0,1fr)}
+  html.desktop-mode #tabs{padding:12px 8px}
+  html.desktop-mode #tabs button{padding:10px 8px;font-size:12px}
+  html.desktop-mode #chat,html.desktop-mode .panel{padding:14px}
+  html.desktop-mode .msg{max-width:92%}
+}
+@media(max-height:600px){
+  html.desktop-mode #app{padding:8px;gap:7px;grid-template-rows:52px auto minmax(0,1fr) auto}
+  html.desktop-mode #tabs::before{padding-bottom:7px;margin-bottom:3px}
+  html.desktop-mode #tabs button{min-height:36px;padding:7px 8px}
+}
 </style>
 </head>
 <body>
@@ -637,6 +751,10 @@ select{background:var(--muted);color:var(--fg);border:1px solid var(--border);bo
 </div>
 <script>
 (function(){
+  // The phone-linked PC server is separate from the Expo web shell. Honor the same desktop query here.
+  var desktopMode = false;
+  try { desktopMode = new URLSearchParams(window.location.search).get('desktop') === '1'; } catch (_) {}
+  document.documentElement.classList.toggle('desktop-mode', desktopMode);
   var token = sessionStorage.getItem('ob_token') || '';
   var lang = localStorage.getItem('ob_lang') || 'ar';
   var pollTimer = null, lastCount = -1, running = false;
