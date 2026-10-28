@@ -59,8 +59,8 @@ export default function BrowserScreen() {
           readyWaitersRef.current.push(waiter);
         });
       },
-      navigate: async (nextUrl, _scopeHost) => {
-        const parsed = new URL(nextUrl);
+      navigate: async (requestedUrl, _scopeHost) => {
+        const parsed = new URL(requestedUrl);
         if (!['http:', 'https:'].includes(parsed.protocol) || parsed.username || parsed.password) throw new Error('يسمح فقط بروابط HTTP وHTTPS دون بيانات اعتماد مضمّنة.');
         const targets = await loadTargets();
         const scope = isAuthorized(parsed.toString(), targets);
