@@ -138,7 +138,7 @@ export function PhoneDrawer({
           onPress={onClose}
           style={StyleSheet.absoluteFill}
         />
-        <View style={[styles.panel, { backgroundColor: colors.background, borderLeftColor: colors.border }]}>
+        <View style={[styles.panel, { backgroundColor: colors.background, borderRightColor: colors.border }]}>
           <ScrollView contentContainerStyle={styles.scroll} showsVerticalScrollIndicator={false}>
             {/* Identity + honest plan status */}
             <View style={styles.head}>
@@ -371,7 +371,7 @@ const styles = StyleSheet.create({
   },
   topBarCenter: { flex: 1, minWidth: 0, marginHorizontal: spacing.xs, alignItems: 'flex-end' },
   topBarActions: { flexDirection: 'row', gap: spacing.xs, alignItems: 'center' },
-  overlay: { flex: 1, backgroundColor: 'rgba(2,6,4,0.62)', flexDirection: 'row' },
+  overlay: { flex: 1, backgroundColor: 'rgba(2,6,4,0.62)', flexDirection: 'row-reverse' },
   panel: {
     width: 300,
     maxWidth: '84%',
