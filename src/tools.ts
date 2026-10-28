@@ -217,7 +217,7 @@ export const TOOL_SPECS: ToolSpec[] = [
 export function toolsForRequest(deviceEnabled: boolean): ToolSpec[] {
   return TOOL_SPECS.filter(
     (t) =>
-      deviceEnabled || t.group === 'local' || t.group === 'memory' || t.group === 'net',
+      deviceEnabled || t.group === 'local' || t.group === 'memory' || t.group === 'net' || t.group === 'browser',
   );
 }
 
