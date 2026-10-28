@@ -51,6 +51,7 @@ export function VoiceConversationModal({
   const sendRef = useRef(onSend);
   const stopRef = useRef(onStop);
   const cancelledRef = useRef(false);
+  const retryAllowedRef = useRef(true);
 
   visibleRef.current = visible;
   sendRef.current = onSend;
@@ -60,6 +61,7 @@ export function VoiceConversationModal({
     if (turnActive.current || !visibleRef.current) return;
     turnActive.current = true;
     cancelledRef.current = false;
+    retryAllowedRef.current = true;
     setError('');
     setState('listening');
     try {
@@ -136,8 +138,10 @@ export function VoiceConversationModal({
     } catch (cause) {
       if (!visibleRef.current || cancelledRef.current) return;
       const message = cause instanceof Error ? cause.message : '';
+      const permissionDenied = /permission|إذن|السماح/i.test(message);
+      if (permissionDenied) retryAllowedRef.current = false;
       setError(
-        /permission|إذن|السماح/i.test(message)
+        permissionDenied
           ? 'اسمح للتطبيق باستخدام الميكروفون من إعدادات Android.'
           : /speech timeout|no speech|no recognition results/i.test(message)
             ? 'لم أسمع كلامًا واضحًا. سأعيد الاستماع تلقائيًا.'
@@ -146,7 +150,7 @@ export function VoiceConversationModal({
       setState('error');
     } finally {
       turnActive.current = false;
-      if (visibleRef.current) {
+      if (visibleRef.current && retryAllowedRef.current) {
         // A stop button cancels only the current turn, not the voice session.
         cancelledRef.current = false;
         setState((current) => current === 'error' ? 'error' : 'ready');
@@ -182,7 +186,7 @@ export function VoiceConversationModal({
   }, [visible]);
 
   useEffect(() => {
-    if (state !== 'listening' && state !== 'speaking') {
+    if (state !== 'listening' && state !== 'speaking' && state !== 'thinking') {
       pulse.stopAnimation();
       pulse.setValue(0);
       return;
@@ -191,7 +195,7 @@ export function VoiceConversationModal({
       Animated.sequence([
         Animated.timing(pulse, {
           toValue: 1,
-          duration: state === 'listening' ? 1100 : 1500,
+          duration: state === 'listening' ? 1100 : state === 'thinking' ? 850 : 1500,
           easing: Easing.inOut(Easing.ease),
           useNativeDriver: true,
         }),
