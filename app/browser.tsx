@@ -89,7 +89,7 @@ export default function BrowserScreen() {
         const method = input.method.toUpperCase();
         if (!['GET','POST','PUT','PATCH','DELETE','HEAD','OPTIONS'].includes(method)) throw new Error('طريقة HTTP غير مسموحة.');
         const started = Date.now();
-        const raw = await evaluate(`(async()=>{const r=await fetch(${JSON.stringify(target.toString())},{method:${JSON.stringify(method)},headers:${JSON.stringify(input.headers)},body:${JSON.stringify(['GET','HEAD'].includes(method)?'':input.body)||'""'}${['GET','HEAD'].includes(method)?'':',credentials:"same-origin"'}});const h={};r.headers.forEach((v,k)=>h[k]=v);const b=${JSON.stringify(method)}==='HEAD'?'':await r.text();return JSON.stringify({url:r.url,status:r.status,statusText:r.statusText,ok:r.ok,headers:h,body:b.slice(0,40000)})})()`);
+        const raw = await evaluate(`(async()=>{const r=await fetch(${JSON.stringify(target.toString())},{method:${JSON.stringify(method)},headers:${JSON.stringify(input.headers)}${['GET','HEAD'].includes(method) ? '' : `,body:${JSON.stringify(input.body)},credentials:"same-origin"`}});const h={};r.headers.forEach((v,k)=>h[k]=v);const b=${JSON.stringify(method)}==='HEAD'?'':await r.text();return JSON.stringify({url:r.url,status:r.status,statusText:r.statusText,ok:r.ok,headers:h,body:b.slice(0,40000)})})()`);
         return { ...(JSON.parse(raw) as Omit<EmbeddedBrowserRequestResult, 'elapsedMs'>), elapsedMs: Date.now()-started };
       },
     };
