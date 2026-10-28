@@ -104,25 +104,22 @@ function generateSecurePin(): string {
   if (PIN_ALPHANUMERIC) {
     const chars = 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789'; // excludes confusing chars
     let pin = '';
-    const randomValues = new Uint8Array(PIN_LENGTH);
-    crypto.getRandomValues(randomValues);
+    const randomHex = Device.pcSecureRandomHex(PIN_LENGTH);
     for (let i = 0; i < PIN_LENGTH; i++) {
-      pin += chars[randomValues[i] % chars.length];
+      const randomByte = Number.parseInt(randomHex.slice(i * 2, i * 2 + 2), 16);
+      pin += chars[randomByte % chars.length];
     }
     return pin;
   } else {
     const min = Math.pow(10, PIN_LENGTH - 1);
     const max = Math.pow(10, PIN_LENGTH) - 1;
-    const randomValues = new Uint32Array(1);
-    crypto.getRandomValues(randomValues);
-    return String(min + (randomValues[0] % (max - min + 1)));
+    const randomValue = Number.parseInt(Device.pcSecureRandomHex(4), 16);
+    return String(min + (randomValue % (max - min + 1)));
   }
 }
 
 function generateSecureToken(): string {
-  const randomBytes = new Uint8Array(TOKEN_BYTES);
-  crypto.getRandomValues(randomBytes);
-  return 'pc-' + Array.from(randomBytes, b => b.toString(16).padStart(2, '0')).join('');
+  return 'pc-' + Device.pcSecureRandomHex(TOKEN_BYTES);
 }
 
 interface TokenRecord {
@@ -196,20 +193,28 @@ export async function startPcControl(): Promise<{ url: string; pin: string }> {
   if (running) return getPcAccess();
   pin = generateSecurePin();
   currentToken = createToken();
-  const ok = await Device.startPcServer(8089);
-  if (!ok) throw new Error('تعذّر تشغيل الخادم (البورت مشغول؟).');
-  running = true;
-  unsubscribe = onPcRequest((event) => {
-    void route(event);
-  });
-  return getPcAccess();
+  try {
+    const ok = await Device.startPcServer(8089);
+    if (!ok) throw new Error('تعذّر تشغيل الخادم (البورت مشغول؟).');
+    running = true;
+    unsubscribe = onPcRequest((event) => {
+      void route(event);
+    });
+    return getPcAccess();
+  } catch (error) {
+    pin = '';
+    if (currentToken) revokeToken(currentToken);
+    currentToken = null;
+    throw error;
+  }
 }
 
 export async function stopPcControl(): Promise<void> {
   running = false;
   pin = '';
+  const token = currentToken;
   currentToken = null;
-  revokeToken(currentToken ?? '');
+  if (token) revokeToken(token);
   abortRef?.abort();
   unsubscribe?.();
   unsubscribe = null;

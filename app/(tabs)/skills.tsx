@@ -300,7 +300,7 @@ export default function SkillsScreen() {
     return (
       <Surface key={skill.id} style={styles.skillCard}>
         <View style={styles.skillHeading}>
-          <View style={[styles.skillIcon, { backgroundColor: colors.accent }]}>
+          <View style={[styles.skillIcon, { backgroundColor: colors.accentSubtle }]}>
             <Feather name="zap" size={17} color={colors.primary} />
           </View>
           <View style={styles.skillNameBlock}>

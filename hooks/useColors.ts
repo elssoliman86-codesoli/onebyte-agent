@@ -30,9 +30,12 @@ export function useColors() {
   // Default to dark (premium theme) for the best experience
   const palette = scheme === 'dark' ? colors.dark : colors.light;
   const accent = ACCENTS[accentKey] ?? ACCENTS.emerald;
-  const fontColor = /^#[0-9a-f]{6}$/i.test(selectedFontColor)
-    ? selectedFontColor
-    : palette.foreground;
+  const fontColorOptions = scheme === 'dark'
+    ? ['#F3F7F4', '#FFFFFF', '#A1ADA5', '#737F77']
+    : ['#0B100D', '#202A24', '#4A5550', '#68736D'];
+  const fontColor = fontColorOptions.find(
+    (color) => color.toLowerCase() === selectedFontColor.toLowerCase(),
+  ) ?? palette.foreground;
 
   // Extended color tokens follow the selected palette.
   const extendedColors = palette as typeof colors.dark;
@@ -48,6 +51,8 @@ export function useColors() {
     primaryForeground: accent.primaryForeground,
     accent: accent.primary,
     accentForeground: accent.primaryForeground,
+    accentSubtle: `${accent.primary}1A`,
+    fontColorOptions,
     // Extended color tokens follow the selected palette.
     surfacePrimary: extendedColors.surfacePrimary ?? palette.card,
     surfaceElevated: extendedColors.surfaceElevated ?? palette.card,

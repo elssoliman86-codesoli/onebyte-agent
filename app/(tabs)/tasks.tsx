@@ -155,7 +155,7 @@ export default function TasksScreen() {
     return (
       <Surface key={task.id} style={styles.taskCard}>
         <View style={styles.taskTop}>
-          <View style={[styles.taskIcon, { backgroundColor: colors.accent }]}>
+          <View style={[styles.taskIcon, { backgroundColor: colors.accentSubtle }]}>
             <Feather name="clock" size={16} color={colors.primary} />
           </View>
           <View style={styles.taskCopy}>
@@ -229,7 +229,7 @@ export default function TasksScreen() {
       >
         <ScreenTopBar active="tasks" />
         <Surface style={styles.localOnlyCard}>
-          <View style={[styles.localIcon, { backgroundColor: colors.accent }]}>
+              <View style={[styles.localIcon, { backgroundColor: colors.accentSubtle }]}>
             <Feather name="smartphone" size={17} color={colors.primary} />
           </View>
           <View style={styles.localCopy}>

@@ -2,7 +2,7 @@ import { fetchWithRetry } from './fetch-with-retry';
 import { storage } from './storage';
 import { checkServiceHealth } from './device';
 import type { ProviderSettings, ToolStep } from './assistant';
-import { endpointFor, type ProviderChatMessage } from './model-provider';
+import { endpointFor, modelRequestTimeout, type ProviderChatMessage } from './model-provider';
 import {
   needsApproval,
   toOpenAITools,
@@ -29,7 +29,7 @@ export type ApprovalDecision = 'once' | 'turn' | 'always' | 'deny';
 
 export class ToolsUnsupportedError extends Error {}
 
-function httpError(status: number, keyless = false): Error {
+function httpError(status: number, keyless = false, hasImageInput = false): Error {
   if (status === 401 || status === 403) {
     return new Error(
       keyless
@@ -39,7 +39,20 @@ function httpError(status: number, keyless = false): Error {
   }
   if (status === 404) return new Error('المسار غير موجود. راجع Base URL.');
   if (status === 429) return new Error('وصلت إلى حد الاستخدام لدى المزود.');
+  if (status === 400 && hasImageInput) {
+    return new Error(
+      'الموديل الحالي رفض الصورة (HTTP 400). اختَر موديلًا يدعم تحليل الصور، أو أعد إرسال السؤال كنص إذا لم يكن لديك موديل Vision.',
+    );
+  }
   return new Error(`تعذّر الاتصال بالموديل (HTTP ${status}).`);
+}
+
+function messagesContainImage(messages: WireMessage[]): boolean {
+  return messages.some(
+    (message) =>
+      Array.isArray(message.content) &&
+      message.content.some((part) => part.type === 'image_url'),
+  );
 }
 
 /** One streamed completion that may end with tool calls. */
@@ -83,7 +96,7 @@ export async function streamCompletion({
       body: JSON.stringify(body),
     },
     {
-      timeout: 90_000, // 90s for streaming responses
+      timeout: modelRequestTimeout(settings),
       maxRetries: 2,
       baseDelay: 1_000,
       signal,
@@ -96,7 +109,7 @@ export async function streamCompletion({
     if (specs.length && (response.status === 400 || response.status === 422)) {
       throw new ToolsUnsupportedError('الموديل أو المزود لا يدعم استدعاء الأدوات.');
     }
-    throw httpError(response.status, settings.keyless);
+    throw httpError(response.status, settings.keyless, messagesContainImage(messages));
   }
 
   let text = '';
@@ -197,6 +210,7 @@ export async function streamCompletion({
 }
 
 const MAX_TOOL_RESULT = 8000;
+const MAX_DEVICE_ACTIONS_PER_RUN = 12;
 
 export interface AgentRunResult {
   text: string;
@@ -258,6 +272,12 @@ export async function runAgent({
   let finalText = '';
   let finalThinking = '';
   const allowedForTurn = new Set<string>();
+  const repeatedDeviceActions = new Set<string>();
+  let deviceActionsExecuted = 0;
+  let lastScreenSnapshot: string | null = null;
+  let screenNeedsRefresh = false;
+  let lastScreenReadRound = -1;
+  let stopForDeviceActionLimit = false;
   let activeSpecs = specs;
   let toolsWereUnsupported = false;
   let startRound = 0;
@@ -382,7 +402,45 @@ export async function runAgent({
             allowed = true;
           }
         }
-        if (allowed) {
+        if (allowed && call.name === 'get_screen') {
+          if (lastScreenSnapshot && !screenNeedsRefresh && lastScreenReadRound === round) {
+            output = `${lastScreenSnapshot}\n\nلم يتغير الجهاز منذ القراءة السابقة في هذه الخطوة.`;
+          } else {
+            try {
+              output = await execute(call.name, args);
+              lastScreenSnapshot = output;
+              screenNeedsRefresh = false;
+              lastScreenReadRound = round;
+            } catch (error) {
+              output = `خطأ: ${error instanceof Error ? error.message : String(error)}`;
+              status = 'error';
+            }
+          }
+        } else if (allowed && spec.group === 'device_act') {
+          const actionKey = `${call.name}:${JSON.stringify(args)}:${lastScreenSnapshot ?? 'initial'}`;
+          if (screenNeedsRefresh) {
+            output = 'لم أنفذ الإجراء لأن الشاشة لم تُقرأ بعد الخطوة السابقة. اقرأ الشاشة الحالية أولًا ثم قرر الخطوة التالية.';
+            status = 'denied';
+          } else if (repeatedDeviceActions.has(actionKey)) {
+            output = 'لم أكرر الإجراء نفسه على الشاشة نفسها. اقرأ الشاشة وتحقق من النتيجة قبل اختيار إجراء مختلف.';
+            status = 'denied';
+          } else if (deviceActionsExecuted >= MAX_DEVICE_ACTIONS_PER_RUN) {
+            output = 'توقفت عند الحد الآمن البالغ 12 إجراءً للجهاز في هذه المهمة.';
+            status = 'denied';
+            stopForDeviceActionLimit = true;
+          } else {
+            repeatedDeviceActions.add(actionKey);
+            deviceActionsExecuted += 1;
+            try {
+              output = await execute(call.name, args);
+            } catch (error) {
+              output = `خطأ: ${error instanceof Error ? error.message : String(error)}`;
+              status = 'error';
+            } finally {
+              screenNeedsRefresh = true;
+            }
+          }
+        } else if (allowed) {
           try {
             output = await execute(call.name, args);
           } catch (error) {
@@ -401,6 +459,12 @@ export async function runAgent({
       });
       // Save checkpoint after each tool execution
       await saveCheckpoint(round);
+    }
+
+    if (stopForDeviceActionLimit) {
+      finalText += `${finalText ? '\n\n' : ''}توقفت المهمة بعد 12 إجراءً على الجهاز. راجع ما تم ثم أرسل متابعة لإكمالها.`;
+      onText(finalText);
+      break;
     }
 
     // Accessibility service health check (Android only, when device control is enabled)

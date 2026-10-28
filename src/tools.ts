@@ -8,7 +8,7 @@ import type {
 } from './assistant';
 
 /** 'memory' tools run on-device and are always offered, even when device control is off. */
-/** 'net' tools reach the public web from the user's device and always ask first. */
+/** 'net' tools are read-only public web requests, used only when the user asks. */
 export type ToolGroup = 'local' | 'memory' | 'net' | 'device_read' | 'device_act';
 
 export interface ToolSpec {
@@ -149,8 +149,11 @@ export const TOOL_SPECS: ToolSpec[] = [
     group: 'net',
     label: 'قراءة رابط ويب',
     description:
-      'Download a web page and return its readable text (HTML stripped). Use after web_search to read a specific result.',
-    parameters: obj({ url: { type: 'string' } }, ['url']),
+      'Read a public web page the user asked about. By default return readable text; set includeSource=true when the user asks for HTML/source code.',
+    parameters: obj(
+      { url: { type: 'string' }, includeSource: { type: 'boolean' } },
+      ['url'],
+    ),
   },
 ];
 
@@ -169,7 +172,7 @@ export function toOpenAITools(specs: ToolSpec[]) {
 }
 
 export function needsApproval(spec: ToolSpec): boolean {
-  return spec.group === 'device_read' || spec.group === 'device_act' || spec.group === 'net';
+  return spec.group === 'device_read' || spec.group === 'device_act';
 }
 
 function str(args: Record<string, unknown>, key: string): string {
@@ -315,7 +318,7 @@ async function webSearch(query: string): Promise<string> {
   return `تعذّر البحث: ${lastError}`;
 }
 
-async function webFetch(rawUrl: string): Promise<string> {
+async function webFetch(rawUrl: string, includeSource = false): Promise<string> {
   const url = safeUrl(rawUrl);
   try {
     const response = await fetchWithRetry(url, { headers: BROWSER_HEADERS }, {
@@ -326,6 +329,10 @@ async function webFetch(rawUrl: string): Promise<string> {
     });
     if (!response.ok) return `تعذّر جلب الصفحة (HTTP ${response.status}).`;
     const html = await response.text();
+    if (includeSource) {
+      const source = html.slice(0, MAX_WEB_TEXT);
+      return `مصدر HTML للصفحة ${url}${html.length > MAX_WEB_TEXT ? ' (المقتطف الأول)' : ''}:\n${source}`;
+    }
     const text = htmlToText(html);
     if (!text) return 'الصفحة ليس بها نص قابل للقراءة.';
     return text.length > MAX_WEB_TEXT
@@ -404,7 +411,7 @@ export async function executeTool(
     case 'web_search':
       return await webSearch(str(args, 'query'));
     case 'web_fetch':
-      return await webFetch(str(args, 'url'));
+      return await webFetch(str(args, 'url'), args.includeSource === true);
     default:
       break;
   }

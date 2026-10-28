@@ -10,6 +10,7 @@ import java.net.NetworkInterface
 import java.net.ServerSocket
 import java.net.Socket
 import java.net.SocketException
+import java.security.SecureRandom
 import java.util.concurrent.ConcurrentHashMap
 import java.util.concurrent.Executors
 import java.util.concurrent.LinkedBlockingQueue
@@ -72,6 +73,15 @@ class PcServerModule : Module() {
 
     Function("isRunning") { running.get() }
     Function("getPort") { port.get() }
+
+    Function("secureRandomHex") { byteCount: Int ->
+      require(byteCount in 1..64) { "Random byte count must be between 1 and 64" }
+      val bytes = ByteArray(byteCount)
+      SecureRandom().nextBytes(bytes)
+      bytes.joinToString("") { byte ->
+        (byte.toInt() and 0xff).toString(16).padStart(2, '0')
+      }
+    }
 
     Function("getLocalIp") {
       val candidates = mutableListOf<String>()

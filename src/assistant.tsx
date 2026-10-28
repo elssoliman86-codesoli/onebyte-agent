@@ -166,6 +166,7 @@ interface AssistantContextValue extends AssistantData {
   createSession: () => Promise<string>;
   deleteSession: (id: string) => Promise<void>;
   appendMessage: (sessionId: string, message: ChatMessage) => Promise<void>;
+  replaceSessionMessages: (sessionId: string, messages: ChatMessage[]) => Promise<void>;
   saveProvider: (
     settings: ProviderSettings,
     apiKey?: string,
@@ -234,7 +235,7 @@ const DEFAULT_AGENT: AgentSettings = {
 };
 
 const DEFAULT_APPEARANCE: AppearanceSettings = {
-  theme: 'system',
+  theme: 'dark',
   accent: 'emerald',
   language: 'ar',
   // Empty means use a contrast-safe color from the selected theme.
@@ -348,6 +349,10 @@ export function AssistantProvider({
           ...DEFAULT_APPEARANCE,
           ...(restored.appearance ?? {}),
         };
+        if (restored.appearance.theme === 'system') {
+          restored.appearance.theme = 'dark';
+          void storage.setAppearance(restored.appearance);
+        }
         restored.agent = {
           ...DEFAULT_AGENT,
           ...(restored.agent ?? {}),
@@ -511,6 +516,33 @@ export function AssistantProvider({
       } catch {
         setStorageError('لم يتم حفظ الرسالة. حاولي مرة أخرى.');
         throw new Error('تعذّر حفظ الرسالة.');
+      }
+    },
+    [],
+  );
+
+  const replaceSessionMessages = useCallback(
+    async (sessionId: string, messages: ChatMessage[]) => {
+      await ensureLoaded();
+      const sessions = dataRef.current.sessions.map((session) =>
+        session.id === sessionId
+          ? {
+              ...session,
+              messages,
+              summary: '',
+              summarizedCount: 0,
+              contextPreservedMessageIds: [],
+              updatedAt: new Date().toISOString(),
+            }
+          : session,
+      );
+      dataRef.current = { ...dataRef.current, sessions };
+      setData(dataRef.current);
+      try {
+        await storage.setSessions(sessions);
+      } catch {
+        setStorageError('لم يتم حفظ تعديل الرسالة. حاول مرة أخرى.');
+        throw new Error('تعذّر حفظ تعديل الرسالة.');
       }
     },
     [],
@@ -792,6 +824,7 @@ export function AssistantProvider({
       createSession,
       deleteSession,
       appendMessage,
+      replaceSessionMessages,
       saveProvider,
       removeApiKey,
       createSkill,
@@ -832,6 +865,7 @@ export function AssistantProvider({
       createSession,
       deleteSession,
       appendMessage,
+      replaceSessionMessages,
       saveProvider,
       removeApiKey,
       createSkill,

@@ -32,7 +32,7 @@ export function ApprovalSheet({ pending }: { pending: PendingApproval | null }) 
         <View style={[styles.sheet, { backgroundColor: colors.background, borderColor: colors.border }]}>
           <View style={styles.head}>
             <Text style={[styles.title, { color: colors.foreground }]}>المساعد يطلب إذنك</Text>
-            <View style={[styles.icon, { backgroundColor: colors.accent }]}>
+            <View style={[styles.icon, { backgroundColor: colors.accentSubtle }]}>
               <Feather name={icon} size={18} color={colors.primary} />
             </View>
           </View>

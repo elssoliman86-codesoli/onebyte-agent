@@ -27,7 +27,6 @@ import * as Device from '@/src/device';
 import { ACCENTS, type AccentKey } from '@/constants/colors';
 import { LANGUAGES } from '@/src/i18n';
 
-const FONT_COLORS: string[] = ['#F3F7F4', '#FFFFFF', '#A1ADA5', '#737F77', '#00D977', '#FF5F56'];
 import { RESPONSE_STYLE_LABELS, type ResponseStyle } from '@/src/response-style';
 import {
   configurePcServer,
@@ -89,6 +88,8 @@ export default function SettingsScreen() {
   const [probing, setProbing] = useState(false);
   const probeAbortRef = useRef<AbortController | null>(null);
   const [pendingLanguage, setPendingLanguage] = useState(appearance.language);
+  const [languageSaving, setLanguageSaving] = useState(false);
+  const [languageSaved, setLanguageSaved] = useState(false);
   const [showResponseStyle, setShowResponseStyle] = useState(false);
   // PC companion server state
   const [pcRunning, setPcRunning] = useState(isPcControlRunning());
@@ -439,8 +440,8 @@ export default function SettingsScreen() {
           The only real "upgrade" is choosing a paid model from your provider. */}
       <Surface style={styles.proCard}>
         <View style={styles.proHead}>
-          <View style={[styles.proIcon, { backgroundColor: colors.accent }]}>
-            <Feather name="award" size={19} color={colors.warning} />
+          <View style={[styles.proIcon, { backgroundColor: colors.accentSubtle }]}>
+            <Feather name="award" size={19} color={colors.primary} />
           </View>
           <View style={styles.proCopy}>
             <Text style={[styles.cardTitle, { color: colors.foreground }]}>
@@ -451,7 +452,7 @@ export default function SettingsScreen() {
             </Text>
           </View>
         </View>
-        <View style={[styles.planStatus, { backgroundColor: colors.accent }]}>
+        <View style={[styles.planStatus, { backgroundColor: colors.accentSubtle }]}>
           <Feather
             name={provider.free ? 'zap' : 'trending-up'}
             size={13}
@@ -474,7 +475,7 @@ export default function SettingsScreen() {
 
       <Surface style={styles.localCard}>
         <View style={styles.localHeading}>
-          <View style={[styles.localIcon, { backgroundColor: colors.accent }]}>
+          <View style={[styles.localIcon, { backgroundColor: colors.accentSubtle }]}>
             <Feather name="lock" size={18} color={colors.primary} />
           </View>
           <View style={styles.localCopy}>
@@ -667,7 +668,7 @@ export default function SettingsScreen() {
             disabled={testing}
           />
           {testReply ? (
-            <View style={[styles.testResult, { backgroundColor: colors.accent }]}>
+            <View style={[styles.testResult, { backgroundColor: colors.accentSubtle }]}>
               <Text style={[styles.testLabel, { color: colors.primary }]}>
                 رد الاختبار
               </Text>
@@ -787,7 +788,7 @@ export default function SettingsScreen() {
       <View style={styles.section}>
         <SectionTitle title="حساباتك الخارجية" />
         <Surface style={styles.connectionCard}>
-          <View style={[styles.connectionIcon, { backgroundColor: colors.accent }]}>
+          <View style={[styles.connectionIcon, { backgroundColor: colors.accentSubtle }]}>
             <Feather name="share-2" size={17} color={colors.primary} />
           </View>
           <View style={styles.connectionCopy}>
@@ -917,7 +918,7 @@ export default function SettingsScreen() {
                 <Feather name="type" size={13} color={colors.foreground} />
               </View>
             </Pressable>
-            {FONT_COLORS.map((color) => {
+                {colors.fontColorOptions.map((color) => {
               const active = appearance.fontColor === color;
               return (
                 <Pressable
@@ -953,7 +954,10 @@ export default function SettingsScreen() {
                   key={lang.code}
                   accessibilityRole="button"
                   accessibilityLabel={`اختيار اللغة ${lang.native}`}
-                  onPress={() => setPendingLanguage(lang.code)}
+                  onPress={() => {
+                    setPendingLanguage(lang.code);
+                    setLanguageSaved(false);
+                  }}
                   style={[
                     styles.presetChip,
                     {
@@ -977,14 +981,18 @@ export default function SettingsScreen() {
             })}
           </View>
           <ActionButton
-            label="حفظ اللغة"
-            icon="save"
+            label={languageSaving ? 'جارٍ حفظ اللغة…' : languageSaved ? 'تم حفظ اللغة ✓' : 'حفظ اللغة'}
+            icon={languageSaving ? 'loader' : languageSaved ? 'check' : 'save'}
             variant="secondary"
-            onPress={() =>
-              void saveAppearanceSettings({ language: pendingLanguage }).catch(() =>
-                alertCompat('تعذّر الحفظ', 'حاولي مرة أخرى.'),
-              )
-            }
+            disabled={languageSaving || (languageSaved && pendingLanguage === appearance.language)}
+            onPress={() => {
+              setLanguageSaving(true);
+              setLanguageSaved(false);
+              void saveAppearanceSettings({ language: pendingLanguage })
+                .then(() => setLanguageSaved(true))
+                .catch(() => alertCompat('تعذّر الحفظ', 'حاولي مرة أخرى.'))
+                .finally(() => setLanguageSaving(false));
+            }}
           />
           <Text style={[styles.body, { color: colors.mutedForeground, marginTop: 8 }]}>
             تغيّر لغة ردود الموديل فورًا، وباقي الشاشات تترجم تدريجيًا (الشات مترجم بالكامل).

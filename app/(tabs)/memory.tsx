@@ -77,7 +77,7 @@ export default function MemoryScreen() {
     return (
       <Surface key={memory.id} style={styles.memoryCard}>
         <View style={styles.memoryHeader}>
-          <View style={[styles.memoryIcon, { backgroundColor: colors.accent }]}>
+          <View style={[styles.memoryIcon, { backgroundColor: colors.accentSubtle }]}>
             <Feather name="bookmark" size={16} color={colors.primary} />
           </View>
           <Text style={[styles.memoryTitle, { color: colors.foreground }]}>
@@ -188,7 +188,7 @@ export default function MemoryScreen() {
               {knowledge.slice(0, 40).map((entry: KnowledgeEntry) => (
                 <Surface key={entry.id} style={styles.memoryCard}>
                   <View style={styles.memoryHeader}>
-                    <View style={[styles.memoryIcon, { backgroundColor: colors.accent }]}>
+                    <View style={[styles.memoryIcon, { backgroundColor: colors.accentSubtle }]}>
                       <Feather name="database" size={14} color={colors.primary} />
                     </View>
                     <Text style={[styles.memoryTitle, { color: colors.foreground }]} numberOfLines={2}>

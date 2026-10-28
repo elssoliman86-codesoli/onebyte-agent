@@ -140,7 +140,7 @@ export function HomeScreen({
         {/* Header: identity + greeting, bell carries the REAL pending-approvals count */}
         <View style={styles.header}>
           <View style={styles.headerSide}>
-            <View style={[styles.avatar, { backgroundColor: colors.accent, borderColor: colors.borderHighlighted }]}>
+            <View style={[styles.avatar, { backgroundColor: colors.accentSubtle, borderColor: colors.borderHighlighted }]}>
               <Text style={[styles.avatarText, { color: colors.primary }]}>O</Text>
             </View>
             <View style={styles.headerCopy}>
@@ -190,7 +190,7 @@ export function HomeScreen({
             },
           ]}
         >
-          <View style={[styles.planIcon, { backgroundColor: colors.accent }]}>
+          <View style={[styles.planIcon, { backgroundColor: colors.accentSubtle }]}>
             <Feather name="award" size={20} color={colors.warning} />
           </View>
           <View style={styles.planCopy}>
@@ -225,7 +225,7 @@ export function HomeScreen({
               onPress={s.action}
               style={[styles.suggestCard, { backgroundColor: colors.card, borderColor: colors.border }]}
             >
-              <View style={[styles.suggestIcon, { backgroundColor: colors.accent }]}>
+              <View style={[styles.suggestIcon, { backgroundColor: colors.accentSubtle }]}>
                 <Feather name={s.icon} size={18} color={colors.primary} />
               </View>
               <Text style={[styles.suggestLabel, { color: colors.foreground }]} numberOfLines={1}>
@@ -263,7 +263,7 @@ export function HomeScreen({
                 onPress={bot.onPress}
                 style={[styles.botCard, { backgroundColor: colors.card, borderColor: colors.border }]}
               >
-                <View style={[styles.botIcon, { backgroundColor: colors.accent }]}>
+                <View style={[styles.botIcon, { backgroundColor: colors.accentSubtle }]}>
                   <Feather name="zap" size={16} color={colors.primary} />
                 </View>
                 <Text style={[styles.botName, { color: colors.foreground }]} numberOfLines={1}>
@@ -301,7 +301,7 @@ export function HomeScreen({
               onPress={action.action}
               style={[styles.quickCard, { backgroundColor: colors.card, borderColor: colors.border }]}
             >
-              <View style={[styles.quickIcon, { backgroundColor: colors.accent }]}>
+              <View style={[styles.quickIcon, { backgroundColor: colors.accentSubtle }]}>
                 <Feather name={action.icon} size={20} color={colors.primary} />
               </View>
               <View style={styles.quickCopy}>

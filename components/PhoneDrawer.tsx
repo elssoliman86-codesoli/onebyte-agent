@@ -111,7 +111,7 @@ export function PhoneDrawer({
           <ScrollView contentContainerStyle={styles.scroll} showsVerticalScrollIndicator={false}>
             {/* Identity + honest plan status */}
             <View style={styles.head}>
-              <View style={[styles.avatar, { backgroundColor: colors.accent }]}>
+              <View style={[styles.avatar, { backgroundColor: colors.accentSubtle }]}>
                 <Text style={[styles.avatarText, { color: colors.primary }]}>O</Text>
               </View>
               <View style={{ flex: 1 }}>
@@ -144,7 +144,7 @@ export function PhoneDrawer({
                     onPress={() => go(item.route)}
                     style={[
                       styles.navItem,
-                      isActive && { backgroundColor: colors.accent, borderColor: colors.border },
+                      isActive && { backgroundColor: colors.accentSubtle, borderColor: colors.borderHighlighted },
                     ]}
                   >
                     <Feather
@@ -185,7 +185,7 @@ export function PhoneDrawer({
                     onPress={() => void openStudio(item.key)}
                     style={[
                       styles.navItem,
-                      isActive && { backgroundColor: colors.accent, borderColor: colors.border },
+                      isActive && { backgroundColor: colors.accentSubtle, borderColor: colors.borderHighlighted },
                     ]}
                   >
                     <Feather
@@ -260,7 +260,7 @@ export function PhoneDrawer({
                       style={[
                         styles.themeChip,
                         { borderColor: isActive ? colors.primary : colors.border },
-                        isActive && { backgroundColor: colors.accent },
+                        isActive && { backgroundColor: colors.accentSubtle },
                       ]}
                     >
                       <Text

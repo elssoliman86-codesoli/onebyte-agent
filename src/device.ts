@@ -73,6 +73,7 @@ interface PcServerNative {
   stop(): Promise<boolean>;
   isRunning(): boolean;
   getPort(): number;
+  secureRandomHex(byteCount: number): string;
   getLocalIp(): string;
   respond(id: string, status: number, contentType: string, body: string): boolean;
   addListener(
@@ -106,6 +107,13 @@ export function isPcServerRunning(): boolean {
 
 export function pcServerPort(): number {
   return pc?.getPort() ?? 0;
+}
+
+/** Generate secure bytes natively because Hermes has no Web Crypto global on
+ * every supported Android build. */
+export function pcSecureRandomHex(byteCount: number): string {
+  if (!pc) throw new Error('المصدر الآمن للأرقام العشوائية غير متاح في هذه النسخة.');
+  return pc.secureRandomHex(byteCount);
 }
 
 export function pcServerLocalIp(): string {
