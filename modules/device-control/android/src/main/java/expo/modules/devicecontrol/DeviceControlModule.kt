@@ -76,14 +76,14 @@ class DeviceControlModule : Module() {
     AsyncFunction("checkServiceHealth") {
       try {
         val svc = DeviceControlService.instance
-        if (svc == null) return@AsyncFunction mapOf("healthy" to false, "reason" to "service_not_connected")
+        if (svc == null) return@AsyncFunction mapOf<String, Any>("healthy" to false, "reason" to "service_not_connected")
         val root = svc.rootInActiveWindow
-        if (root == null) return@AsyncFunction mapOf("healthy" to false, "reason" to "no_active_window")
-        // Try to get a node count to verify the service is actually responsive
-        val nodeCount = svc.nodes.size
-        mapOf("healthy" to true, "nodeCount" to nodeCount)
+        if (root == null) return@AsyncFunction mapOf<String, Any>("healthy" to false, "reason" to "no_active_window")
+        // Node count proves the service actually produced a snapshot.
+        val count = svc.nodeCount()
+        mapOf<String, Any>("healthy" to true, "nodeCount" to count)
       } catch (e: Exception) {
-        mapOf("healthy" to false, "reason" to e.message ?: "unknown_error")
+        mapOf<String, Any>("healthy" to false, "reason" to (e.message ?: "unknown_error"))
       }
     }
   }

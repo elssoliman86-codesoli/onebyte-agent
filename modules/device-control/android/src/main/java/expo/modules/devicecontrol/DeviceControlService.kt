@@ -23,6 +23,9 @@ class DeviceControlService : AccessibilityService() {
 
   private var nodes: List<AccessibilityNodeInfo> = emptyList()
 
+  /** Public read-only count of the last snapshot's collected nodes (health check). */
+  fun nodeCount(): Int = nodes.size
+
   override fun onServiceConnected() {
     super.onServiceConnected()
     instance = this
