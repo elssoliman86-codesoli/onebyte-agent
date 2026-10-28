@@ -555,6 +555,8 @@ export function DesktopChat() {
     createTask,
     saveAgentSettings,
     loading,
+    pendingPrompt,
+    consumePendingPrompt,
   } = assistant;
 
   const [messages, setMessages] = useState<ChatMessage[]>([]);
@@ -579,6 +581,14 @@ export function DesktopChat() {
     setMessages(activeSession?.messages ?? []);
     setError('');
   }, [activeSession?.id, activeSession?.messages.length]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  useEffect(() => {
+    if (pendingPrompt) {
+      setDraft(pendingPrompt);
+      consumePendingPrompt();
+      requestAnimationFrame(() => composerInputRef.current?.focus());
+    }
+  }, [pendingPrompt, consumePendingPrompt]);
 
   const configured = Boolean(provider.baseUrl.trim()) && (Boolean(provider.keyless) || apiKeyConfigured);
   const canSend = configured && !running && draft.trim().length > 0 && !loading;
@@ -657,7 +667,14 @@ export function DesktopChat() {
         } as const;
         let system = buildAssistantSystemPrompt(skills, memories, promptOptions);
         const budget = workingBudget(provider, agent.maxWorkingTokens);
-        const plan = planContext(session, [], estimateTokens(system), budget);
+        const userMessage: import('@/src/assistant').ChatMessage = {
+          id: `temp-${Date.now()}`,
+          role: 'user',
+          content: text,
+          createdAt: new Date().toISOString(),
+          imageUri,
+        };
+        const plan = planContext(session, [userMessage], estimateTokens(system), budget);
 
         if (plan.toSummarise.length) {
           const newSummary = await summariseBacklog({
@@ -1049,7 +1066,7 @@ export function DesktopChat() {
             onPress={stop}
             style={[styles.sendBtn, styles.stopBtn]}
           >
-            <Feather name="square" size={15} color="#FFFFFF" />
+            <Feather name="stop-circle" size={15} color="#FFFFFF" />
           </Pressable>
         ) : (
           <Pressable
@@ -1059,7 +1076,7 @@ export function DesktopChat() {
             disabled={!canSend}
             style={[styles.sendBtn, !canSend && styles.sendBtnDisabled]}
           >
-            <Feather name="arrow-up" size={16} color="#FFFFFF" />
+            <Feather name="arrow-up-circle" size={16} color="#FFFFFF" />
           </Pressable>
         )}
       </View>

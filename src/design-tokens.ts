@@ -3,6 +3,7 @@
  * Single source of truth for spacing, typography, radii, shadows, and animations
  */
 
+import { Platform } from 'react-native';
 import colors from '@/constants/colors';
 
 export const spacing = {
@@ -43,6 +44,8 @@ export const typography = {
   weightMedium: '500' as const,
   weightSemiBold: '600' as const,
   weightBold: '700' as const,
+  // Font family: San Francisco on iOS, Inter elsewhere
+  fontFamily: Platform.OS === 'ios' ? 'SF Pro Text' : 'Inter',
 } as const;
 
 export const shadows = {

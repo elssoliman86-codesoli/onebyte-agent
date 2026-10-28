@@ -220,13 +220,13 @@ export async function streamModelChat({
 
 export function toProviderMessages(messages: ChatMessage[]): ProviderChatMessage[] {
   return messages
-    .filter((message) => message.content.trim() || message.imageUri)
-    .map(({ role, content, imageUri }) => {
-      if (imageUri) {
-        // Vision format (OpenAI-compatible): text part + image part as a data URL.
+    .filter((message) => message.content.trim() || message.imageUri || message.images?.length)
+    .map(({ role, content, imageUri, images }) => {
+      const imageUris = images?.length ? images : imageUri ? [imageUri] : [];
+      if (imageUris.length) {
         const parts: ProviderContentPart[] = [
           { type: 'text', text: content.trim() || 'صف هذه الصورة' },
-          { type: 'image_url', image_url: { url: imageUri } },
+          ...imageUris.map((uri) => ({ type: 'image_url' as const, image_url: { url: uri } })),
         ];
         return { role, content: parts };
       }

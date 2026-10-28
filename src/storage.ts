@@ -64,6 +64,7 @@ const DEFAULT_APPEARANCE: AppearanceSettings = {
   theme: 'system',
   accent: 'emerald',
   language: 'ar',
+  fontColor: '#F3F7F4',
 };
 
 // ─── Agent Checkpoint Types ──────────────────────────────────────────────
@@ -121,6 +122,7 @@ export async function migrateIfNeeded(): Promise<void> {
     const raw = JSON.parse(hasOld) as AssistantData;
 
     // Write all parts to their new keys in parallel
+    const apiKey = await SecureStore.getItemAsync(API_KEY_ID).catch(() => null);
     await Promise.all([
       AsyncStorage.setItem(KEYS.sessions, JSON.stringify(raw.sessions)),
       AsyncStorage.setItem(KEYS.activeSessionId, JSON.stringify(raw.activeSessionId)),
@@ -130,7 +132,8 @@ export async function migrateIfNeeded(): Promise<void> {
       AsyncStorage.setItem(KEYS.tasks, JSON.stringify(raw.tasks)),
       AsyncStorage.setItem(KEYS.agent, JSON.stringify(raw.agent)),
       AsyncStorage.setItem(KEYS.appearance, JSON.stringify(raw.appearance)),
-      AsyncStorage.setItem(KEYS.apiKeyConfigured, JSON.stringify(!!raw.provider.baseUrl)),
+      AsyncStorage.setItem(KEYS.knowledge, JSON.stringify(raw.knowledge ?? [])),
+      AsyncStorage.setItem(KEYS.apiKeyConfigured, JSON.stringify(Boolean(apiKey))),
     ]);
 
     // Remove old key after successful migration

@@ -821,7 +821,7 @@ export default function ChatScreen() {
         return;
       }
       const rec = new SR();
-      rec.lang = 'ar-SA';
+      rec.lang = appearance?.language === 'ar' ? 'ar-SA' : (appearance?.language ?? 'en-US');
       rec.interimResults = true;
       rec.continuous = false;
       let finalText = '';
@@ -850,7 +850,7 @@ export default function ChatScreen() {
     // Native (Android dev build): single-shot recognition via the speech module.
     setListening(true);
     try {
-      const results = await speechService.startListening({ language: 'ar-SA' });
+      const results = await speechService.startListening({ language: appearance?.language ?? 'ar-SA' });
       const text = (results ?? []).join(' ').trim();
       if (text) setDraft((cur) => (cur ? `${cur} ${text}` : text));
     } catch {
@@ -1757,9 +1757,9 @@ export default function ChatScreen() {
               ]}
             >
               {sending ? (
-                <Feather name="square" size={17} color={colors.destructiveForeground} />
+                <Feather name="stop-circle" size={17} color={colors.destructiveForeground} />
               ) : (
-                <Feather name="arrow-up" size={20} color={colors.primaryForeground} />
+                <Feather name="arrow-up-circle" size={20} color={colors.primaryForeground} />
               )}
             </Pressable>
           </View>

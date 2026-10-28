@@ -95,6 +95,8 @@ export interface AppearanceSettings {
   accent: AccentKey;
   /** App UI + model reply language code (see src/i18n.ts). */
   language: string;
+  /** Font color for the app UI (hex). */
+  fontColor: string;
 }
 
 export interface SkillVersion {
@@ -233,6 +235,7 @@ const DEFAULT_APPEARANCE: AppearanceSettings = {
   theme: 'system',
   accent: 'emerald',
   language: 'ar',
+  fontColor: '#F3F7F4',
 };
 
 let idCounter = 0;
@@ -518,6 +521,7 @@ export function AssistantProvider({
         // storage.saveApiKey routes to SecureStore on native and to the
         // disclosed browser adapter on web/desktop.
         await storage.saveApiKey(trimmedKey);
+        setApiKeyConfigured(true);
       }
       const provider = {
         baseUrl: settings.baseUrl.trim().replace(/\/+$/, ''),
@@ -531,7 +535,7 @@ export function AssistantProvider({
       };
       await persist({ provider });
     },
-    [persist],
+    [persist, setApiKeyConfigured],
   );
 
   const removeApiKey = useCallback(async () => {

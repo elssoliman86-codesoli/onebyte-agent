@@ -157,21 +157,25 @@ export default function DeveloperLabScreen() {
     else setHistory([]);
   }
 
-  async function saveEdits() {
+  async function saveEdits(contentOverride?: string) {
     if (!openFile) return;
     setBusy('save');
-    await upsertFile(openFile.path, editing);
+    const content = contentOverride ?? editing;
+    await upsertFile(openFile.path, content);
     await refresh();
     const updated = (await loadWorkspaceFiles()).find((f) => f.id === openFile.id) ?? null;
     setOpenFile(updated);
-    if (updated) setHistory(await fileHistory(updated.id));
+    if (updated) {
+      setEditing(updated.content);
+      setHistory(await fileHistory(updated.id));
+    }
     setBusy('');
   }
 
   async function restoreVersion(version: WorkspaceVersion) {
     if (!openFile) return;
     setEditing(version.content);
-    await saveEdits();
+    await saveEdits(version.content);
   }
 
   function askAgent(prompt: string) {

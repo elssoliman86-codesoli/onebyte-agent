@@ -77,8 +77,8 @@ function isCriticalMessage(m: ChatMessage): boolean {
   // File paths (common patterns)
   if (content.match(/(?:[~\/\.][\w\-\.\/]+|[A-Za-z]:\\[\w\\\-]+)/)) return true;
   
-  // Commands
-  if (content.match(/^(?:[\$\#>]\s*)?\w+(?:\s+\S+)*$/m)) return true;
+  // Commands — only lines starting with a command sigil or a bare command word
+  if (content.match(/^(?:[\$\#>]\s*)?\w[\w\-]*(?:\s+[\w\-=\./]+)*$/m)) return true;
   
   // Explicit preferences/settings
   if (content.match(/(?:أفضّل|أريد|أحتاج|prefer|need|want|setting|إعداد)/i)) return true;
@@ -108,18 +108,22 @@ export function planContext(
   // Always keep at least the last 4 messages.
   const target = budget * 0.45;
   const toSummarise: ChatMessage[] = [];
+  const preserved: ChatMessage[] = [];
   while (live.length > 4 && cost(live) > target) {
     const candidate = live[0];
     if (isCriticalMessage(candidate)) {
-      // Skip this message — move it to the "recent" section instead of summarising
+      // Keep critical messages in the recent section instead of summarising
+      preserved.push(candidate);
       live = live.slice(1);
       continue;
     }
     toSummarise.push(candidate);
     live = live.slice(1);
   }
-  used = cost(live);
-  return { recent: live, toSummarise, usedTokens: used, budgetTokens: budget };
+  // Prepend preserved critical messages so they stay in the recent context
+  const recent = [...preserved, ...live];
+  used = cost(recent);
+  return { recent, toSummarise, usedTokens: used, budgetTokens: budget };
 }
 
 const SUMMARY_PROMPT =

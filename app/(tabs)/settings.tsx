@@ -1,4 +1,4 @@
-﻿import React, { useEffect, useRef, useState } from 'react';
+import React, { useEffect, useRef, useState } from 'react';
 import {
     Platform,
   Pressable,
@@ -26,6 +26,8 @@ import { formatContext, formatPrice, type ModelInfo } from '@/src/model-catalog'
 import * as Device from '@/src/device';
 import { ACCENTS, type AccentKey } from '@/constants/colors';
 import { LANGUAGES } from '@/src/i18n';
+
+const FONT_COLORS: string[] = ['#F3F7F4', '#FFFFFF', '#A1ADA5', '#737F77', '#00D977', '#FF5F56'];
 import { RESPONSE_STYLE_LABELS, type ResponseStyle } from '@/src/response-style';
 import {
   configurePcServer,
@@ -36,6 +38,7 @@ import {
   getPcAccess,
 } from '@/src/pc-server';
 import { ModelPicker } from '@/components/ModelPicker';
+import { ScreenTopBar } from '@/components/PhoneDrawer';
 import {
   ActionButton,
   AppScreen,
@@ -73,6 +76,7 @@ export default function SettingsScreen() {
   const [providerName, setProviderName] = useState(provider.providerName);
   const [baseUrl, setBaseUrl] = useState(provider.baseUrl);
   const [model, setModel] = useState(provider.model);
+  const [keyless, setKeyless] = useState(provider.keyless ?? false);
   const [apiKey, setApiKey] = useState('');
   const [saving, setSaving] = useState(false);
   const [testing, setTesting] = useState(false);
@@ -83,6 +87,8 @@ export default function SettingsScreen() {
   const [probe, setProbe] = useState<ProbeResult | null>(null);
   const [probing, setProbing] = useState(false);
   const probeAbortRef = useRef<AbortController | null>(null);
+  const [pendingLanguage, setPendingLanguage] = useState(appearance.language);
+  const [showResponseStyle, setShowResponseStyle] = useState(false);
   // PC companion server state
   const [pcRunning, setPcRunning] = useState(isPcControlRunning());
   const [pcAccess, setPcAccess] = useState<{ url: string; pin: string }>({ url: '', pin: '' });
@@ -202,7 +208,8 @@ export default function SettingsScreen() {
     setProviderName(provider.providerName);
     setBaseUrl(provider.baseUrl);
     setModel(provider.model);
-  }, [provider.providerName, provider.baseUrl, provider.model]);
+    setKeyless(provider.keyless ?? false);
+  }, [provider.providerName, provider.baseUrl, provider.model, provider.keyless]);
 
   useEffect(() => {
     setWorkingTokensText(String(agent.maxWorkingTokens));
@@ -254,14 +261,15 @@ export default function SettingsScreen() {
     };
   }, [baseUrl, model, apiKey, apiKeyConfigured, providerName]);
 
-  function applyPreset(name: string, presetBaseUrl: string) {
+  function applyPreset(name: string, presetBaseUrl: string, presetKeyless = false) {
     setProviderName(name);
     setBaseUrl(presetBaseUrl);
+    setKeyless(presetKeyless);
     setModel('');
     setPicked(null);
     // The key is the only thing left to fill: if it is already saved, jump
     // straight to the model list; otherwise guide the user to the key field.
-    if (apiKeyConfigured && Platform.OS !== 'web') {
+    if ((apiKeyConfigured || presetKeyless) && Platform.OS !== 'web') {
       setPickerVisible(true);
     }
   }
@@ -301,8 +309,8 @@ export default function SettingsScreen() {
       alertCompat('أكملي إعدادات الموديل', 'أضيفي Base URL واسم الموديل.');
       return;
     }
-    if (!apiKey.trim() && !apiKeyConfigured) {
-      alertCompat('مفتاح API مطلوب', 'أضيفي مفتاح الموديل في الحقل الآمن.');
+    if (!apiKey.trim() && !apiKeyConfigured && !keyless) {
+      alertCompat('مفتاح API مطلوب', 'أضيفي مفتاح الموديل في الحقل الآمن، أو اختر مزودًا يعمل بدون مفتاح.');
       return;
     }
     setSaving(true);
@@ -319,6 +327,7 @@ export default function SettingsScreen() {
           completionPrice:
             picked && picked.id === model.trim() ? picked.completionPrice : provider.model === model.trim() ? provider.completionPrice : null,
           free: picked && picked.id === model.trim() ? picked.free : provider.model === model.trim() ? provider.free : false,
+          keyless,
         },
         apiKey,
       );
@@ -416,6 +425,7 @@ export default function SettingsScreen() {
       eyebrow="تحكم كامل من جهازك"
       subtitle="اختاري مزود النموذج واحفظي مفتاحه محليًا."
     >
+      <ScreenTopBar active="settings" />
       {/* Plan card — honest summary of the real provider state; no fake commerce.
           The only real "upgrade" is choosing a paid model from your provider. */}
       <Surface style={styles.proCard}>
@@ -489,7 +499,7 @@ export default function SettingsScreen() {
                   key={preset.baseUrl}
                   accessibilityRole="button"
                   accessibilityLabel={`اختيار مزود ${preset.name}`}
-                  onPress={() => applyPreset(preset.name, preset.baseUrl)}
+                  onPress={() => applyPreset(preset.name, preset.baseUrl, Boolean(preset.keyless))}
                   style={[
                     styles.presetChip,
                     {
@@ -876,21 +886,46 @@ export default function SettingsScreen() {
       </View>
 
       <View style={styles.section}>
+        <SectionTitle title="لون الخط" />
+        <Surface style={styles.formCard}>
+          <View style={styles.presetWrap}>
+            {FONT_COLORS.map((color) => {
+              const active = appearance.fontColor === color;
+              return (
+                <Pressable
+                  key={color}
+                  accessibilityRole="button"
+                  accessibilityLabel={`لون الخط ${color}`}
+                  onPress={() =>
+                    void saveAppearanceSettings({ fontColor: color }).catch(() =>
+                      alertCompat('تعذّر الحفظ', 'حاولي مرة أخرى.'),
+                    )
+                  }
+                  style={[
+                    styles.accentSwatch,
+                    { borderColor: active ? colors.foreground : 'transparent' },
+                  ]}
+                >
+                  <View style={[styles.accentDot, { backgroundColor: color }]} />
+                </Pressable>
+              );
+            })}
+          </View>
+        </Surface>
+      </View>
+
+      <View style={styles.section}>
         <SectionTitle title="اللغة" />
         <Surface style={styles.formCard}>
           <View style={styles.presetWrap}>
             {LANGUAGES.map((lang) => {
-              const active = appearance.language === lang.code;
+              const active = pendingLanguage === lang.code;
               return (
                 <Pressable
                   key={lang.code}
                   accessibilityRole="button"
-                  accessibilityLabel={`اللغة ${lang.native}`}
-                  onPress={() =>
-                    void saveAppearanceSettings({ language: lang.code }).catch(() =>
-                      alertCompat('تعذّر الحفظ', 'حاولي مرة أخرى.'),
-                    )
-                  }
+                  accessibilityLabel={`اختيار اللغة ${lang.native}`}
+                  onPress={() => setPendingLanguage(lang.code)}
                   style={[
                     styles.presetChip,
                     {
@@ -913,6 +948,16 @@ export default function SettingsScreen() {
               );
             })}
           </View>
+          <ActionButton
+            label="حفظ اللغة"
+            icon="save"
+            variant="secondary"
+            onPress={() =>
+              void saveAppearanceSettings({ language: pendingLanguage }).catch(() =>
+                alertCompat('تعذّر الحفظ', 'حاولي مرة أخرى.'),
+              )
+            }
+          />
           <Text style={[styles.body, { color: colors.mutedForeground, marginTop: 8 }]}>
             تغيّر لغة ردود الموديل فورًا، وباقي الشاشات تترجم تدريجيًا (الشات مترجم بالكامل).
           </Text>
@@ -920,71 +965,86 @@ export default function SettingsScreen() {
       </View>
 
       <View style={styles.section}>
-        <SectionTitle title="أسلوب الرد (باك إند)" />
-        <Surface style={styles.formCard}>
-          <Text style={[styles.body, { color: colors.mutedForeground }]}>
-            ضوابط تعمل في الخلفية: كل رد يمرّ عليها قبل وصوله إليك — بلا خطوة إضافية ولا تأخير.
+        <Pressable
+          accessibilityRole="button"
+          onPress={() => setShowResponseStyle((v) => !v)}
+          style={styles.sectionHead}
+        >
+          <Text style={[styles.fieldLabel, { color: colors.foreground }]}>
+            أسلوب الرد (باك إند)
           </Text>
-          {(Object.keys(RESPONSE_STYLE_LABELS) as (keyof ResponseStyle)[]).map((field) => {
-            const options = RESPONSE_STYLE_LABELS[field];
-            const current = agent.responseStyle?.[field];
-            return (
-              <View key={field} style={{ marginTop: 12 }}>
-                <Text style={[styles.fieldLabel, { color: colors.foreground }]}>
-                  {field === 'title'
-                    ? 'العنوان'
-                    : field === 'links'
-                      ? 'الروابط'
-                      : field === 'diagram'
-                        ? 'الدياجرام (flowchart)'
-                        : field === 'markdown'
-                          ? 'الماركداون'
-                          : field === 'length'
-                            ? 'الطول'
-                            : 'النبرة'}
-                </Text>
-                <View style={styles.presetWrap}>
-                  {(Object.keys(options) as string[]).map((opt) => {
-                    const active = current === opt;
-                    return (
-                      <Pressable
-                        key={opt}
-                        accessibilityRole="button"
-                        accessibilityLabel={`${field}: ${options[opt]}`}
-                        onPress={() =>
-                          void saveAgentSettings({
-                            responseStyle: {
-                              ...(agent.responseStyle ?? {}),
-                              [field]: opt,
-                            } as ResponseStyle,
-                          }).catch(() => alertCompat('تعذّر الحفظ', 'حاولي مرة أخرى.'))
-                        }
-                        style={[
-                          styles.presetChip,
-                          {
-                            borderColor: active ? colors.primary : colors.border,
-                            backgroundColor: active
-                              ? colors.primary + '22'
-                              : colors.background,
-                          },
-                        ]}
-                      >
-                        <Text
+          <Feather
+            name={showResponseStyle ? 'chevron-up' : 'chevron-down'}
+            size={16}
+            color={colors.primary}
+          />
+        </Pressable>
+        {showResponseStyle ? (
+          <Surface style={styles.formCard}>
+            <Text style={[styles.body, { color: colors.mutedForeground }]}>
+              ضوابط تعمل في الخلفية: كل رد يمرّ عليها قبل وصوله إليك — بلا خطوة إضافية ولا تأخير.
+            </Text>
+            {(Object.keys(RESPONSE_STYLE_LABELS) as (keyof ResponseStyle)[]).map((field) => {
+              const options = RESPONSE_STYLE_LABELS[field];
+              const current = agent.responseStyle?.[field];
+              return (
+                <View key={field} style={{ marginTop: 12 }}>
+                  <Text style={[styles.fieldLabel, { color: colors.foreground }]}>
+                    {field === 'title'
+                      ? 'العنوان'
+                      : field === 'links'
+                        ? 'الروابط'
+                        : field === 'diagram'
+                          ? 'الدياجرام (flowchart)'
+                          : field === 'markdown'
+                            ? 'الماركداون'
+                            : field === 'length'
+                              ? 'الطول'
+                              : 'النبرة'}
+                  </Text>
+                  <View style={styles.presetWrap}>
+                    {(Object.keys(options) as string[]).map((opt) => {
+                      const active = current === opt;
+                      return (
+                        <Pressable
+                          key={opt}
+                          accessibilityRole="button"
+                          accessibilityLabel={`${field}: ${options[opt]}`}
+                          onPress={() =>
+                            void saveAgentSettings({
+                              responseStyle: {
+                                ...(agent.responseStyle ?? {}),
+                                [field]: opt,
+                              } as ResponseStyle,
+                            }).catch(() => alertCompat('تعذّر الحفظ', 'حاولي مرة أخرى.'))
+                          }
                           style={[
-                            styles.presetChipText,
-                            { color: active ? colors.primary : colors.foreground },
+                            styles.presetChip,
+                            {
+                              borderColor: active ? colors.primary : colors.border,
+                              backgroundColor: active
+                                ? colors.primary + '22'
+                                : colors.background,
+                            },
                           ]}
                         >
-                          {options[opt]}
-                        </Text>
-                      </Pressable>
-                    );
-                  })}
+                          <Text
+                            style={[
+                              styles.presetChipText,
+                              { color: active ? colors.primary : colors.foreground },
+                            ]}
+                          >
+                            {options[opt]}
+                          </Text>
+                        </Pressable>
+                      );
+                    })}
+                  </View>
                 </View>
-              </View>
-            );
-          })}
-        </Surface>
+              );
+            })}
+          </Surface>
+        ) : null}
       </View>
 
       <View style={styles.section}>
@@ -1043,7 +1103,7 @@ export default function SettingsScreen() {
             </>
           ) : !Device.pcServerAvailable() ? (
             <Text style={[styles.body, { color: colors.warning }]}>
-              متاح فقط في نسخة Android المثبتة.
+              خادم الكمبيوتر متاح فقط في نسخة أندرويد المثبتة من التطبيق (ليست متاحة على الويب أو Expo Go).
             </Text>
           ) : null}
         </Surface>
@@ -1115,6 +1175,12 @@ const styles = StyleSheet.create({
   countValue: { fontSize: 19, fontWeight: '700' },
   countLabel: { fontSize: 10 },
   section: { gap: 10 },
+  sectionHead: {
+    flexDirection: 'row-reverse',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    marginBottom: 6,
+  },
   formCard: { gap: 14 },
   presetWrap: { flexDirection: 'row-reverse', flexWrap: 'wrap', gap: 8 },
   presetChip: {

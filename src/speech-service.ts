@@ -36,10 +36,10 @@ class SpeechService {
     this.isListening = true;
     try {
       return await SpeechRecognition.startListening({
-        language: 'ar-SA',
-        maxResults: 1,
-        partialResults: true,
-        prompt: 'تحدث الآن...',
+        language: options?.language ?? 'ar-SA',
+        maxResults: options?.maxResults ?? 1,
+        partialResults: options?.partialResults ?? true,
+        prompt: options?.prompt ?? 'تحدث الآن...',
       });
     } catch (error) {
       this.isListening = false;
@@ -62,7 +62,7 @@ class SpeechService {
     this.currentUtterance = text;
     return new Promise<void>((resolve, reject) => {
       Speech.speak(text, {
-        language: options?.language || 'ar-SA',
+        language: options?.language ?? 'ar-SA',
         pitch: options?.pitch ?? 1.0,
         rate: options?.rate ?? 1.0,
         onDone: () => {

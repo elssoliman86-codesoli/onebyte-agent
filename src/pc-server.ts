@@ -165,6 +165,7 @@ let approvalHandler: PcApprovalHandler | null = null;
 let unsubscribe: (() => void) | null = null;
 let pin = '';
 let running = false;
+let chatBusy = false;
 let abortRef: AbortController | null = null;
 let liveText = '';
 let approvalPending = false;
@@ -341,7 +342,15 @@ async function route(event: {
       case '/api/chat': {
         const text = (safeParse(event.body).text ?? '').toString().trim();
         if (!text) return json(id, 400, { ok: false, error: 'رسالة فاضية' });
-        void runPcChat(text).catch(() => undefined);
+        if (chatBusy) {
+          return json(id, 409, { ok: false, error: 'هناك محادثة جارية، يرجى الانتظار حتى تنتهي.' });
+        }
+        chatBusy = true;
+        void runPcChat(text)
+          .catch(() => undefined)
+          .finally(() => {
+            chatBusy = false;
+          });
         return json(id, 200, { ok: true });
       }
       default:
