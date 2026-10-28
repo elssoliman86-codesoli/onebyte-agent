@@ -38,12 +38,18 @@ export function ScreenTopBar({
   active,
   center,
   actions,
+  onOpenHistory,
+  onNewChat,
 }: {
   active: string;
   /** Optional content rendered beside the hamburger in the same row (chat title etc.). */
   center?: React.ReactNode;
   /** Optional action buttons rendered at the row's far edge. */
   actions?: React.ReactNode;
+  /** Opens the full history sheet (chat screen wires it; undefined elsewhere). */
+  onOpenHistory?: () => void;
+  /** Starts a new chat from the drawer's bottom button (undefined elsewhere). */
+  onNewChat?: () => void;
 }) {
   const [open, setOpen] = useState(false);
   const colors = useColors();
@@ -61,7 +67,13 @@ export function ScreenTopBar({
         {center ? <View style={styles.topBarCenter}>{center}</View> : null}
         {actions ? <View style={styles.topBarActions}>{actions}</View> : null}
       </View>
-      <PhoneDrawer active={active} visible={open} onClose={() => setOpen(false)} />
+      <PhoneDrawer
+        active={active}
+        visible={open}
+        onClose={() => setOpen(false)}
+        onOpenHistory={onOpenHistory}
+        onNewChat={onNewChat}
+      />
     </>
   );
 }
@@ -70,10 +82,16 @@ export function PhoneDrawer({
   active,
   visible,
   onClose,
+  onOpenHistory,
+  onNewChat,
 }: {
   active: string;
   visible: boolean;
   onClose: () => void;
+  /** Opens the chat history sheet on the chat screen (undefined elsewhere). */
+  onOpenHistory?: () => void;
+  /** Starts a new chat (undefined elsewhere — the bottom button hides). */
+  onNewChat?: () => void;
 }) {
   const colors = useColors();
   const {
@@ -218,8 +236,8 @@ export function PhoneDrawer({
               })}
             </View>
 
-            {/* Recent chats — real sessions, tap to switch */}
-            {recent.length ? (
+            {/* Recent chats — real sessions, tap to switch; clock entry opens the full history */}
+            {(recent.length || onOpenHistory) ? (
               <View style={styles.section}>
                 <Text style={[styles.sectionTitle, { color: colors.mutedForeground }]}>
                   المحادثات الأخيرة
@@ -249,6 +267,22 @@ export function PhoneDrawer({
                     </Text>
                   </Pressable>
                 ))}
+                {onOpenHistory ? (
+                  <Pressable
+                    accessibilityRole="button"
+                    accessibilityLabel="كل المحادثات السابقة"
+                    onPress={() => {
+                      onClose();
+                      onOpenHistory();
+                    }}
+                    style={[styles.sessionRow, styles.allChatsRow]}
+                  >
+                    <Feather name="clock" size={14} color={colors.primary} />
+                    <Text style={[styles.sessionTitle, { color: colors.primary }]}>
+                      كل المحادثات السابقة
+                    </Text>
+                  </Pressable>
+                ) : null}
               </View>
             ) : null}
 
@@ -293,6 +327,24 @@ export function PhoneDrawer({
             <Text style={[styles.foot, { color: colors.mutedForeground }]}>
               اللغة وألوان الثيم من الإعدادات
             </Text>
+
+            {/* Bottom action — "new chat", like the reference chat apps */}
+            {onNewChat ? (
+              <Pressable
+                accessibilityRole="button"
+                accessibilityLabel="محادثة جديدة"
+                onPress={() => {
+                  onClose();
+                  onNewChat();
+                }}
+                style={[styles.newChatBtn, { backgroundColor: colors.primary }]}
+              >
+                <Feather name="edit-3" size={16} color={colors.primaryForeground ?? '#FFFFFF'} />
+                <Text style={[styles.newChatBtnText, { color: colors.primaryForeground ?? '#FFFFFF' }]}>
+                  محادثة جديدة
+                </Text>
+              </Pressable>
+            ) : null}
           </ScrollView>
         </View>
       </View>
@@ -369,6 +421,21 @@ const styles = StyleSheet.create({
     paddingHorizontal: spacing.sm,
   },
   sessionTitle: { flex: 1, fontSize: 13, fontWeight: '600' },
+  allChatsRow: {
+    marginTop: 2,
+    borderTopWidth: StyleSheet.hairlineWidth,
+    borderTopColor: 'rgba(128,128,128,0.28)',
+  },
+  newChatBtn: {
+    flexDirection: 'row-reverse',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: spacing.sm - 2,
+    paddingVertical: 12,
+    borderRadius: radius.md,
+    marginTop: spacing.md,
+  },
+  newChatBtnText: { fontSize: 14, fontWeight: '800' },
   themeRow: { flexDirection: 'row-reverse', gap: spacing.xs + 2 },
   themeChip: {
     borderWidth: 1,

@@ -554,6 +554,10 @@ export default function ChatScreen() {
   // updates stop landing in the wrong chat if the user switches away mid-run.
   const runSessionIdRef = useRef<string | null>(null);
   const visibleSessionIdRef = useRef<string | null>(activeSession?.id ?? null);
+  // First-send race: a brand-new session flips activeSessionId before its message
+  // shows. The id-keyed effect uses this mark to skip reloading that still-empty
+  // session, so the conversation opens immediately without the history button.
+  const freshSessionRef = useRef<string | null>(null);
 
   useEffect(() => {
     visibleSessionIdRef.current = activeSession?.id ?? null;
@@ -824,6 +828,14 @@ export default function ChatScreen() {
   }
 
   useEffect(() => {
+    const nextId = activeSession?.id ?? null;
+    const fresh = freshSessionRef.current;
+    if (fresh) {
+      freshSessionRef.current = null;
+      // The screen just created this session for a first send; the local message
+      // list already holds it — reloading the session would wipe it mid-send.
+      if (fresh === nextId) return;
+    }
     setMessages(activeSession?.messages ?? []);
     setEditingMessageId(null);
     setError('');
@@ -1031,6 +1043,10 @@ export default function ChatScreen() {
     let sessionId = activeSession?.id;
     if (!sessionId) {
       sessionId = await createSession();
+      freshSessionRef.current = sessionId;
+      // The run's streaming output belongs to the session we just created,
+      // even if the context re-render has not committed the new id yet.
+      visibleSessionIdRef.current = sessionId;
     }
     const editIndex = editingMessageId
       ? messages.findIndex((message) => message.id === editingMessageId && message.role === 'user')
@@ -1267,6 +1283,8 @@ export default function ChatScreen() {
       >
         <ScreenTopBar
           active={activeSession?.mode ?? 'index'}
+          onOpenHistory={() => setHistoryVisible(true)}
+          onNewChat={() => void startNewChat()}
           center={
             <>
               <Text style={[styles.eyebrow, { color: colors.primary }]} numberOfLines={1}>
@@ -1303,14 +1321,6 @@ export default function ChatScreen() {
                   <Text style={[styles.modeActionText, { color: colors.foreground }]}>المتصفح</Text>
                 </Pressable>
               ) : null}
-              <Pressable
-                accessibilityRole="button"
-                accessibilityLabel="المحادثات السابقة"
-                onPress={() => setHistoryVisible(true)}
-                style={[styles.headerButton, { borderColor: colors.border }]}
-              >
-                <Feather name="clock" size={18} color={colors.foreground} />
-              </Pressable>
               <Pressable
                 accessibilityRole="button"
                 accessibilityLabel="محادثة جديدة"

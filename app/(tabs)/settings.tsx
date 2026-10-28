@@ -434,8 +434,21 @@ export default function SettingsScreen() {
       title="الإعدادات"
       eyebrow="تحكم كامل من جهازك"
       subtitle="اختاري مزود النموذج واحفظي مفتاحه محليًا."
+      compact
     >
-      <ScreenTopBar active="settings" />
+      <ScreenTopBar
+        active="settings"
+        center={
+          <>
+            <Text style={[styles.topEyebrow, { color: colors.primary }]} numberOfLines={1}>
+              ONEBYTE · الإعدادات
+            </Text>
+            <Text style={[styles.topTitle, { color: colors.foreground }]} numberOfLines={1}>
+              الإعدادات
+            </Text>
+          </>
+        }
+      />
       {/* Plan card — honest summary of the real provider state; no fake commerce.
           The only real "upgrade" is choosing a paid model from your provider. */}
       <Surface style={styles.proCard}>
@@ -1192,6 +1205,8 @@ function Count({ label, value }: { label: string; value: number }) {
 }
 
 const styles = StyleSheet.create({
+  topEyebrow: { fontSize: 11, fontWeight: '800', letterSpacing: 1, textAlign: 'right' },
+  topTitle: { fontSize: 18, fontWeight: '800', marginTop: 2, textAlign: 'right' },
   localCard: { gap: 14 },
   proCard: { gap: 12 },
   proHead: { flexDirection: 'row-reverse', alignItems: 'flex-start', gap: 10 },

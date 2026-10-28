@@ -23,6 +23,7 @@ export function AppScreen({
   children,
   action,
   scroll = true,
+  compact = false,
 }: {
   title: string;
   eyebrow?: string;
@@ -30,28 +31,32 @@ export function AppScreen({
   children: React.ReactNode;
   action?: React.ReactNode;
   scroll?: boolean;
+  /** Skip the big heading block — the screen renders its own compact top-bar row instead. */
+  compact?: boolean;
 }) {
   const colors = useColors();
   const content = (
     <View style={styles.page}>
-      <View style={styles.header}>
-        <View style={styles.headingCopy}>
-          {eyebrow ? (
-            <Text style={[styles.eyebrow, { color: colors.primary }]}>
-              {eyebrow}
+      {compact ? null : (
+        <View style={styles.header}>
+          <View style={styles.headingCopy}>
+            {eyebrow ? (
+              <Text style={[styles.eyebrow, { color: colors.primary }]}>
+                {eyebrow}
+              </Text>
+            ) : null}
+            <Text style={[styles.title, { color: colors.foreground }]}>
+              {title}
             </Text>
-          ) : null}
-          <Text style={[styles.title, { color: colors.foreground }]}>
-            {title}
-          </Text>
-          {subtitle ? (
-            <Text style={[styles.subtitle, { color: colors.mutedForeground }]}>
-              {subtitle}
-            </Text>
-          ) : null}
+            {subtitle ? (
+              <Text style={[styles.subtitle, { color: colors.mutedForeground }]}>
+                {subtitle}
+              </Text>
+            ) : null}
+          </View>
+          {action}
         </View>
-        {action}
-      </View>
+      )}
       {children}
     </View>
   );
