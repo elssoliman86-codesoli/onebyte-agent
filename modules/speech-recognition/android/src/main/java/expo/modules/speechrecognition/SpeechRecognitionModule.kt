@@ -24,7 +24,7 @@ class SpeechRecognitionModule : Module() {
     override fun definition() = ModuleDefinition {
         Name("SpeechRecognition")
 
-        Constants(
+        Constants {
             mapOf(
                 "ERROR_NETWORK" to SpeechRecognizer.ERROR_NETWORK,
                 "ERROR_AUDIO" to SpeechRecognizer.ERROR_AUDIO,
@@ -35,7 +35,7 @@ class SpeechRecognitionModule : Module() {
                 "ERROR_RECOGNIZER_BUSY" to SpeechRecognizer.ERROR_RECOGNIZER_BUSY,
                 "ERROR_INSUFFICIENT_PERMISSIONS" to SpeechRecognizer.ERROR_INSUFFICIENT_PERMISSIONS,
             )
-        )
+        }
 
         AsyncFunction("isAvailable") {
             SpeechRecognizer.isRecognitionAvailable(context)
