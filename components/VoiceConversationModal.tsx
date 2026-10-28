@@ -1,6 +1,5 @@
 import React, { useCallback, useEffect, useRef, useState } from 'react';
 import {
-  ActivityIndicator,
   Animated,
   Easing,
   Modal,
@@ -147,7 +146,9 @@ export function VoiceConversationModal({
       setState('error');
     } finally {
       turnActive.current = false;
-      if (visibleRef.current && !cancelledRef.current) {
+      if (visibleRef.current) {
+        // A stop button cancels only the current turn, not the voice session.
+        cancelledRef.current = false;
         setState((current) => current === 'error' ? 'error' : 'ready');
         setTimeout(() => {
           if (visibleRef.current && !turnActive.current && !cancelledRef.current) {
