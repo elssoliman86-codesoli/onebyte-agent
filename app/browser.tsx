@@ -198,7 +198,14 @@ export default function BrowserScreen() {
           javaScriptEnabled
           domStorageEnabled
           startInLoadingState
-          onShouldStartLoadWithRequest={(request) => /^https?:\/\//i.test(request.url)}
+          onShouldStartLoadWithRequest={(request) => {
+            if (!/^https?:\/\//i.test(request.url)) return false;
+            if (!scopeHostRef.current) return true;
+            try {
+              const host = new URL(request.url).hostname.toLowerCase();
+              return host === scopeHostRef.current || host.endsWith('.' + scopeHostRef.current);
+            } catch { return false; }
+          }}
           onNavigationStateChange={(state) => {
             setAddress(state.url);
             setUrl(state.url);
