@@ -1,13 +1,29 @@
+<div align="center">
+
+<img src="./.github/assets/electric-spiderweb.svg" alt="OneByte Agent — Electric Spiderweb" width="100%">
+
+</div>
+
 <div dir="rtl" align="center">
 
 # 🤖 OneByte Agent — مساعدك الشخصي على هاتفك
 
-**مساعد ذكي يشتغل بأي مزود AI تختاره، يحتفظ ببياناتك على جهازك فقط، وينفذ مهام حقيقية على هاتفك — بموافقتك في كل خطوة.**
+**ذكاءك وأدواتك وذاكرتك في شبكة واحدة — مساعد Android محليّ البيانات، يعمل مع مزود الذكاء الاصطناعي الذي تختاره.**
 
 [![Build APK](https://github.com/elssoliman86-codesoli/onebyte-agent/actions/workflows/build-apk.yml/badge.svg)](../../actions/workflows/build-apk.yml)
-[![Release](https://img.shields.io/badge/Release-v1.1.0-4DE2AB?style=flat-square)](../../releases)
+[![Release](https://img.shields.io/badge/Release-v1.1.0-38D9FF?style=flat-square)](../../releases)
 [![Platform](https://img.shields.io/badge/Platform-Android-3DDC84?style=flat-square)]()
-[![Privacy](https://img.shields.io/badge/Privacy-Local--first-087F67?style=flat-square)]()
+[![Privacy](https://img.shields.io/badge/Privacy-Local--first-38D9FF?style=flat-square)]()
+
+</div>
+
+---
+
+<div dir="rtl">
+
+## ⚡ الهوية البصرية — Electric Spiderweb
+
+شبكة كهربائية ثلاثية الأبعاد ترمز إلى تدفّق الإشارات بين **الموديل والأدوات والذاكرة**، مع مسارات سماوية وحمراء تلتقي عند نواة OneByte. الصورة في أعلى الصفحة تلخّص هذه الفكرة بألوان التصميم المرفق.
 
 </div>
 
