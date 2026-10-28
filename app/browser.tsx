@@ -15,7 +15,7 @@ import { WebView } from 'react-native-webview';
 import { useColors } from '@/hooks/useColors';
 import { alertCompat } from '@/src/web-alert';
 import { registerEmbeddedBrowser, type EmbeddedBrowserDriver, type EmbeddedBrowserElement, type EmbeddedBrowserSnapshot } from '@/src/embedded-browser';
-import { isAuthorized } from '@/src/hunter';
+import { isAuthorized, loadTargets } from '@/src/hunter';
 
 export default function BrowserScreen() {
   const colors = useColors();
@@ -46,7 +46,7 @@ export default function BrowserScreen() {
       if (!web) { reject(new Error('المتصفح المدمج غير جاهز.')); return; }
       const timer = setTimeout(() => reject(new Error('انتهت مهلة تنفيذ أمر المتصفح.')), 12_000);
       (web as unknown as { injectJavaScript: (code: string) => void }).injectJavaScript(
-        `(() => { try { const value = (${script}); window.ReactNativeWebView.postMessage(JSON.stringify({__onebyteBrowserResult: value})); } catch (error) { window.ReactNativeWebView.postMessage(JSON.stringify({__onebyteBrowserError: String(error)})); } })(); true;`
+        `(() => { try { Promise.resolve((${script})).then(value => window.ReactNativeWebView.postMessage(JSON.stringify({__onebyteBrowserResult: value}))).catch(error => window.ReactNativeWebView.postMessage(JSON.stringify({__onebyteBrowserError: String(error)}))); } catch (error) { window.ReactNativeWebView.postMessage(JSON.stringify({__onebyteBrowserError: String(error)})); } })(); true;`
       );
       pendingBrowserResultsRef.current.push({ resolve: (v) => { clearTimeout(timer); resolve(v); }, reject: (e) => { clearTimeout(timer); reject(e); } });
     });
@@ -59,10 +59,15 @@ export default function BrowserScreen() {
           readyWaitersRef.current.push(waiter);
         });
       },
-      navigate: async (nextUrl, scopeHost) => {
+      navigate: async (nextUrl, _scopeHost) => {
         const parsed = new URL(nextUrl);
-        if (!['http:', 'https:'].includes(parsed.protocol)) throw new Error('يسمح فقط بروابط HTTP وHTTPS.');
-        scopeHostRef.current = scopeHost.toLowerCase();
+        if (!['http:', 'https:'].includes(parsed.protocol) || parsed.username || parsed.password) throw new Error('يسمح فقط بروابط HTTP وHTTPS دون بيانات اعتماد مضمّنة.');
+        const targets = await loadTargets();
+        const scope = isAuthorized(parsed.toString(), targets);
+        if (!scope.ok) throw new Error(scope.reason);
+        const matchingTarget = targets.find((target) => parsed.hostname.toLowerCase() === target.host.toLowerCase() || parsed.hostname.toLowerCase().endsWith('.' + target.host.toLowerCase()));
+        if (!matchingTarget) throw new Error('الرابط خارج النطاق المصرّح به.');
+        scopeHostRef.current = matchingTarget.host.toLowerCase();
         setAddress(parsed.toString()); setUrl(parsed.toString()); currentUrlRef.current = parsed.toString(); pageReadyRef.current = false;
         return readPageAfterNavigation(driver);
       },
