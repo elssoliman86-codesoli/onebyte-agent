@@ -740,7 +740,7 @@ export default function ChatScreen() {
     try {
       const result = await ImagePicker.launchImageLibraryAsync({
         mediaTypes: ['images'],
-        quality: 0.7,
+        quality: 0.55,
         allowsMultipleSelection: true,
         base64: true,
       });
