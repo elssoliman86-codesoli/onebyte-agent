@@ -19,7 +19,7 @@ import type { StudioMode } from '@/src/modes';
  */
 
 const NAV: { key: string; label: string; icon: string; route: string }[] = [
-  { key: 'index', label: 'الشات', icon: 'message-circle', route: '/(tabs)/index' },
+  { key: 'index', label: 'الشات', icon: 'message-circle', route: '/(tabs)' },
   { key: 'tasks', label: 'المهام', icon: 'calendar', route: '/(tabs)/tasks' },
   { key: 'skills', label: 'المهارات', icon: 'zap', route: '/(tabs)/skills' },
   { key: 'memory', label: 'الذاكرة', icon: 'database', route: '/(tabs)/memory' },
