@@ -91,7 +91,18 @@ export default function CyberSecurityScreen() {
       return;
     }
 
-    const scope = isAuthorized(url, targets);
+    let parsedUrl: URL;
+    try {
+      parsedUrl = new URL(url.trim());
+    } catch {
+      setError('الرابط غير صالح. استخدم رابط HTTP أو HTTPS كاملًا.');
+      return;
+    }
+    if (parsedUrl.protocol !== 'http:' && parsedUrl.protocol !== 'https:') {
+      setError('المختبر يسمح بطلبات HTTP وHTTPS فقط.');
+      return;
+    }
+    const scope = isAuthorized(parsedUrl.toString(), targets);
     if (!scope.ok) {
       setError(scope.reason);
       return;
@@ -259,11 +270,11 @@ export default function CyberSecurityScreen() {
             <Text style={[styles.primaryText, { color: colors.primaryForeground }]}>{running ? 'جارٍ الإرسال…' : 'إرسال الطلب'}</Text>
           </Pressable>
           <Pressable disabled={!running} onPress={stopRequest} style={[styles.stopButton, { borderColor: colors.border, opacity: running ? 1 : 0.45 }]}>
-            <Feather name="square" size={15} color={colors.danger} />
-            <Text style={[styles.primaryText, { color: colors.danger }]}>إيقاف</Text>
+            <Feather name="square" size={15} color={'#FF5F56'} />
+            <Text style={[styles.primaryText, { color: '#FF5F56' }]}>إيقاف</Text>
           </Pressable>
         </View>
-        {error ? <Text accessibilityRole="alert" style={[styles.error, { color: colors.danger }]}>{error}</Text> : null}
+        {error ? <Text accessibilityRole="alert" style={[styles.error, { color: '#FF5F56' }]}>{error}</Text> : null}
       </Surface>
 
       {result ? (
@@ -272,7 +283,7 @@ export default function CyberSecurityScreen() {
             <Feather name="file-text" size={18} color={colors.primary} />
             <Text style={[styles.sectionTitle, { color: colors.foreground }]}>Response</Text>
             <View style={{ flex: 1 }} />
-            <Text style={[styles.status, { color: result.status && result.status < 400 ? colors.primary : colors.danger }]}>{result.status ?? 'NETWORK'} · {result.ms} ms</Text>
+            <Text style={[styles.status, { color: result.status && result.status < 400 ? colors.primary : '#FF5F56' }]}>{result.status ?? 'NETWORK'} · {result.ms} ms</Text>
           </View>
           <Text selectable style={[styles.muted, { color: colors.mutedForeground }]}>{result.method} {result.url}</Text>
           <Text selectable style={[styles.codeBlock, { color: colors.foreground, backgroundColor: colors.background }]}>{result.responsePreview || result.detail}</Text>
