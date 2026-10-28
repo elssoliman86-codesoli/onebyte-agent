@@ -115,7 +115,7 @@ export function VoiceConversationModal({
           const heardWords = new Set(normalize(duringReply.text));
           const replyWords = normalize(answer);
           const overlap = replyWords.length
-            ? replyWords.filter((word) => heardWords.has(word)).length / Math.max(1, heardWords.length)
+            ? replyWords.filter((word) => heardWords.has(word)).length / Math.max(1, heardWords.size)
             : 0;
           if (overlap < 0.62 && heardWords.size >= 2) {
             // Genuine user speech interrupts TTS and becomes the next turn.
