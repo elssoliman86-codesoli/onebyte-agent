@@ -33,6 +33,7 @@ type NavKey =
   | 'tasks'
   | 'skills'
   | 'memory'
+  | 'github'
   | 'approvals'
   | 'assessments'
   | 'findings'
@@ -47,6 +48,7 @@ const NAV_ITEMS: {
   { key: 'tasks', label: 'المهام', icon: 'calendar' },
   { key: 'skills', label: 'المهارات', icon: 'zap' },
   { key: 'memory', label: 'الذاكرة', icon: 'database' },
+  { key: 'github', label: 'مشاريع GitHub', icon: 'github' },
   { key: 'approvals', label: 'الموافقات', icon: 'shield' },
   { key: 'assessments', label: 'التقييمات', icon: 'clipboard' },
   { key: 'findings', label: 'النتائج', icon: 'alert-triangle' },

@@ -113,6 +113,7 @@ function ClassicTabLayout() {
       <Tabs.Screen name="assessments" options={{ href: null }} />
       <Tabs.Screen name="approvals" options={{ href: null }} />
       <Tabs.Screen name="findings" options={{ href: null }} />
+      <Tabs.Screen name="github" options={{ href: null }} />
       {/* Studio modes — drawer-only access, no tab bar entries. */}
       <Tabs.Screen name="marketing" options={{ href: null }} />
       <Tabs.Screen name="lab" options={{ href: null }} />

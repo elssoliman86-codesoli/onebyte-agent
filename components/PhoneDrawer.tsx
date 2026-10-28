@@ -23,6 +23,7 @@ const NAV: { key: string; label: string; icon: string; route: string }[] = [
   { key: 'tasks', label: 'المهام', icon: 'calendar', route: '/(tabs)/tasks' },
   { key: 'skills', label: 'المهارات', icon: 'zap', route: '/(tabs)/skills' },
   { key: 'memory', label: 'الذاكرة', icon: 'database', route: '/(tabs)/memory' },
+  { key: 'github', label: 'مشاريع GitHub', icon: 'github', route: '/(tabs)/github' },
   { key: 'approvals', label: 'الموافقات', icon: 'shield', route: '/(tabs)/approvals' },
   { key: 'settings', label: 'الإعدادات', icon: 'settings', route: '/(tabs)/settings' },
 ];
