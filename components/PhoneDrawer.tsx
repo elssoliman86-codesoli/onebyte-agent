@@ -34,7 +34,17 @@ const STUDIO_NAV: { key: StudioMode; label: string; icon: string }[] = [
   { key: 'hunter', label: 'الأمن السيبراني', icon: 'shield' },
 ];
 
-export function ScreenTopBar({ active }: { active: string }) {
+export function ScreenTopBar({
+  active,
+  center,
+  actions,
+}: {
+  active: string;
+  /** Optional content rendered beside the hamburger in the same row (chat title etc.). */
+  center?: React.ReactNode;
+  /** Optional action buttons rendered at the row's far edge. */
+  actions?: React.ReactNode;
+}) {
   const [open, setOpen] = useState(false);
   const colors = useColors();
   return (
@@ -48,6 +58,8 @@ export function ScreenTopBar({ active }: { active: string }) {
         >
           <Feather name="menu" size={19} color={colors.foreground} />
         </Pressable>
+        {center ? <View style={styles.topBarCenter}>{center}</View> : null}
+        {actions ? <View style={styles.topBarActions}>{actions}</View> : null}
       </View>
       <PhoneDrawer active={active} visible={open} onClose={() => setOpen(false)} />
     </>
@@ -304,6 +316,8 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'center',
   },
+  topBarCenter: { flex: 1, minWidth: 0, marginHorizontal: spacing.xs, alignItems: 'flex-end' },
+  topBarActions: { flexDirection: 'row', gap: spacing.xs, alignItems: 'center' },
   overlay: { flex: 1, backgroundColor: 'rgba(2,6,4,0.62)', flexDirection: 'row' },
   panel: {
     width: 300,

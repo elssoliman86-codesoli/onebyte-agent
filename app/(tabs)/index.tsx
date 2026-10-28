@@ -1265,75 +1265,77 @@ export default function ChatScreen() {
         behavior="padding"
         keyboardVerticalOffset={0}
       >
-        <ScreenTopBar active={activeSession?.mode ?? 'index'} />
-        <View style={styles.header}>
-          <View style={styles.headerCopy}>
-            <Text style={[styles.eyebrow, { color: colors.primary }]}>
-              ONEBYTE · {modeBySessionTag(activeSession?.mode)?.label ?? 'مساعدك الشخصي'}
-            </Text>
-            <Text style={[styles.title, { color: colors.foreground }]}>
-              {activeSession?.title === 'محادثة جديدة' && activeSession?.mode
-                ? 'محادثة ' + (modeBySessionTag(activeSession.mode)?.label ?? '')
-                : activeSession?.title ?? 'محادثة جديدة'}
-            </Text>
-            <Text style={[styles.subtitle, { color: colors.mutedForeground }]}>
-              {provider.model
-                ? `${provider.providerName} · ${provider.model} · ${
-                    provider.free ? 'مجاني · ' : ''
-                  }${formatContext(provider.contextLength)}`
-                : 'الموديل غير مضبوط بعد'}
-            </Text>
-            {contextInfo ? (
-              <Text style={[styles.contextChip, { color: colors.primary }]}>
-                {contextInfo}
-                {queue.length ? ` · ⏳ في الطابور: ${queue.length}` : ''}
+        <ScreenTopBar
+          active={activeSession?.mode ?? 'index'}
+          center={
+            <>
+              <Text style={[styles.eyebrow, { color: colors.primary }]} numberOfLines={1}>
+                ONEBYTE · {modeBySessionTag(activeSession?.mode)?.label ?? 'مساعدك الشخصي'}
               </Text>
-            ) : queue.length ? (
-              <Text style={[styles.contextChip, { color: colors.warning }]}>
-                ⏳ في الطابور: {queue.length}
+              <Text style={[styles.title, { color: colors.foreground }]} numberOfLines={1}>
+                {activeSession?.title === 'محادثة جديدة' && activeSession?.mode
+                  ? 'محادثة ' + (modeBySessionTag(activeSession.mode)?.label ?? '')
+                  : activeSession?.title ?? 'محادثة جديدة'}
               </Text>
-            ) : null}
-          </View>
-          <View style={styles.headerActions}>
-            {activeSession?.mode === 'marketing' ? (
+            </>
+          }
+          actions={
+            <View style={styles.headerActions}>
+              {activeSession?.mode === 'marketing' ? (
+                <Pressable
+                  accessibilityRole="button"
+                  accessibilityLabel="المهام التسويقية"
+                  onPress={() => router.push('/(tabs)/tasks')}
+                  style={[styles.modeActionButton, { borderColor: colors.border, backgroundColor: colors.card }]}
+                >
+                  <Feather name="check-square" size={15} color={colors.primary} />
+                  <Text style={[styles.modeActionText, { color: colors.foreground }]}>المهام</Text>
+                </Pressable>
+              ) : null}
+              {activeSession?.mode === 'developer' || activeSession?.mode === 'hunter' ? (
+                <Pressable
+                  accessibilityRole="button"
+                  accessibilityLabel="فتح المتصفح"
+                  onPress={() => router.push({ pathname: '/browser' })}
+                  style={[styles.modeActionButton, { borderColor: colors.border, backgroundColor: colors.card }]}
+                >
+                  <Feather name="globe" size={15} color={colors.primary} />
+                  <Text style={[styles.modeActionText, { color: colors.foreground }]}>المتصفح</Text>
+                </Pressable>
+              ) : null}
               <Pressable
                 accessibilityRole="button"
-                accessibilityLabel="المهام التسويقية"
-                onPress={() => router.push('/(tabs)/tasks')}
-                style={[styles.modeActionButton, { borderColor: colors.border, backgroundColor: colors.card }]}
+                accessibilityLabel="المحادثات السابقة"
+                onPress={() => setHistoryVisible(true)}
+                style={[styles.headerButton, { borderColor: colors.border }]}
               >
-                <Feather name="check-square" size={15} color={colors.primary} />
-                <Text style={[styles.modeActionText, { color: colors.foreground }]}>المهام</Text>
+                <Feather name="clock" size={18} color={colors.foreground} />
               </Pressable>
-            ) : null}
-            {activeSession?.mode === 'developer' || activeSession?.mode === 'hunter' ? (
               <Pressable
                 accessibilityRole="button"
-                accessibilityLabel="فتح المتصفح"
-                onPress={() => router.push({ pathname: '/browser' })}
-                style={[styles.modeActionButton, { borderColor: colors.border, backgroundColor: colors.card }]}
+                accessibilityLabel="محادثة جديدة"
+                onPress={() => void startNewChat()}
+                style={[styles.headerButton, { backgroundColor: colors.primary }]}
               >
-                <Feather name="globe" size={15} color={colors.primary} />
-                <Text style={[styles.modeActionText, { color: colors.foreground }]}>المتصفح</Text>
+                <Feather name="plus" size={19} color={colors.primaryForeground} />
               </Pressable>
-            ) : null}
-            <Pressable
-              accessibilityRole="button"
-              accessibilityLabel="المحادثات السابقة"
-              onPress={() => setHistoryVisible(true)}
-              style={[styles.headerButton, { borderColor: colors.border }]}
-            >
-              <Feather name="clock" size={18} color={colors.foreground} />
-            </Pressable>
-            <Pressable
-              accessibilityRole="button"
-              accessibilityLabel="محادثة جديدة"
-              onPress={() => void startNewChat()}
-              style={[styles.headerButton, { backgroundColor: colors.primary }]}
-            >
-              <Feather name="plus" size={19} color={colors.primaryForeground} />
-            </Pressable>
-          </View>
+            </View>
+          }
+        />
+        <View style={styles.compactSub}>
+          <Text style={[styles.subtitle, { color: colors.mutedForeground }]} numberOfLines={1}>
+            {provider.model
+              ? `${provider.providerName} · ${provider.model} · ${
+                  provider.free ? 'مجاني · ' : ''
+                }${formatContext(provider.contextLength)}`
+              : 'الموديل غير مضبوط بعد'}
+            {queue.length ? ` · ⏳ في الطابور: ${queue.length}` : ''}
+          </Text>
+          {contextInfo ? (
+            <Text style={[styles.contextChip, { color: colors.primary }]} numberOfLines={1}>
+              {contextInfo}
+            </Text>
+          ) : null}
         </View>
 
         {storageError ? (
@@ -1891,20 +1893,16 @@ export default function ChatScreen() {
 const styles = StyleSheet.create({
   safe: { flex: 1 },
   keyboard: { flex: 1 },
-  header: {
-    minHeight: 78,
-    paddingHorizontal: spacing.md,
-    paddingTop: spacing.sm,
-    paddingBottom: spacing.sm + spacing.xs,
+  compactSub: {
     flexDirection: 'row-reverse',
     alignItems: 'center',
-    justifyContent: 'space-between',
-    gap: spacing.md,
+    gap: spacing.xs,
+    paddingHorizontal: spacing.md,
+    paddingTop: spacing.xs + 2,
   },
-  headerCopy: { flex: 1, alignItems: 'flex-end' },
   eyebrow: { fontFamily: typography.fontFamily, fontSize: typography.xs, fontWeight: typography.weightBold, letterSpacing: 1 },
-  title: { fontFamily: typography.fontFamily, fontSize: typography.xl, fontWeight: typography.weightBold, marginTop: spacing.xs, textAlign: 'right' },
-  subtitle: { fontFamily: typography.fontFamily, fontSize: typography.xs + 1, marginTop: spacing.xs, textAlign: 'right' },
+  title: { fontFamily: typography.fontFamily, fontSize: typography.lg, fontWeight: typography.weightBold, marginTop: 2, textAlign: 'right' },
+  subtitle: { fontFamily: typography.fontFamily, fontSize: typography.xs + 1, flexShrink: 1, textAlign: 'right' },
   headerActions: { flexDirection: 'row', gap: spacing.xs },
   modeEmptyState: {
     flex: 1,
