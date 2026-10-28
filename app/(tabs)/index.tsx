@@ -1762,13 +1762,13 @@ export default function ChatScreen() {
             <Pressable
               accessibilityRole="button"
               accessibilityLabel={sending ? t('stop') : t('send')}
-              disabled={!sending && !draft.trim()}
+              disabled={!sending && !draft.trim() && attachImages.length === 0 && attachFiles.length === 0}
               onPress={() => (sending ? stopRun() : void sendMessage())}
               style={[
                 styles.sendButton,
                 {
                   backgroundColor: sending ? colors.destructive : colors.primary,
-                  opacity: !sending && !draft.trim() ? 0.5 : 1,
+                  opacity: !sending && !draft.trim() && attachImages.length === 0 && attachFiles.length === 0 ? 0.5 : 1,
                 },
               ]}
             >
