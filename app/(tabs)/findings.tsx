@@ -2,6 +2,7 @@
 import { Alert, Pressable, StyleSheet, Text, View } from 'react-native';
 import { Feather } from '@expo/vector-icons';
 import { useColors } from '@/hooks/useColors';
+import { ScreenTopBar } from '@/components/PhoneDrawer';
 import { useWorkspace, type Finding, type FindingSeverity } from '@/src/workspace';
 import { alertCompat } from '@/src/web-alert';
 import {
@@ -143,6 +144,7 @@ export default function FindingsScreen() {
 
   return (
     <>
+      <ScreenTopBar active="hunter" />
       <AppScreen
         title="Findings"
         eyebrow="OUTCOMES"

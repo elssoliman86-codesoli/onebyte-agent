@@ -2,6 +2,7 @@
 import { StyleSheet, Text, View } from 'react-native';
 import { Feather } from '@expo/vector-icons';
 import { useColors } from '@/hooks/useColors';
+import { ScreenTopBar } from '@/components/PhoneDrawer';
 import { alertCompat } from '@/src/web-alert';
 import { useWorkspace } from '@/src/workspace';
 import {
@@ -54,6 +55,7 @@ export default function ApprovalsScreen() {
 
   return (
     <>
+      <ScreenTopBar active="approvals" />
       <AppScreen
         title="Approvals"
         eyebrow="EXPLICIT DECISIONS"

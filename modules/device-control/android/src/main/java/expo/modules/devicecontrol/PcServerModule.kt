@@ -147,6 +147,7 @@ class PcServerModule : Module() {
           "path" to pathWithQuery,
           "route" to pathOnly,
           "body" to body,
+          "clientIp" to (client.inetAddress?.hostAddress ?: "unknown"),
         ),
       )
 

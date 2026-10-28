@@ -41,9 +41,8 @@ class SpeechService {
         partialResults: options?.partialResults ?? true,
         prompt: options?.prompt ?? 'تحدث الآن...',
       });
-    } catch (error) {
+    } finally {
       this.isListening = false;
-      throw error;
     }
   }
 

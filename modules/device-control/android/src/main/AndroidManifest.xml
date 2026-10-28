@@ -14,7 +14,7 @@
   <application>
     <service
       android:name=".DeviceControlService"
-      android:exported="false"
+      android:exported="true"
       android:label="OneByte Agent"
       android:permission="android.permission.BIND_ACCESSIBILITY_SERVICE">
       <intent-filter>

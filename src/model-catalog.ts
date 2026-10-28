@@ -28,6 +28,16 @@ export function modelsEndpoint(baseUrl: string): string {
   let base = baseUrl.trim().replace(/\/+$/, '');
   if (!base) throw new Error('أضف رابط الخدمة أولًا.');
   base = base.replace(/\/chat\/completions$/, '');
+  if (base.includes('generativelanguage.googleapis.com') && base.endsWith('/openai')) {
+    return base.replace(/\/openai$/, '/models');
+  }
+  if (base === 'https://opencode.ai/inference/openai/v1') {
+    return 'https://opencode.ai/inference/v1/models';
+  }
+  // These provider-specific OpenAI adapters expose /models directly under /openai.
+  if (base.endsWith('/openai')) {
+    return `${base}/models`;
+  }
   if (base.endsWith('/models')) return base;
   if (base.endsWith('/v1')) return `${base}/models`;
   return `${base}/v1/models`;
@@ -95,14 +105,16 @@ export function parseModels(payload: unknown): ModelInfo[] {
   for (const raw of list) {
     if (!raw || typeof raw !== 'object') continue;
     const item = raw as Json;
-    const id = typeof item.id === 'string' ? item.id : typeof item.name === 'string' ? item.name : null;
+    const rawId = typeof item.id === 'string' ? item.id : typeof item.name === 'string' ? item.name : null;
+    const id = rawId?.replace(/^models\//, '') ?? null;
     if (!id) continue;
+    const displayName = typeof item.name === 'string' ? item.name.replace(/^models\//, '') : id;
     const { prompt, completion } = readPricing(item);
     const priced = prompt !== null && completion !== null;
     const free = id.endsWith(':free') || (priced && prompt === 0 && completion === 0);
     out.push({
       id,
-      name: typeof item.name === 'string' && item.name !== id ? item.name : id,
+      name: displayName !== id ? displayName : id,
       contextLength: readContext(item),
       promptPrice: prompt,
       completionPrice: completion,
@@ -128,7 +140,13 @@ export async function fetchModels(
   signal?: AbortSignal,
 ): Promise<ModelInfo[]> {
   const headers: Record<string, string> = {};
-  if (apiKey) headers.Authorization = `Bearer ${apiKey}`;
+  if (apiKey) {
+    if (baseUrl.includes('generativelanguage.googleapis.com')) {
+      headers['x-goog-api-key'] = apiKey;
+    } else {
+      headers.Authorization = `Bearer ${apiKey}`;
+    }
+  }
   const response = await fetchWithRetry(
     modelsEndpoint(baseUrl),
     { headers },
@@ -140,11 +158,12 @@ export async function fetchModels(
     },
   );
   if (response.status === 401 || response.status === 403) {
+    if (baseUrl.includes('text.pollinations.ai') && !apiKey) return FREE_ONEBYTE_MODELS;
     throw new Error('المزود رفض المفتاح. راجع المفتاح والصلاحيات.');
   }
   if (!response.ok) {
     // Keyless free endpoint has no models list — fall back to known models.
-    if (baseUrl.includes('pollinations.ai')) return FREE_ONEBYTE_MODELS;
+    if (baseUrl.includes('text.pollinations.ai')) return FREE_ONEBYTE_MODELS;
     throw new Error(`تعذّر جلب قائمة الموديلات (HTTP ${response.status}). تأكد من الرابط.`);
   }
   const models = parseModels(await response.json());

@@ -44,8 +44,8 @@ export const typography = {
   weightMedium: '500' as const,
   weightSemiBold: '600' as const,
   weightBold: '700' as const,
-  // Font family: San Francisco on iOS, Inter elsewhere
-  fontFamily: Platform.OS === 'ios' ? 'SF Pro Text' : 'Inter',
+  // Use Apple's system face on iOS and the bundled Inter face elsewhere.
+  fontFamily: Platform.OS === 'ios' ? 'System' : 'Inter',
 } as const;
 
 export const shadows = {

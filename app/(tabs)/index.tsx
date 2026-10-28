@@ -19,7 +19,6 @@ import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context'
 import { Feather } from '@expo/vector-icons';
 import * as Clipboard from 'expo-clipboard';
 import { router } from 'expo-router';
-import * as Notifications from 'expo-notifications';
 import * as ImagePicker from 'expo-image-picker';
 import * as DocumentPicker from 'expo-document-picker';
 import * as FileSystem from 'expo-file-system/legacy';
@@ -52,6 +51,7 @@ import { MermaidBlock } from '@/components/MermaidBlock';
 import { HtmlPreview } from '@/components/HtmlPreview';
 import { HomeScreen } from '@/components/HomeScreen';
 import { speechService } from '@/src/speech-service';
+import { scheduleTaskReminder } from '@/src/task-reminders';
 import { alertCompat } from '@/src/web-alert';
 import { spacing, radius, typography, shadows } from '@/src/design-tokens';
 import { ScreenTopBar } from '@/components/PhoneDrawer';
@@ -62,6 +62,7 @@ import {
   retrieveKnowledge,
 } from '@/src/knowledge';
 import type { StudioMode } from '@/src/modes';
+import { modeBySessionTag } from '@/src/modes';
 
 let localMessageCounter = 0;
 function messageId() {
@@ -139,10 +140,12 @@ function MessageBody({
   content,
   user,
   onPreview,
+  editableCode,
 }: {
   content: string;
   user?: boolean;
   onPreview?: (html: string) => void;
+  editableCode?: boolean;
 }) {
   const segments = parseSegments(content);
   return (
@@ -155,6 +158,7 @@ function MessageBody({
             key={i}
             code={seg.code}
             language={seg.language}
+            editable={editableCode}
             onPreview={
               onPreview &&
               ((seg.language ?? '').toLowerCase() === 'html' ||
@@ -284,10 +288,12 @@ function MessageBubble({
   message,
   onEditMessage,
   onPreview,
+  editableCode,
 }: {
   message: ChatMessage;
   onEditMessage?: (content: string) => void;
   onPreview?: (html: string) => void;
+  editableCode?: boolean;
 }) {
   const colors = useColors();
   const t = useT();
@@ -393,7 +399,12 @@ function MessageBubble({
             </Text>
           </View>
         ) : null}
-        <MessageBody content={message.content} user={user} onPreview={onPreview} />
+        <MessageBody
+          content={message.content}
+          user={user}
+          onPreview={onPreview}
+          editableCode={editableCode}
+        />
         {user && (onEditMessage || message.content) ? (
           <View style={[styles.userActions, { borderTopColor: 'rgba(255,255,255,0.25)' }]}>
             {onEditMessage ? (
@@ -513,6 +524,7 @@ export default function ChatScreen() {
   const [status, setStatus] = useState('');
   const [showSlash, setShowSlash] = useState(false);
   const [showSkillMenu, setShowSkillMenu] = useState(false);
+  const [selectedSkillName, setSelectedSkillName] = useState<string | null>(null);
   const [thinkingPreview, setThinkingPreview] = useState('');
   const [queue, setQueue] = useState<string[]>([]);
   const [runPlan, setRunPlan] = useState<string | null>(null);
@@ -524,6 +536,7 @@ export default function ChatScreen() {
   const [thinkingOpen, setThinkingOpen] = useState(false);
   const [previewHtml, setPreviewHtml] = useState<string | null>(null);
   const [listening, setListening] = useState(false);
+  const voiceStartingRef = useRef(false);
   const recognitionRef = useRef<{ stop: () => void } | null>(null);
   const abortRef = useRef<AbortController | null>(null);
   const inputRef = useRef<TextInput>(null);
@@ -547,7 +560,7 @@ export default function ChatScreen() {
 
   const SLASH_COMMANDS = [
     { cmd: 'help', label: '/help — قائمة الأوامر' },
-    { cmd: 'skill', label: '/skill — تحميل مهارة' },
+    { cmd: 'skill', label: '/skill — تفعيل مهارة في الخلفية' },
     { cmd: 'mcp', label: '/mcp — حالة الأدوات المتصلة' },
     { cmd: 'new', label: '/new — محادثة جديدة' },
     { cmd: 'settings', label: '/settings — الإعدادات' },
@@ -614,9 +627,10 @@ export default function ChatScreen() {
 
   async function pickSkill(name: string) {
     setShowSkillMenu(false);
-    // Fill the draft so the user continues typing their request right
-    // after the skill name — the enrichment happens at send time.
-    setDraft(`/skill ${name} `);
+    // Keep the skill in app state and add it to private model context.
+    setSelectedSkillName((current) => (current === name ? null : name));
+    setDraft((current) => (current.trimStart().startsWith('/skill') ? '' : current));
+    setShowSlash(false);
     requestAnimationFrame(() => inputRef.current?.focus());
   }
 
@@ -653,32 +667,9 @@ export default function ChatScreen() {
   /** create_task tool callback: store the task + try to schedule its reminder. */
   async function handleCreateTask(input: { title: string; time: string; prompt: string }) {
     const taskId = await createTaskInStore(input);
-    if (Platform.OS === 'web') return;
-    try {
-      const permission = await Notifications.getPermissionsAsync();
-      const granted =
-        permission.granted ||
-        (await Notifications.requestPermissionsAsync()).granted;
-      if (!granted) return;
-      const match = /^([01]\d|2[0-3]):([0-5]\d)$/.exec(input.time);
-      if (!match) return;
-      const notificationId = await Notifications.scheduleNotificationAsync({
-        content: {
-          title: 'حان وقت مهمتك',
-          body: input.title,
-          data: { taskId },
-        },
-        trigger: {
-          type: Notifications.SchedulableTriggerInputTypes.DAILY,
-          hour: Number(match[1]),
-          minute: Number(match[2]),
-          channelId: 'daily-tasks',
-        },
-      });
-      await setTaskActive(taskId, true, notificationId);
-    } catch {
-      // task is stored even if reminders are unavailable
-    }
+    const reminder = await scheduleTaskReminder({ id: taskId, title: input.title, time: input.time });
+    await setTaskActive(taskId, reminder.scheduled, reminder.notificationId);
+    return reminder.message;
   }
 
   /**
@@ -847,18 +838,38 @@ export default function ChatScreen() {
       }
       return;
     }
-    // Native (Android dev build): single-shot recognition via the speech module.
+    // Native Android: request microphone access, then listen for one utterance.
+    if (voiceStartingRef.current) return;
+    voiceStartingRef.current = true;
     setListening(true);
     try {
-      const results = await speechService.startListening({ language: appearance?.language ?? 'ar-SA' });
+      const language =
+        appearance?.language === 'ar'
+          ? 'ar-SA'
+          : appearance?.language === 'en'
+            ? 'en-US'
+            : appearance?.language ?? 'ar-SA';
+      const results = await speechService.startListening({ language });
       const text = (results ?? []).join(' ').trim();
       if (text) setDraft((cur) => (cur ? `${cur} ${text}` : text));
-    } catch {
+      else {
+        alertCompat('الإدخال الصوتي', 'لم أسمع كلامًا واضحًا. اضغط الميكروفون وحاول مرة أخرى.');
+      }
+    } catch (error) {
+      const reason = error instanceof Error ? error.message : '';
+      const detail = /not available|غير موجودة/i.test(reason)
+        ? 'خدمة التعرف على الصوت غير موجودة في هذه النسخة. ثبّت أحدث APK بعد اكتمال البناء.'
+        : /permission|إذن|السماح/i.test(reason)
+          ? 'اسمح للتطبيق باستخدام الميكروفون من نافذة أندرويد أو إعدادات التطبيق.'
+          : reason
+            ? 'تعذّر تشغيل الميكروفون: ' + reason
+            : 'تعذّر تشغيل الميكروفون. تحقق من الإذن وحاول مرة أخرى.';
       alertCompat(
         'الإدخال الصوتي',
-        'خدمة التعرف على الصوت غير متاحة هنا — يحتاج الإذن من النظام أو نسخة APK مثبتة.',
+        detail,
       );
     } finally {
+      voiceStartingRef.current = false;
       setListening(false);
     }
   }
@@ -908,7 +919,9 @@ export default function ChatScreen() {
   }, [pendingPrompt, consumePendingPrompt]);
 
   async function startNewChat() {
-    await createSession();
+    const mode = activeSession?.mode;
+    const id = await createSession();
+    if (mode) await patchSession(id, { mode });
     setMessages([]);
     setDraft('');
     setError('');
@@ -917,7 +930,7 @@ export default function ChatScreen() {
 
   const SLASH_HELP =
     '**الأوامر المتاحة:**\n' +
-    '- `/skill اسم` — تحميل مهارة محفوظة وإرسال طلبك مع تعليماتها\n' +
+    '- `/skill اسم` — اختيار مهارة تعمل داخليًا دون إظهار تعليماتها\n' +
     '- `/new` — محادثة جديدة\n' +
     '- `/settings` أو `/tasks` أو `/skills` أو `/memory` — فتح الشاشة مباشرة\n' +
     '- `/mcp` — عرض الأدوات المتصلة وحالة التحكم\n' +
@@ -925,10 +938,11 @@ export default function ChatScreen() {
 
   /**
    * Local slash commands handled without touching the model.
-   * Returns {handled:true} when the command is fully processed, or
-   * {handled:false, text} with a rewritten text (for /skill).
+   * Returns a clean user request and a private skill selection for /skill.
    */
-  async function handleSlashCommand(raw: string): Promise<{ handled: boolean; text?: string }> {
+  async function handleSlashCommand(
+    raw: string,
+  ): Promise<{ handled: boolean; text?: string; skillName?: string }> {
     const [cmd, ...rest] = raw.slice(1).trim().split(/\s+/);
     const arg = rest.join(' ').trim();
     const c = (cmd ?? '').toLowerCase();
@@ -990,28 +1004,34 @@ export default function ChatScreen() {
         );
         return { handled: true };
       }
-      const skill = skills.find(
-        (s) => s.active && s.name.trim().toLowerCase() === arg.toLowerCase(),
-      );
+      const skill = skills
+        .filter(
+          (s) =>
+            s.active &&
+            (arg.toLowerCase() === s.name.trim().toLowerCase() ||
+              arg.toLowerCase().startsWith(s.name.trim().toLowerCase() + ' ')),
+        )
+        .sort((a, b) => b.name.length - a.name.length)[0];
       if (!skill) {
         await replyLocal('لا توجد مهارة نشطة باسم "' + arg + '".');
         return { handled: true };
       }
-      return {
-        handled: false,
-        text:
-          raw +
-          '\n\n[تعليمات المهارة «' +
-          skill.name +
-          '» — اتبعها بدقة]\n' +
-          skill.instructions,
-      };
+      const request = arg.slice(skill.name.trim().length).trim();
+      if (!request) {
+        setSelectedSkillName(skill.name);
+        return { handled: true };
+      }
+      return { handled: false, text: request, skillName: skill.name };
     }
     // Unknown command — treat as normal text so the model still answers.
     return { handled: false, text: raw };
   }
 
-  async function sendMessage(explicitText?: string, alreadyEnriched = false) {
+  async function sendMessage(
+    explicitText?: string,
+    alreadyEnriched = false,
+    skillOverride?: string,
+  ) {
     let text = (explicitText ?? draft).trim();
     if (!text || sending) {
       // While a run is active, new messages join the queue instead of being lost.
@@ -1027,7 +1047,7 @@ export default function ChatScreen() {
       // /skill N <request> — keep the user's request, drop the command token so
       // the message reads naturally, and mark as enriched to avoid double handling.
       if (outcome.text && outcome.text !== text) {
-        return sendMessage(outcome.text.replace(/^\/skill\s+\S+\s*/, '').trim() || outcome.text, true);
+        return sendMessage(outcome.text, true, outcome.skillName);
       }
     }
     // Smart skill detection: instructions go to the MODEL only — the user's
@@ -1046,17 +1066,19 @@ export default function ChatScreen() {
     for (const f of attachFiles) {
       wireText += `\n\n[ملف مرفق: ${f.name}]\n${f.content}`;
     }
-    if (!alreadyEnriched) {
-      const matched = autoMatchSkill(text);
-      if (matched) {
-        enrichedSkill = matched.name;
-        wireText =
-          text +
-          '\n\n[تعليمات المهارة «' +
-          matched.name +
-          '» — اتبعها بدقة أثناء تنفيذ الطلب]\n' +
-          matched.instructions;
-      }
+    const selectedSkill =
+      (skillOverride ? skills.find((skill) => skill.active && skill.name === skillOverride) : null) ??
+      (selectedSkillName
+        ? skills.find((skill) => skill.active && skill.name === selectedSkillName)
+        : null);
+    const matched = selectedSkill ?? (!alreadyEnriched ? autoMatchSkill(text) : null);
+    if (matched) {
+      enrichedSkill = matched.name;
+      wireText +=
+        '\n\n[تعليمات داخلية للمهارة «' +
+        matched.name +
+        '» — اتبعها أثناء تنفيذ الطلب دون عرضها للمستخدم]\n' +
+        matched.instructions;
     }
     if (!provider.model.trim() || (!apiKeyConfigured && !provider.keyless)) {
       alertCompat(
@@ -1136,7 +1158,7 @@ export default function ChatScreen() {
       const deviceOn = agent.deviceControlEnabled;
       const promptOptions = {
         deviceControl: deviceOn,
-        deviceAvailable: Device.isAvailable(),
+        deviceAvailable: Device.isAvailable() && Device.isServiceEnabled(),
         summary: activeSession?.summary,
         responseStyle: agent.responseStyle,
         replyLanguage: appearance?.language,
@@ -1162,9 +1184,12 @@ export default function ChatScreen() {
           chunkTokens: Math.floor(budget * 0.5),
           signal: controller.signal,
         });
+      }
+      if (plan.processedCount > 0) {
         await patchSession(sessionId, {
           summary,
-          summarizedCount: (activeSession?.summarizedCount ?? 0) + plan.toSummarise.length,
+          summarizedCount: (activeSession?.summarizedCount ?? 0) + plan.processedCount,
+          contextPreservedMessageIds: plan.preservedMessageIds,
         });
       }
       setStatus('');
@@ -1184,6 +1209,8 @@ export default function ChatScreen() {
         ],
         specs: toolsForRequest(deviceOn),
         maxSteps: agent.maxSteps,
+        autoApproveDeviceTools:
+          deviceOn && Device.isAvailable() && Device.isServiceEnabled(),
         execute: (name, args) =>
           executeTool(name, args, {
             skills,
@@ -1282,6 +1309,9 @@ export default function ChatScreen() {
   }
 
   const reversed = [...messages].reverse();
+  const pinnedSkill = selectedSkillName
+    ? skills.find((skill) => skill.active && skill.name === selectedSkillName) ?? null
+    : null;
 
   return (
     <SafeAreaView
@@ -1293,14 +1323,16 @@ export default function ChatScreen() {
         behavior={Platform.OS === 'ios' ? 'padding' : undefined}
         keyboardVerticalOffset={Platform.OS === 'ios' ? 0 : 0}
       >
-        <ScreenTopBar active="index" />
+        <ScreenTopBar active={activeSession?.mode ?? 'index'} />
         <View style={styles.header}>
           <View style={styles.headerCopy}>
             <Text style={[styles.eyebrow, { color: colors.primary }]}>
-              ONEBYTE · مساعدك الشخصي
+              ONEBYTE · {modeBySessionTag(activeSession?.mode)?.label ?? 'مساعدك الشخصي'}
             </Text>
             <Text style={[styles.title, { color: colors.foreground }]}>
-              {activeSession?.title ?? 'محادثة جديدة'}
+              {activeSession?.title === 'محادثة جديدة' && activeSession?.mode
+                ? 'محادثة ' + (modeBySessionTag(activeSession.mode)?.label ?? '')
+                : activeSession?.title ?? 'محادثة جديدة'}
             </Text>
             <Text style={[styles.subtitle, { color: colors.mutedForeground }]}>
               {provider.model
@@ -1321,6 +1353,28 @@ export default function ChatScreen() {
             ) : null}
           </View>
           <View style={styles.headerActions}>
+            {activeSession?.mode === 'marketing' ? (
+              <Pressable
+                accessibilityRole="button"
+                accessibilityLabel="المهام التسويقية"
+                onPress={() => router.push('/(tabs)/tasks')}
+                style={[styles.modeActionButton, { borderColor: colors.border, backgroundColor: colors.card }]}
+              >
+                <Feather name="check-square" size={15} color={colors.primary} />
+                <Text style={[styles.modeActionText, { color: colors.foreground }]}>المهام</Text>
+              </Pressable>
+            ) : null}
+            {activeSession?.mode === 'developer' || activeSession?.mode === 'hunter' ? (
+              <Pressable
+                accessibilityRole="button"
+                accessibilityLabel="فتح المتصفح"
+                onPress={() => router.push({ pathname: '/browser' })}
+                style={[styles.modeActionButton, { borderColor: colors.border, backgroundColor: colors.card }]}
+              >
+                <Feather name="globe" size={15} color={colors.primary} />
+                <Text style={[styles.modeActionText, { color: colors.foreground }]}>المتصفح</Text>
+              </Pressable>
+            ) : null}
             <Pressable
               accessibilityRole="button"
               accessibilityLabel="المحادثات السابقة"
@@ -1372,7 +1426,7 @@ export default function ChatScreen() {
           </Pressable>
         ) : null}
 
-        {messages.length === 0 ? (
+        {messages.length === 0 && !activeSession?.mode ? (
           <HomeScreen
             onNewChat={startNewChat}
             onOpenSettings={() => router.push('/(tabs)/settings')}
@@ -1398,6 +1452,7 @@ export default function ChatScreen() {
                 message={item}
                 onEditMessage={item.role === 'user' ? (content) => void sendMessage(content) : undefined}
                 onPreview={setPreviewHtml}
+                editableCode={activeSession?.mode === 'developer'}
               />
             )}
             inverted
@@ -1407,6 +1462,25 @@ export default function ChatScreen() {
               styles.messageList,
               { paddingBottom: Math.max(insets.bottom, 8) + 82 },
             ]}
+            ListEmptyComponent={
+              activeSession?.mode ? (
+                <View style={styles.modeEmptyState}>
+                  <View style={[styles.modeEmptyIcon, { backgroundColor: colors.accent }]}>
+                    <Feather
+                      name={(modeBySessionTag(activeSession.mode)?.icon ?? 'message-circle') as React.ComponentProps<typeof Feather>['name']}
+                      size={22}
+                      color={colors.primary}
+                    />
+                  </View>
+                  <Text style={[styles.modeEmptyTitle, { color: colors.foreground }]}>
+                    {modeBySessionTag(activeSession.mode)?.label ?? 'محادثة جديدة'}
+                  </Text>
+                  <Text style={[styles.modeEmptyText, { color: colors.mutedForeground }]}>
+                    اكتب طلبك هنا وابدأ المحادثة.
+                  </Text>
+                </View>
+              ) : null
+            }
             ListHeaderComponent={
               sending && runSessionIdRef.current === activeSession?.id ? (
                 <View style={styles.typingRow}>
@@ -1594,6 +1668,22 @@ export default function ChatScreen() {
               <Feather name="chevron-left" size={13} color={colors.mutedForeground} />
             </Pressable>
           ) : null}
+          {pinnedSkill ? (
+            <View style={[styles.selectedSkillRow, { backgroundColor: colors.accent, borderColor: colors.border }]}>
+              <Feather name="zap" size={13} color={colors.primary} />
+              <Text style={[styles.selectedSkillText, { color: colors.foreground }]} numberOfLines={1}>
+                المهارة: {pinnedSkill.name}
+              </Text>
+              <Pressable
+                accessibilityRole="button"
+                accessibilityLabel="إيقاف المهارة المختارة"
+                onPress={() => setSelectedSkillName(null)}
+                hitSlop={8}
+              >
+                <Feather name="x" size={15} color={colors.mutedForeground} />
+              </Pressable>
+            </View>
+          ) : null}
           <View
             style={[
               styles.composer,
@@ -1656,11 +1746,15 @@ export default function ChatScreen() {
                   styles.attachBtn,
                   {
                     borderColor: attachMenuVisible ? colors.primary : colors.border,
-                    backgroundColor: attachMenuVisible ? colors.accent : 'transparent',
+                    backgroundColor: attachMenuVisible ? colors.primary : colors.secondary,
                   },
                 ]}
               >
-                <Feather name="plus" size={19} color={colors.primary} />
+                <Feather
+                  name="plus"
+                  size={19}
+                  color={attachMenuVisible ? colors.primaryForeground : colors.textSecondary}
+                />
               </Pressable>
               <Pressable
                 accessibilityRole="button"
@@ -1670,18 +1764,22 @@ export default function ChatScreen() {
                   styles.voiceBtn,
                   {
                     borderColor: listening ? colors.destructive : colors.border,
-                    backgroundColor: listening ? `${colors.destructive}22` : 'transparent',
+                    backgroundColor: listening ? colors.destructive : colors.secondary,
                   },
                 ]}
               >
-                <Feather name="mic" size={18} color={listening ? colors.destructive : colors.primary} />
+                <Feather
+                  name="mic"
+                  size={18}
+                  color={listening ? colors.destructiveForeground : colors.textSecondary}
+                />
               </Pressable>
             </View>
             <TextInput
               ref={inputRef}
               value={draft}
               onChangeText={onDraftChange}
-              placeholder="اكتبي رسالتك هنا... (اكتبي / للأوامر)"
+              placeholder="اكتبي رسالتك هنا..."
               placeholderTextColor={colors.mutedForeground}
               multiline
               maxLength={12000}
@@ -1689,9 +1787,9 @@ export default function ChatScreen() {
               keyboardAppearance={Platform.OS === 'ios' ? 'light' : undefined}
               returnKeyType="default"
               style={[styles.input, { color: colors.foreground }]}
-            textAlignVertical="center"
-            accessibilityLabel="رسالتك للمساعد"
-          />
+              textAlignVertical="top"
+              accessibilityLabel="رسالتك للمساعد"
+            />
             {attachFiles.length ? (
               <View style={styles.fileChipsRow}>
                 {attachFiles.map((f, i) => (
@@ -1874,10 +1972,32 @@ const styles = StyleSheet.create({
     gap: spacing.md,
   },
   headerCopy: { flex: 1, alignItems: 'flex-end' },
-  eyebrow: { fontSize: typography.xs, fontWeight: typography.weightBold, letterSpacing: 1 },
-  title: { fontSize: typography.xl, fontWeight: typography.weightBold, marginTop: spacing.xs, textAlign: 'right' },
-  subtitle: { fontSize: typography.xs + 1, marginTop: spacing.xs, textAlign: 'right' },
+  eyebrow: { fontFamily: typography.fontFamily, fontSize: typography.xs, fontWeight: typography.weightBold, letterSpacing: 1 },
+  title: { fontFamily: typography.fontFamily, fontSize: typography.xl, fontWeight: typography.weightBold, marginTop: spacing.xs, textAlign: 'right' },
+  subtitle: { fontFamily: typography.fontFamily, fontSize: typography.xs + 1, marginTop: spacing.xs, textAlign: 'right' },
   headerActions: { flexDirection: 'row', gap: spacing.xs },
+  modeEmptyState: {
+    flex: 1,
+    minHeight: 240,
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: spacing.sm,
+    paddingHorizontal: spacing.lg,
+  },
+  modeEmptyIcon: { width: 48, height: 48, borderRadius: 16, alignItems: 'center', justifyContent: 'center' },
+  modeEmptyTitle: { fontFamily: typography.fontFamily, fontSize: typography.lg, fontWeight: typography.weightBold },
+  modeEmptyText: { fontFamily: typography.fontFamily, fontSize: typography.sm + 1, textAlign: 'center' },
+  modeActionButton: {
+    minHeight: 40,
+    flexDirection: 'row-reverse',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 5,
+    borderWidth: 1,
+    borderRadius: radius.md,
+    paddingHorizontal: spacing.sm,
+  },
+  modeActionText: { fontFamily: typography.fontFamily, fontSize: typography.xs + 1, fontWeight: typography.weightBold },
   headerButton: {
     width: 40,
     height: 40,
@@ -1941,7 +2061,7 @@ const styles = StyleSheet.create({
     paddingHorizontal: spacing.sm + spacing.xs + 1,
     borderRadius: radius.lg - 1,
   },
-  messageText: { fontSize: typography.md, lineHeight: 22, textAlign: 'auto' },
+  messageText: { fontFamily: typography.fontFamily, fontSize: typography.md, lineHeight: 23, textAlign: 'auto' },
   diffLine: { fontFamily: 'monospace', fontSize: 12.5, lineHeight: 19, textAlign: 'left', writingDirection: 'ltr' },
   thinkingToggle: { flexDirection: 'row-reverse', alignItems: 'center', gap: spacing.xs + 2, borderTopWidth: 1, paddingTop: spacing.sm, marginTop: spacing.sm },
   thinkingToggleText: { fontSize: typography.xs + 1, fontWeight: typography.weightBold },
@@ -2045,6 +2165,19 @@ const styles = StyleSheet.create({
     maxWidth: '100%',
   },
   modelChipText: { fontSize: typography.xs + 1, fontWeight: typography.weightSemiBold, flexShrink: 1 },
+  selectedSkillRow: {
+    alignSelf: 'flex-start',
+    flexDirection: 'row-reverse',
+    alignItems: 'center',
+    gap: spacing.xs,
+    borderWidth: 1,
+    borderRadius: radius.full,
+    paddingHorizontal: spacing.sm,
+    paddingVertical: spacing.xs + 1,
+    marginBottom: spacing.sm,
+    maxWidth: '100%',
+  },
+  selectedSkillText: { fontFamily: typography.fontFamily, fontSize: typography.xs + 1, fontWeight: typography.weightSemiBold, flexShrink: 1 },
   assistantActions: { flexDirection: 'row-reverse', alignItems: 'center', gap: spacing.md, borderTopWidth: 1, marginTop: spacing.xs + 5, paddingTop: spacing.sm },
   shareDraftStart: { borderTopWidth: 0, marginTop: 0, paddingTop: 0 },
   attachPreviewWrap: { flexDirection: 'row', flexWrap: 'wrap', gap: spacing.xs, paddingHorizontal: spacing.sm + 2, paddingTop: spacing.xs },
@@ -2102,6 +2235,7 @@ const styles = StyleSheet.create({
   composer: {
     flexDirection: 'row-reverse',
     alignItems: 'flex-end',
+    minHeight: 56,
     gap: spacing.sm,
     borderWidth: 1,
     borderRadius: radius.lg + 2,
@@ -2111,13 +2245,17 @@ const styles = StyleSheet.create({
   },
   input: {
     flex: 1,
-    minHeight: 40,
+    minHeight: 44,
     maxHeight: 120,
-    paddingVertical: spacing.sm + 1,
-    fontSize: typography.md,
+    paddingTop: spacing.sm + 1,
+    paddingBottom: spacing.sm + 1,
+    fontFamily: typography.fontFamily,
+    fontSize: typography.md + 1,
+    lineHeight: 25,
+    includeFontPadding: false,
     textAlign: 'right',
   },
-  sendButton: { width: 38, height: 38, borderRadius: radius.md, alignItems: 'center', justifyContent: 'center' },
+  sendButton: { width: 40, height: 40, borderRadius: radius.full, alignItems: 'center', justifyContent: 'center' },
   privacyNote: { fontSize: 9, lineHeight: 13, textAlign: 'center', marginTop: spacing.xs + 3 },
   modalBackdrop: { flex: 1, backgroundColor: 'rgba(4,13,10,0.45)', justifyContent: 'flex-end' },
   historySheet: { maxHeight: '78%', minHeight: '44%', borderTopLeftRadius: radius.xl, borderTopRightRadius: radius.xl, paddingHorizontal: spacing.md + 3, paddingTop: spacing.md + 2, paddingBottom: spacing.lg },

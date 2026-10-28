@@ -40,6 +40,7 @@
   },
   "dependencies": {
     "device-control": "file:./modules/device-control",
+    "speech-recognition": "file:./modules/speech-recognition",
     "expo": "~57.0.31",
     "expo-clipboard": "~57.0.0",
     "expo-document-picker": "~57.0.0",

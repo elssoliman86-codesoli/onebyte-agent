@@ -3,6 +3,7 @@ import { Pressable, StyleSheet, Text, View } from 'react-native';
 import { Feather } from '@expo/vector-icons';
 import { router } from 'expo-router';
 import { useColors } from '@/hooks/useColors';
+import { ScreenTopBar } from '@/components/PhoneDrawer';
 import { useWorkspace, type Assessment } from '@/src/workspace';
 import {
   ActionButton,
@@ -69,6 +70,7 @@ export default function AssessmentsScreen() {
   const [showSheet, setShowSheet] = useState(false);
   return (
     <>
+      <ScreenTopBar active="hunter" />
       <AppScreen
         title="Assessments"
         eyebrow="SCOPE FIRST"

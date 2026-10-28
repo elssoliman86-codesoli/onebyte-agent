@@ -29,8 +29,14 @@ export type ApprovalDecision = 'once' | 'turn' | 'always' | 'deny';
 
 export class ToolsUnsupportedError extends Error {}
 
-function httpError(status: number): Error {
-  if (status === 401 || status === 403) return new Error('المزود رفض مفتاح API.');
+function httpError(status: number, keyless = false): Error {
+  if (status === 401 || status === 403) {
+    return new Error(
+      keyless
+        ? 'الخدمة المجانية رفضت الاتصال بدون مفتاح. قد يكون المزود غيّر شروطه؛ راجع إعدادات المزود.'
+        : 'المزود رفض مفتاح API.',
+    );
+  }
   if (status === 404) return new Error('المسار غير موجود. راجع Base URL.');
   if (status === 429) return new Error('وصلت إلى حد الاستخدام لدى المزود.');
   return new Error(`تعذّر الاتصال بالموديل (HTTP ${status}).`);
@@ -90,7 +96,7 @@ export async function streamCompletion({
     if (specs.length && (response.status === 400 || response.status === 422)) {
       throw new ToolsUnsupportedError('الموديل أو المزود لا يدعم استدعاء الأدوات.');
     }
-    throw httpError(response.status);
+    throw httpError(response.status, settings.keyless);
   }
 
   let text = '';
@@ -210,6 +216,8 @@ export interface RunAgentOptions {
   messages: ProviderChatMessage[];
   specs: ToolSpec[];
   maxSteps: number;
+  /** Run Android device tools without per-step prompts after the user enabled device control. */
+  autoApproveDeviceTools?: boolean;
   execute: (name: string, args: Record<string, unknown>) => Promise<string>;
   requestApproval: (spec: ToolSpec, args: Record<string, unknown>) => Promise<ApprovalDecision>;
   onText: (fullTextSoFar: string) => void;
@@ -232,6 +240,7 @@ export async function runAgent({
   messages,
   specs,
   maxSteps,
+  autoApproveDeviceTools = false,
   execute,
   requestApproval,
   onText,
@@ -357,7 +366,11 @@ export async function runAgent({
         output = `خطأ: الأداة ${call.name} غير متاحة.`;
         status = 'error';
       } else {
-        let allowed = !needsApproval(spec) || allowedForTurn.has(spec.name);
+        const isDeviceTool = spec.group === 'device_read' || spec.group === 'device_act';
+        let allowed =
+          !needsApproval(spec) ||
+          allowedForTurn.has(spec.name) ||
+          (autoApproveDeviceTools && isDeviceTool);
         if (!allowed) {
           const decision = await requestApproval(spec, args);
           if (decision === 'deny') {

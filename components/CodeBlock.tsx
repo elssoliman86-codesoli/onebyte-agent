@@ -1,5 +1,14 @@
 import React, { useEffect, useState } from 'react';
-import { Platform, Pressable, StyleSheet, Text, View } from 'react-native';
+import {
+  KeyboardAvoidingView,
+  Modal,
+  Platform,
+  Pressable,
+  StyleSheet,
+  Text,
+  TextInput,
+  View,
+} from 'react-native';
 import { WebView } from 'react-native-webview';
 import * as Clipboard from 'expo-clipboard';
 import * as FileSystem from 'expo-file-system/legacy';
@@ -25,15 +34,22 @@ export function CodeBlock({
   code,
   language,
   onPreview,
+  editable = false,
 }: {
   code: string;
   language?: string;
   /** Set for HTML blocks — shows the live-preview button + inline preview. */
   onPreview?: (html: string) => void;
+  /** Shows the pencil editor in developer studio chats. */
+  editable?: boolean;
 }) {
   const colors = useColors();
   const [copied, setCopied] = useState(false);
   const [saved, setSaved] = useState(false);
+  const [editedCode, setEditedCode] = useState<string | null>(null);
+  const [editDraft, setEditDraft] = useState('');
+  const [editorVisible, setEditorVisible] = useState(false);
+  const displayedCode = editedCode ?? code;
   const isHtml = Boolean(onPreview);
   // Inline live preview: works right inside the block, debounced while the
   // model is still streaming the code so the frame doesn't reload per token.
@@ -43,12 +59,12 @@ export function CodeBlock({
 
   useEffect(() => {
     if (!onPreview) return;
-    const timer = setTimeout(() => setPreviewSrc(code), 400);
+    const timer = setTimeout(() => setPreviewSrc(displayedCode), 400);
     return () => clearTimeout(timer);
-  }, [code, onPreview]);
+  }, [displayedCode, onPreview]);
 
   async function copy() {
-    await Clipboard.setStringAsync(code);
+    await Clipboard.setStringAsync(displayedCode);
     setCopied(true);
     setTimeout(() => setCopied(false), 1600);
   }
@@ -58,7 +74,7 @@ export function CodeBlock({
       const ext = EXT_MAP[(language ?? '').toLowerCase()] ?? 'txt';
       const filename = `onebyte-code-${Date.now()}.${ext}`;
       if (Platform.OS === 'web' && typeof document !== 'undefined') {
-        const blob = new Blob([code], { type: 'text/plain;charset=utf-8' });
+        const blob = new Blob([displayedCode], { type: 'text/plain;charset=utf-8' });
         const url = URL.createObjectURL(blob);
         const a = document.createElement('a');
         a.href = url;
@@ -69,7 +85,7 @@ export function CodeBlock({
         setTimeout(() => URL.revokeObjectURL(url), 5000);
       } else {
         const path = (FileSystem.cacheDirectory ?? '') + filename;
-        await FileSystem.writeAsStringAsync(path, code, {
+        await FileSystem.writeAsStringAsync(path, displayedCode, {
           encoding: FileSystem.EncodingType.UTF8,
         });
         if (await Sharing.isAvailableAsync()) {
@@ -93,6 +109,20 @@ export function CodeBlock({
           {language || 'code'}
         </Text>
         <View style={styles.headerActions}>
+          {editable ? (
+            <Pressable
+              accessibilityRole="button"
+              accessibilityLabel="تعديل الكود يدويًا"
+              onPress={() => {
+                setEditDraft(displayedCode);
+                setEditorVisible(true);
+              }}
+              style={styles.copyBtn}
+            >
+              <Feather name="edit-2" size={13} color={colors.primary} />
+              <Text style={[styles.copyText, { color: colors.primary }]}>تعديل</Text>
+            </Pressable>
+          ) : null}
           {onPreview && !previewVisible ? (
             <Pressable
               accessibilityRole="button"
@@ -108,7 +138,7 @@ export function CodeBlock({
             <Pressable
               accessibilityRole="button"
               accessibilityLabel="معاينة حية"
-              onPress={() => onPreview(code)}
+              onPress={() => onPreview(displayedCode)}
               style={styles.copyBtn}
             >
               <Feather name="play-circle" size={13} color={colors.success} />
@@ -148,7 +178,7 @@ export function CodeBlock({
         </View>
       </View>
       <Text style={[styles.code, { color: colors.foreground }]} selectable>
-        {code}
+        {displayedCode}
       </Text>
       {onPreview && previewVisible && previewSrc ? (
         <>
@@ -175,7 +205,7 @@ export function CodeBlock({
             <Pressable
               accessibilityRole="button"
               accessibilityLabel="معاينة حية بملء الشاشة"
-              onPress={() => onPreview(code)}
+              onPress={() => onPreview(displayedCode)}
               style={styles.copyBtn}
             >
               <Feather name="maximize" size={13} color={colors.success} />
@@ -208,6 +238,70 @@ export function CodeBlock({
           </View>
         </>
       ) : null}
+      <Modal
+        visible={editorVisible}
+        transparent
+        animationType="slide"
+        onRequestClose={() => setEditorVisible(false)}
+      >
+        <KeyboardAvoidingView
+          behavior={Platform.OS === 'ios' ? 'padding' : undefined}
+          style={styles.editorBackdrop}
+        >
+          <View style={[styles.editorCard, { backgroundColor: colors.card, borderColor: colors.border }]}>
+            <View style={styles.editorHeader}>
+              <Text style={[styles.editorTitle, { color: colors.foreground }]}>
+                {'تعديل الكود' + (language ? ' · ' + language : '')}
+              </Text>
+              <Pressable
+                accessibilityRole="button"
+                accessibilityLabel="إغلاق محرر الكود"
+                onPress={() => setEditorVisible(false)}
+                hitSlop={8}
+              >
+                <Feather name="x" size={20} color={colors.mutedForeground} />
+              </Pressable>
+            </View>
+            <TextInput
+              value={editDraft}
+              onChangeText={setEditDraft}
+              multiline
+              autoCapitalize="none"
+              autoCorrect={false}
+              spellCheck={false}
+              textAlignVertical="top"
+              style={[styles.editorInput, { color: colors.foreground, borderColor: colors.border }]}
+              accessibilityLabel="محتوى الكود قابل للتحرير"
+            />
+            <View style={styles.editorActions}>
+              {onPreview ? (
+                <Pressable
+                  accessibilityRole="button"
+                  onPress={() => {
+                    setEditorVisible(false);
+                    onPreview(editDraft);
+                  }}
+                  style={[styles.editorButton, { borderColor: colors.border }]}
+                >
+                  <Feather name="eye" size={15} color={colors.success} />
+                  <Text style={[styles.copyText, { color: colors.success }]}>معاينة</Text>
+                </Pressable>
+              ) : null}
+              <Pressable
+                accessibilityRole="button"
+                onPress={() => {
+                  setEditedCode(editDraft);
+                  setEditorVisible(false);
+                }}
+                style={[styles.editorButton, { backgroundColor: colors.primary, borderColor: colors.primary }]}
+              >
+                <Feather name="check" size={15} color={colors.primaryForeground} />
+                <Text style={[styles.copyText, { color: colors.primaryForeground }]}>حفظ التعديل</Text>
+              </Pressable>
+            </View>
+          </View>
+        </KeyboardAvoidingView>
+      </Modal>
     </View>
   );
 }
@@ -249,6 +343,45 @@ const styles = StyleSheet.create({
     backgroundColor: '#FFFFFF',
   },
   previewFrame: { flex: 1, backgroundColor: '#FFFFFF' },
+  editorBackdrop: {
+    flex: 1,
+    justifyContent: 'center',
+    padding: 18,
+    backgroundColor: 'rgba(0,0,0,0.62)',
+  },
+  editorCard: {
+    maxHeight: '92%',
+    minHeight: 380,
+    borderWidth: 1,
+    borderRadius: 20,
+    padding: 14,
+    gap: 12,
+  },
+  editorHeader: { flexDirection: 'row-reverse', alignItems: 'center', justifyContent: 'space-between' },
+  editorTitle: { fontSize: 15, fontWeight: '700' },
+  editorInput: {
+    flex: 1,
+    minHeight: 240,
+    borderWidth: 1,
+    borderRadius: 12,
+    padding: 12,
+    fontFamily: 'monospace',
+    fontSize: 12,
+    lineHeight: 19,
+    textAlign: 'left',
+    writingDirection: 'ltr',
+  },
+  editorActions: { flexDirection: 'row-reverse', justifyContent: 'flex-start', gap: 10 },
+  editorButton: {
+    minHeight: 38,
+    flexDirection: 'row-reverse',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 6,
+    paddingHorizontal: 12,
+    borderWidth: 1,
+    borderRadius: 12,
+  },
   previewActions: {
     flexDirection: 'row-reverse',
     alignItems: 'center',

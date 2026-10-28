@@ -1,73 +1,105 @@
-import React, { useRef } from 'react';
-import { Linking, Platform, Pressable, StyleSheet, Text, View } from 'react-native';
+import React, { useEffect, useRef, useState } from 'react';
+import {
+  Linking,
+  Platform,
+  Pressable,
+  StyleSheet,
+  Text,
+  TextInput,
+  View,
+} from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { Feather } from '@expo/vector-icons';
 import { router, useLocalSearchParams } from 'expo-router';
 import { WebView } from 'react-native-webview';
 import { useColors } from '@/hooks/useColors';
+import { alertCompat } from '@/src/web-alert';
 
-/**
- * In-app browser — the "open the platform" surface.
- *
- * Android: a real WebView (the user's sessions/cookies stay local to the
- * device). Web: honest fallback — major sites block iframe embedding, so we
- * open a real browser tab instead. This is a content-preparation browser,
- * not a full HTTPS-interception proxy (that needs a separate network layer).
- */
 export default function BrowserScreen() {
   const colors = useColors();
   const params = useLocalSearchParams<{ url?: string | string[] }>();
-  const url = (Array.isArray(params.url) ? params.url[0] : params.url) ?? '';
+  const initialUrl = (Array.isArray(params.url) ? params.url[0] : params.url) ?? '';
+  const [address, setAddress] = useState(initialUrl);
+  const [url, setUrl] = useState(initialUrl);
   const isWeb = Platform.OS === 'web';
   const webRef = useRef<React.ComponentRef<typeof WebView> | null>(null);
 
+  useEffect(() => {
+    setAddress(initialUrl);
+    setUrl(initialUrl);
+  }, [initialUrl]);
+
   let host = '';
   try {
-    host = new URL(url).hostname;
+    host = url ? new URL(url).hostname : '';
   } catch {
-    host = url.slice(0, 40);
+    host = '';
   }
 
-  if (!url) {
-    return (
-      <SafeAreaView style={[styles.root, { backgroundColor: colors.background }]}>
-        <View style={styles.empty}>
-          <Feather name="globe" size={30} color={colors.mutedForeground} />
-          <Text style={[styles.emptyText, { color: colors.mutedForeground }]}>
-            مفيش رابط مفتوح — افتحي المتصفح من استوديو التسويق أو الشات.
-          </Text>
-          <Pressable
-            accessibilityRole="button"
-            onPress={() => router.back()}
-            style={[styles.primaryBtn, { backgroundColor: colors.primary }]}
-          >
-            <Text style={[styles.primaryText, { color: colors.foreground }]}>رجوع</Text>
-          </Pressable>
-        </View>
-      </SafeAreaView>
-    );
+  function navigate() {
+    const value = address.trim();
+    if (!value) return;
+    const candidate = /^https?:\/\//i.test(value) ? value : `https://${value}`;
+    try {
+      const parsed = new URL(candidate);
+      if (!['http:', 'https:'].includes(parsed.protocol) || parsed.username || parsed.password) {
+        throw new Error('رابط غير مسموح');
+      }
+      const cleanUrl = parsed.toString();
+      setAddress(cleanUrl);
+      setUrl(cleanUrl);
+    } catch {
+      alertCompat('الرابط غير صالح', 'اكتبي رابطًا يبدأ بـ https:// أو http://');
+    }
+  }
+
+  function openOutside() {
+    if (!url) return;
+    if (isWeb && typeof window !== 'undefined') {
+      window.open(url, '_blank', 'noopener,noreferrer');
+      return;
+    }
+    void Linking.openURL(url);
   }
 
   return (
     <SafeAreaView style={[styles.root, { backgroundColor: colors.background }]} edges={['top']}>
-      {/* Top bar: back, host, reload, system browser */}
       <View style={[styles.topBar, { borderBottomColor: colors.border }]}>
         <Pressable
           accessibilityRole="button"
-          accessibilityLabel="رجوع للشاشة السابقة"
+          accessibilityLabel="رجوع للشات"
           onPress={() => router.back()}
           style={styles.iconBtn}
           hitSlop={6}
         >
           <Feather name="arrow-left" size={20} color={colors.foreground} />
         </Pressable>
-        <View style={styles.hostWrap}>
-          <Feather name="globe" size={13} color={colors.mutedForeground} />
-          <Text style={[styles.host, { color: colors.foreground }]} numberOfLines={1}>
-            {host}
-          </Text>
+        <View style={[styles.addressWrap, { backgroundColor: colors.card, borderColor: colors.border }]}>
+          <Feather name="lock" size={13} color={colors.mutedForeground} />
+          <TextInput
+            value={address}
+            onChangeText={setAddress}
+            onSubmitEditing={navigate}
+            placeholder="اكتبي رابط الصفحة"
+            placeholderTextColor={colors.mutedForeground}
+            autoCapitalize="none"
+            autoCorrect={false}
+            keyboardType="url"
+            returnKeyType="go"
+            style={[styles.addressInput, { color: colors.foreground }]}
+            accessibilityLabel="رابط الصفحة"
+          />
         </View>
-        {!isWeb ? (
+        <Pressable
+          accessibilityRole="button"
+          accessibilityLabel="افتح الرابط"
+          onPress={navigate}
+          style={[styles.goBtn, { backgroundColor: colors.primary }]}
+          hitSlop={6}
+        >
+          <Feather name="arrow-up-left" size={18} color={colors.primaryForeground} />
+        </Pressable>
+        {!isWeb && url ? (
           <Pressable
             accessibilityRole="button"
             accessibilityLabel="إعادة تحميل الصفحة"
@@ -75,46 +107,66 @@ export default function BrowserScreen() {
             style={styles.iconBtn}
             hitSlop={6}
           >
-            <Feather name="refresh-cw" size={18} color={colors.foreground} />
+            <Feather name="refresh-cw" size={17} color={colors.foreground} />
           </Pressable>
         ) : null}
-        <Pressable
-          accessibilityRole="button"
-          accessibilityLabel="فتح في متصفح النظام"
-          onPress={() => void Linking.openURL(url)}
-          style={styles.iconBtn}
-          hitSlop={6}
-        >
-          <Feather name="external-link" size={18} color={colors.foreground} />
-        </Pressable>
-      </View>
-
-      {isWeb ? (
-        <View style={styles.empty}>
-          <Feather name="monitor" size={28} color={colors.mutedForeground} />
-          <Text style={[styles.note, { color: colors.mutedForeground }]}>
-            المواقع الكبرى تمنع التضمين داخل iframe — على الويب بنفتح المنصة في تبويب متصفح حقيقي،
-            وسيشنك بتفضل على جهازك.
-          </Text>
+        {url ? (
           <Pressable
             accessibilityRole="button"
-            accessibilityLabel="فتح المنصة في تبويب جديد"
-            onPress={() => window.open(url, '_blank')}
-            style={[styles.primaryBtn, { backgroundColor: colors.primary }]}
+            accessibilityLabel="فتح في متصفح النظام"
+            onPress={openOutside}
+            style={styles.iconBtn}
+            hitSlop={6}
           >
-            <Text style={[styles.primaryText, { color: colors.foreground }]}>افتح المنصة الآن</Text>
+            <Feather name="external-link" size={17} color={colors.foreground} />
           </Pressable>
-        </View>
-      ) : (
+        ) : null}
+      </View>
+
+      {url && !isWeb ? (
         <WebView
           ref={webRef}
           source={{ uri: url }}
           style={styles.webview}
-          originWhitelist={['*']}
+          originWhitelist={['http://*', 'https://*']}
           javaScriptEnabled
           domStorageEnabled
           startInLoadingState
+          onShouldStartLoadWithRequest={(request) => /^https?:\/\//i.test(request.url)}
+          onNavigationStateChange={(state) => {
+            setAddress(state.url);
+            setUrl(state.url);
+          }}
         />
+      ) : (
+        <View style={styles.empty}>
+          <Feather name={url ? 'monitor' : 'globe'} size={30} color={colors.mutedForeground} />
+          <Text style={[styles.host, { color: colors.foreground }]} numberOfLines={1}>
+            {host || 'المتصفح الخاص'}
+          </Text>
+          <Text style={[styles.note, { color: colors.mutedForeground }]}>
+            {url
+              ? 'المواقع قد تمنع العرض داخل متصفح الويب. افتحي الرابط في متصفح الجهاز، أو أرسليه في الشات لقراءته وتحليله.'
+              : 'اكتبي رابط الصفحة لفتحها. لقراءة المصدر ومناقشته، ارسلي الرابط في الشات.'}
+          </Text>
+          {url ? (
+            <Pressable
+              accessibilityRole="button"
+              onPress={openOutside}
+              style={[styles.primaryBtn, { backgroundColor: colors.primary }]}
+            >
+              <Text style={[styles.primaryText, { color: colors.primaryForeground }]}>افتح الصفحة</Text>
+            </Pressable>
+          ) : (
+            <Pressable
+              accessibilityRole="button"
+              onPress={() => router.back()}
+              style={[styles.primaryBtn, { backgroundColor: colors.card, borderColor: colors.border }]}
+            >
+              <Text style={[styles.primaryText, { color: colors.foreground }]}>العودة للشات</Text>
+            </Pressable>
+          )}
+        </View>
       )}
     </SafeAreaView>
   );
@@ -125,34 +177,29 @@ const styles = StyleSheet.create({
   topBar: {
     flexDirection: 'row-reverse',
     alignItems: 'center',
-    gap: 10,
-    paddingHorizontal: 14,
-    paddingVertical: 10,
+    gap: 8,
+    paddingHorizontal: 10,
+    paddingVertical: 9,
     borderBottomWidth: 1,
   },
   iconBtn: { padding: 4 },
-  hostWrap: {
+  addressWrap: {
     flex: 1,
+    minWidth: 0,
+    height: 38,
+    borderRadius: 12,
+    borderWidth: 1,
+    paddingHorizontal: 10,
     flexDirection: 'row-reverse',
     alignItems: 'center',
-    gap: 6,
-    justifyContent: 'center',
+    gap: 8,
   },
-  host: { fontSize: 13, fontWeight: '700', textAlign: 'left' },
+  addressInput: { flex: 1, minWidth: 0, fontSize: 13, textAlign: 'left' },
+  goBtn: { width: 38, height: 38, borderRadius: 12, alignItems: 'center', justifyContent: 'center' },
   webview: { flex: 1 },
-  empty: {
-    flex: 1,
-    alignItems: 'center',
-    justifyContent: 'center',
-    gap: 14,
-    padding: 28,
-  },
-  emptyText: { fontSize: 13, textAlign: 'center', lineHeight: 20 },
-  note: { fontSize: 13, textAlign: 'center', lineHeight: 21 },
-  primaryBtn: {
-    borderRadius: 12,
-    paddingHorizontal: 18,
-    paddingVertical: 11,
-  },
-  primaryText: { fontSize: 14, fontWeight: '800' },
+  empty: { flex: 1, alignItems: 'center', justifyContent: 'center', gap: 12, padding: 26 },
+  host: { maxWidth: '100%', fontSize: 15, fontWeight: '700', textAlign: 'center' },
+  note: { fontSize: 13, lineHeight: 21, textAlign: 'center' },
+  primaryBtn: { borderRadius: 12, borderWidth: 1, paddingHorizontal: 18, paddingVertical: 11, marginTop: 4 },
+  primaryText: { fontSize: 14, fontWeight: '700' },
 });

@@ -25,7 +25,7 @@ export interface ToolContext {
   memories: AssistantMemory[];
   sessions: ChatSession[];
   createMemory: (input: { title: string; content: string }) => Promise<void>;
-  createTask: (input: { title: string; time: string; prompt: string }) => Promise<void>;
+  createTask: (input: { title: string; time: string; prompt: string }) => Promise<string | void>;
 }
 
 const obj = (properties: Record<string, unknown>, required: string[] = []) => ({
@@ -376,12 +376,12 @@ export async function executeTool(
     case 'create_task': {
       const timeRaw = typeof args.time === 'string' ? args.time.trim() : '';
       const time = /^([01]\d|2[0-3]):[0-5]\d$/.test(timeRaw) ? timeRaw : '18:00';
-      await ctx.createTask({
+      const reminderMessage = await ctx.createTask({
         title: str(args, 'title'),
         time,
         prompt: str(args, 'prompt'),
       });
-      return `تمت إضافة المهمة اليومية "${str(args, 'title')}" عند ${time}. افتحيها من تبويب المهام.`;
+      return `تمت إضافة المهمة اليومية "${str(args, 'title')}" عند ${time}. افتحيها من تبويب المهام. ${reminderMessage ?? ''}`.trim();
     }
     case 'wait': {
       // ms is optional in the schema; models frequently omit it.

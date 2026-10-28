@@ -12,6 +12,8 @@
  */
 
 import { storage } from './storage';
+import * as SecureStore from 'expo-secure-store';
+import { Platform } from 'react-native';
 
 // ─── Platform capabilities (honest matrix) ────────────────────────────
 export type PlatformKey =
@@ -166,13 +168,73 @@ export interface MarketingConnections {
 }
 
 const CONNECTIONS_KEY = '@onebyte-agent/marketing-connections';
+const GITHUB_TOKEN_KEY = 'onebyte-agent.marketing.github-token';
+const TELEGRAM_TOKEN_KEY = 'onebyte-agent.marketing.telegram-token';
 
 export async function loadConnections(): Promise<MarketingConnections> {
-  return storage.readRawJSON<MarketingConnections>(CONNECTIONS_KEY, {});
+  const stored = await storage.readRawJSON<MarketingConnections>(CONNECTIONS_KEY, {});
+  if (Platform.OS === 'web') return stored;
+
+  const [githubToken, telegramToken] = await Promise.all([
+    SecureStore.getItemAsync(GITHUB_TOKEN_KEY).catch(() => null),
+    SecureStore.getItemAsync(TELEGRAM_TOKEN_KEY).catch(() => null),
+  ]);
+  const resolvedGithubToken = githubToken ?? stored.githubToken ?? '';
+  const resolvedTelegramToken = telegramToken ?? stored.telegram?.botToken ?? '';
+
+  // Migrate old plain AsyncStorage values before removing them from the record.
+  if ((!githubToken && stored.githubToken) || (!telegramToken && stored.telegram?.botToken)) {
+    try {
+      if (!githubToken && stored.githubToken) {
+        await SecureStore.setItemAsync(GITHUB_TOKEN_KEY, stored.githubToken, {
+          keychainAccessible: SecureStore.WHEN_UNLOCKED_THIS_DEVICE_ONLY,
+        });
+      }
+      if (!telegramToken && stored.telegram?.botToken) {
+        await SecureStore.setItemAsync(TELEGRAM_TOKEN_KEY, stored.telegram.botToken, {
+          keychainAccessible: SecureStore.WHEN_UNLOCKED_THIS_DEVICE_ONLY,
+        });
+      }
+      await storage.writeRawJSON(CONNECTIONS_KEY, {
+        ...(stored.telegram ? { telegram: { botToken: '', chatId: stored.telegram.chatId } } : {}),
+      });
+    } catch {
+      // Keep the legacy value available if secure storage is temporarily unavailable.
+    }
+  }
+
+  return {
+    ...stored,
+    githubToken: resolvedGithubToken,
+    ...(stored.telegram
+      ? { telegram: { ...stored.telegram, botToken: resolvedTelegramToken } }
+      : {}),
+  };
 }
 
 export async function saveConnections(c: MarketingConnections): Promise<void> {
-  await storage.writeRawJSON(CONNECTIONS_KEY, c);
+  if (Platform.OS === 'web') {
+    await storage.writeRawJSON(CONNECTIONS_KEY, c);
+    return;
+  }
+
+  const githubToken = c.githubToken?.trim() ?? '';
+  const telegramToken = c.telegram?.botToken.trim() ?? '';
+  await Promise.all([
+    githubToken
+      ? SecureStore.setItemAsync(GITHUB_TOKEN_KEY, githubToken, {
+          keychainAccessible: SecureStore.WHEN_UNLOCKED_THIS_DEVICE_ONLY,
+        })
+      : SecureStore.deleteItemAsync(GITHUB_TOKEN_KEY).catch(() => undefined),
+    telegramToken
+      ? SecureStore.setItemAsync(TELEGRAM_TOKEN_KEY, telegramToken, {
+          keychainAccessible: SecureStore.WHEN_UNLOCKED_THIS_DEVICE_ONLY,
+        })
+      : SecureStore.deleteItemAsync(TELEGRAM_TOKEN_KEY).catch(() => undefined),
+  ]);
+  await storage.writeRawJSON(CONNECTIONS_KEY, {
+    ...(c.telegram ? { telegram: { botToken: '', chatId: c.telegram.chatId } } : {}),
+  });
 }
 
 /** Verify a GitHub PAT against the official /user endpoint. */

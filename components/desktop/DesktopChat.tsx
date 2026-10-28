@@ -39,6 +39,7 @@ import {
 } from '@/src/model-provider';
 import { estimateTokens, planContext, summariseBacklog, workingBudget } from '@/src/context';
 import * as Device from '@/src/device';
+import { scheduleTaskReminder } from '@/src/task-reminders';
 import { formatContext } from '@/src/model-catalog';
 import { ModelPicker } from '@/components/ModelPicker';
 import { CodeBlock } from '@/components/CodeBlock';
@@ -553,6 +554,7 @@ export function DesktopChat() {
     saveProvider,
     createMemory,
     createTask,
+    setTaskActive,
     saveAgentSettings,
     loading,
     pendingPrompt,
@@ -676,22 +678,26 @@ export function DesktopChat() {
         };
         const plan = planContext(session, [userMessage], estimateTokens(system), budget);
 
+        let summary = session.summary ?? '';
         if (plan.toSummarise.length) {
-          const newSummary = await summariseBacklog({
+          summary = await summariseBacklog({
             settings: provider,
             apiKey,
-            previousSummary: session.summary ?? '',
+            previousSummary: summary,
             messages: plan.toSummarise,
             chunkTokens: Math.floor(budget * 0.5),
             signal: controller.signal,
           });
-          await patchSession(session.id, {
-            summary: newSummary,
-            summarizedCount: (session.summarizedCount ?? 0) + plan.toSummarise.length,
-          });
           system = buildAssistantSystemPrompt(skills, memories, {
             ...promptOptions,
-            summary: newSummary,
+            summary,
+          });
+        }
+        if (plan.processedCount > 0) {
+          await patchSession(session.id, {
+            summary,
+            summarizedCount: (session.summarizedCount ?? 0) + plan.processedCount,
+            contextPreservedMessageIds: plan.preservedMessageIds,
           });
         }
 
@@ -711,7 +717,14 @@ export function DesktopChat() {
               sessions,
               createMemory,
               createTask: async (input) => {
-                await createTask(input);
+                const taskId = await createTask(input);
+                const reminder = await scheduleTaskReminder({
+                  id: taskId,
+                  title: input.title,
+                  time: input.time,
+                });
+                await setTaskActive(taskId, reminder.scheduled, reminder.notificationId);
+                return reminder.message;
               },
             }),
           requestApproval,

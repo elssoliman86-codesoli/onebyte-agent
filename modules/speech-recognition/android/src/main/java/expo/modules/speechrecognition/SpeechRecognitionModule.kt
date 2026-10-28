@@ -1,6 +1,6 @@
 package expo.modules.speechrecognition
 
-import android.content.Context
+import android.Manifest
 import android.content.Intent
 import android.content.pm.PackageManager
 import android.os.Bundle
@@ -8,16 +8,18 @@ import android.speech.RecognitionListener
 import android.speech.RecognizerIntent
 import android.speech.SpeechRecognizer
 import android.util.Log
-import expo.modules.kotlin.exception.CodedException
+import expo.modules.interfaces.permissions.PermissionsStatus
+import expo.modules.kotlin.Promise
+import expo.modules.kotlin.functions.Queues
 import expo.modules.kotlin.modules.Module
 import expo.modules.kotlin.modules.ModuleDefinition
-import org.json.JSONArray
-import org.json.JSONObject
 
 class SpeechRecognitionModule : Module() {
     private var speechRecognizer: SpeechRecognizer? = null
-    private var currentPromise: expo.modules.kotlin.Promise? = null
-    private val TAG = "SpeechRecognition"
+    private var currentPromise: Promise? = null
+    private val context
+        get() = requireNotNull(appContext.reactContext) { "React context is unavailable" }
+    private val tag = "SpeechRecognition"
 
     override fun definition() = ModuleDefinition {
         Name("SpeechRecognition")
@@ -35,40 +37,41 @@ class SpeechRecognitionModule : Module() {
             )
         )
 
-        AsyncFunction("isAvailable") { promise ->
-            val available = SpeechRecognizer.isRecognitionAvailable(context)
-            promise.resolve(available)
+        AsyncFunction("isAvailable") {
+            SpeechRecognizer.isRecognitionAvailable(context)
         }
 
-        AsyncFunction("startListening") { language: String?, maxResults: Int, partialResults: Boolean, prompt: String? ->
+        AsyncFunction("startListening") { language: String?, maxResults: Int, partialResults: Boolean, prompt: String?, promise: Promise ->
             if (speechRecognizer != null) {
-                promise.reject("ALREADY_LISTENING", "Speech recognition already in progress")
+                promise.reject("ALREADY_LISTENING", "Speech recognition already in progress", null)
                 return@AsyncFunction
             }
 
-            if (context.checkSelfPermission(android.Manifest.permission.RECORD_AUDIO) != PackageManager.PERMISSION_GRANTED) {
-                promise.reject("PERMISSION_DENIED", "Microphone permission not granted")
+            if (context.checkSelfPermission(Manifest.permission.RECORD_AUDIO) != PackageManager.PERMISSION_GRANTED) {
+                promise.reject("PERMISSION_DENIED", "Microphone permission not granted", null)
                 return@AsyncFunction
             }
 
-            val recognizer = SpeechRecognizer.createSpeechRecognizer(context)
-            speechRecognizer = recognizer
+            currentPromise = promise
+            try {
+                val recognizer = SpeechRecognizer.createSpeechRecognizer(context)
+                speechRecognizer = recognizer
+                val safeMaxResults = maxResults.coerceIn(1, 5)
+                val intent = Intent(RecognizerIntent.ACTION_RECOGNIZE_SPEECH).apply {
+                    putExtra(RecognizerIntent.EXTRA_LANGUAGE_MODEL, RecognizerIntent.LANGUAGE_MODEL_FREE_FORM)
+                    putExtra(RecognizerIntent.EXTRA_MAX_RESULTS, safeMaxResults)
+                    putExtra(RecognizerIntent.EXTRA_PARTIAL_RESULTS, partialResults)
+                    language?.let { putExtra(RecognizerIntent.EXTRA_LANGUAGE, it) }
+                    prompt?.let { putExtra(RecognizerIntent.EXTRA_PROMPT, it) }
+                }
 
-            val intent = Intent(RecognizerIntent.ACTION_RECOGNIZE_SPEECH).apply {
-                putExtra(RecognizerIntent.EXTRA_LANGUAGE_MODEL, RecognizerIntent.LANGUAGE_MODEL_FREE_FORM)
-                putExtra(RecognizerIntent.EXTRA_MAX_RESULTS, maxResults)
-                putExtra(RecognizerIntent.EXTRA_PARTIAL_RESULTS, partialResults)
-                language?.let { putExtra(RecognizerIntent.EXTRA_LANGUAGE, it) }
-                prompt?.let { putExtra(RecognizerIntent.EXTRA_PROMPT, it) }
-            }
-
-            recognizer.setRecognitionListener(object : RecognitionListener {
+                recognizer.setRecognitionListener(object : RecognitionListener {
                 override fun onReadyForSpeech(params: Bundle?) {
-                    Log.d(TAG, "onReadyForSpeech")
+                    Log.d(tag, "onReadyForSpeech")
                 }
 
                 override fun onBeginningOfSpeech() {
-                    Log.d(TAG, "onBeginningOfSpeech")
+                    Log.d(tag, "onBeginningOfSpeech")
                 }
 
                 override fun onRmsChanged(rmsdB: Float) {}
@@ -76,11 +79,12 @@ class SpeechRecognitionModule : Module() {
                 override fun onBufferReceived(buffer: ByteArray?) {}
 
                 override fun onEndOfSpeech() {
-                    Log.d(TAG, "onEndOfSpeech")
+                    Log.d(tag, "onEndOfSpeech")
                 }
 
                 override fun onError(error: Int) {
-                    Log.e(TAG, "Speech recognition error: $error")
+                    if (currentPromise !== promise) return
+                    Log.e(tag, "Speech recognition error: $error")
                     val errorMessage = when (error) {
                         SpeechRecognizer.ERROR_NETWORK -> "Network error"
                         SpeechRecognizer.ERROR_AUDIO -> "Audio recording error"
@@ -92,65 +96,81 @@ class SpeechRecognitionModule : Module() {
                         SpeechRecognizer.ERROR_INSUFFICIENT_PERMISSIONS -> "Insufficient permissions"
                         else -> "Unknown error ($error)"
                     }
-                    promise?.reject("RECOGNITION_ERROR", errorMessage)
                     cleanup()
+                    promise.reject("RECOGNITION_ERROR", errorMessage, null)
                 }
 
                 override fun onResults(results: Bundle) {
+                    if (currentPromise !== promise) return
                     val matches = results.getStringArrayList(SpeechRecognizer.RESULTS_RECOGNITION)
-                    if (matches != null && matches.isNotEmpty()) {
-                        val jsonArray = JSONArray()
-                        matches.forEach { jsonArray.put(it) }
-                        promise?.resolve(jsonArray.toString())
+                    if (!matches.isNullOrEmpty()) {
+                        val finalResults = matches.take(safeMaxResults)
+                        cleanup()
+                        promise.resolve(finalResults)
                     } else {
-                        promise?.reject("NO_RESULTS", "No recognition results")
+                        cleanup()
+                        promise.reject("NO_RESULTS", "No recognition results", null)
                     }
-                    cleanup()
                 }
 
                 override fun onPartialResults(partialResults: Bundle) {
-                    val matches = partialResults.getStringArrayList(SpeechRecognizer.RESULTS_RECOGNITION)
-                    if (matches != null && matches.isNotEmpty()) {
-                        val jsonArray = JSONArray()
-                        matches.forEach { jsonArray.put(it) }
-                        promise?.resolve(jsonArray.toString())
-                    }
+                    // Partial hypotheses must not settle the final-result promise.
                 }
 
                 override fun onEvent(eventType: Int, params: Bundle?) {}
-            })
-
-            recognizer.startListening(intent)
-        }
+                })
+                recognizer.startListening(intent)
+            } catch (error: Exception) {
+                cleanup()
+                promise.reject("START_FAILED", error.message ?: "Could not start speech recognition", error)
+            }
+        }.runOnQueue(Queues.MAIN)
 
         AsyncFunction("stopListening") {
             speechRecognizer?.stopListening()
-            cleanup()
-        }
+            true
+        }.runOnQueue(Queues.MAIN)
 
         AsyncFunction("cancelListening") {
-            speechRecognizer?.cancel()
-            cleanup()
-        }
+            val activePromise = currentPromise
+            currentPromise = null
+            val recognizer = speechRecognizer
+            speechRecognizer = null
+            recognizer?.cancel()
+            recognizer?.destroy()
+            activePromise?.reject("CANCELLED", "Speech recognition cancelled", null)
+            true
+        }.runOnQueue(Queues.MAIN)
 
         AsyncFunction("hasPermission") {
-            val hasPermission = context.checkSelfPermission(android.Manifest.permission.RECORD_AUDIO) == PackageManager.PERMISSION_GRANTED
-            promise.resolve(hasPermission)
+            context.checkSelfPermission(Manifest.permission.RECORD_AUDIO) == PackageManager.PERMISSION_GRANTED
         }
 
-        AsyncFunction("requestPermission") {
-            // Permission request should be handled by the app via Permissions API
-            promise.resolve(false)
-        }
+        AsyncFunction("requestPermission") { promise: Promise ->
+            if (context.checkSelfPermission(Manifest.permission.RECORD_AUDIO) == PackageManager.PERMISSION_GRANTED) {
+                promise.resolve(true)
+                return@AsyncFunction
+            }
+            val permissions = appContext.permissions
+            if (permissions == null) {
+                promise.reject("E_NO_PERMISSIONS", "Permission manager is unavailable", null)
+                return@AsyncFunction
+            }
+            permissions.askForPermissions(
+                { responses ->
+                    promise.resolve(
+                        responses[Manifest.permission.RECORD_AUDIO]?.status == PermissionsStatus.GRANTED,
+                    )
+                },
+                Manifest.permission.RECORD_AUDIO,
+            )
+        }.runOnQueue(Queues.MAIN)
     }
 
     private fun cleanup() {
-        speechRecognizer?.destroy()
+        val recognizer = speechRecognizer
         speechRecognizer = null
         currentPromise = null
-    }
-
-    companion object {
-        private const val TAG = "SpeechRecognition"
+        recognizer?.destroy()
     }
 }

@@ -114,29 +114,36 @@ type WireMessage =
 export async function migrateIfNeeded(): Promise<void> {
   const oldKey = '@onebyte-agent/assistant-v1';
   const hasOld = await AsyncStorage.getItem(oldKey);
-  const hasNew = await AsyncStorage.getItem(KEYS.sessions);
-
-  if (!hasOld || hasNew) return;
+  if (!hasOld) return;
 
   try {
     const raw = JSON.parse(hasOld) as AssistantData;
-
-    // Write all parts to their new keys in parallel
     const apiKey = await SecureStore.getItemAsync(API_KEY_ID).catch(() => null);
-    await Promise.all([
-      AsyncStorage.setItem(KEYS.sessions, JSON.stringify(raw.sessions)),
-      AsyncStorage.setItem(KEYS.activeSessionId, JSON.stringify(raw.activeSessionId)),
-      AsyncStorage.setItem(KEYS.provider, JSON.stringify(raw.provider)),
-      AsyncStorage.setItem(KEYS.skills, JSON.stringify(raw.skills)),
-      AsyncStorage.setItem(KEYS.memories, JSON.stringify(raw.memories)),
-      AsyncStorage.setItem(KEYS.tasks, JSON.stringify(raw.tasks)),
-      AsyncStorage.setItem(KEYS.agent, JSON.stringify(raw.agent)),
-      AsyncStorage.setItem(KEYS.appearance, JSON.stringify(raw.appearance)),
-      AsyncStorage.setItem(KEYS.knowledge, JSON.stringify(raw.knowledge ?? [])),
-      AsyncStorage.setItem(KEYS.apiKeyConfigured, JSON.stringify(Boolean(apiKey))),
-    ]);
+    const values: Array<[string, unknown]> = [
+      [KEYS.sessions, raw.sessions ?? []],
+      [KEYS.activeSessionId, raw.activeSessionId ?? null],
+      [KEYS.provider, raw.provider ?? DEFAULT_PROVIDER],
+      [KEYS.skills, raw.skills ?? []],
+      [KEYS.memories, raw.memories ?? []],
+      [KEYS.tasks, raw.tasks ?? []],
+      [KEYS.agent, raw.agent ?? DEFAULT_AGENT],
+      [KEYS.appearance, raw.appearance ?? DEFAULT_APPEARANCE],
+      [KEYS.knowledge, raw.knowledge ?? []],
+      [KEYS.apiKeyConfigured, Boolean(apiKey)],
+    ];
 
-    // Remove old key after successful migration
+    // Resume a partial migration without overwriting any newer split-key data.
+    await Promise.all(values.map(async ([key, value]) => {
+      if ((await AsyncStorage.getItem(key)) === null) {
+        await AsyncStorage.setItem(key, JSON.stringify(value));
+      }
+    }));
+    const verified = await Promise.all(values.map(([key]) => AsyncStorage.getItem(key)));
+    if (verified.some((value) => value === null)) {
+      throw new Error('Migration verification failed.');
+    }
+
+    // Keep the old record until every target key has been written and verified.
     await AsyncStorage.removeItem(oldKey);
   } catch (error) {
     console.error('[storage] Migration failed:', error);

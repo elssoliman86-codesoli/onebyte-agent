@@ -65,6 +65,7 @@ export interface PcRequestEvent {
   path: string;
   route: string;
   body: string;
+  clientIp: string;
 }
 
 interface PcServerNative {

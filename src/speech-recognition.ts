@@ -1,4 +1,5 @@
 import { Platform } from 'react-native';
+import { requireOptionalNativeModule } from 'expo';
 
 export interface SpeechRecognitionOptions {
   language?: string;
@@ -9,8 +10,28 @@ export interface SpeechRecognitionOptions {
 
 const isAvailableNative = Platform.OS === 'android';
 
+interface NativeSpeechRecognition {
+  isAvailable(): Promise<boolean>;
+  startListening(language: string, maxResults: number, partialResults: boolean, prompt: string): Promise<string[]>;
+  stopListening(): Promise<void>;
+  cancelListening(): Promise<void>;
+  hasPermission(): Promise<boolean>;
+  requestPermission(): Promise<boolean>;
+}
+
+const native = isAvailableNative
+  ? requireOptionalNativeModule<NativeSpeechRecognition>('SpeechRecognition')
+  : null;
+
+function hasWebSpeechApi(): boolean {
+  if (typeof window === 'undefined') return false;
+  const w = window as unknown as Record<string, unknown>;
+  return Boolean(w.SpeechRecognition ?? w.webkitSpeechRecognition);
+}
+
 export const SpeechRecognition = {
-  isAvailable: () => Promise.resolve(isAvailableNative || Platform.OS === 'web'),
+  isAvailable: async () =>
+    Platform.OS === 'web' ? hasWebSpeechApi() : Boolean(native && (await native.isAvailable())),
   startListening: async (options?: {
     language?: string;
     maxResults?: number;
@@ -63,41 +84,34 @@ export const SpeechRecognition = {
         }
       });
     }
-    if (!isAvailableNative) return [];
-    // eslint-disable-next-line @typescript-eslint/no-var-requires
-    const { SpeechRecognition } = require('react-native').NativeModules;
-    if (!SpeechRecognition) return [];
-    return SpeechRecognition.startListening({
-      language: options?.language,
-      maxResults: options?.maxResults,
-      partialResults: options?.partialResults,
-      prompt: options?.prompt,
-    });
+    if (!native) throw new Error('خدمة التعرف على الصوت غير موجودة في هذه النسخة.');
+    const granted = (await native.hasPermission()) || (await native.requestPermission());
+    if (!granted) throw new Error('لم يتم السماح باستخدام الميكروفون.');
+    return native.startListening(
+      options?.language ?? 'ar-SA',
+      options?.maxResults ?? 1,
+      options?.partialResults ?? false,
+      options?.prompt ?? 'تحدث الآن...',
+    );
   },
   stopListening: async () => {
     if (Platform.OS === 'web') return;
-    if (!isAvailableNative) return;
-    // eslint-disable-next-line @typescript-eslint/no-var-requires
-    const { SpeechRecognition } = require('react-native').NativeModules;
-    if (SpeechRecognition) await SpeechRecognition.stopListening();
+    await native?.stopListening();
   },
   cancelListening: async () => {
     if (Platform.OS === 'web') return;
-    if (!isAvailableNative) return;
-    // eslint-disable-next-line @typescript-eslint/no-var-requires
-    const { SpeechRecognition } = require('react-native').NativeModules;
-    if (SpeechRecognition) await SpeechRecognition.cancelListening();
+    await native?.cancelListening();
   },
   hasPermission: async () => {
     if (!isAvailableNative) return Platform.OS === 'web';
-    // eslint-disable-next-line @typescript-eslint/no-var-requires
-    const { SpeechRecognition } = require('react-native').NativeModules;
-    if (!SpeechRecognition) return false;
-    return SpeechRecognition.hasPermission();
+    return native ? native.hasPermission() : false;
   },
-  requestPermission: async () => Platform.OS === 'web',
+  requestPermission: async () => {
+    if (Platform.OS === 'web') return hasWebSpeechApi();
+    return native ? native.requestPermission() : false;
+  },
 };
 
 export function isSpeechRecognitionAvailable(): boolean {
-  return isAvailableNative || Platform.OS === 'web';
+  return isAvailableNative ? native !== null : Platform.OS === 'web' && hasWebSpeechApi();
 }

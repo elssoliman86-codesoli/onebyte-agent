@@ -52,8 +52,10 @@ export interface ChatSession {
   updatedAt: string;
   /** Running summary of the oldest messages (auto-compaction keeps chats from ever "filling up"). */
   summary?: string;
-  /** How many leading messages are already folded into `summary`. */
+  /** How many leading messages are accounted for by the summary or preserved context. */
   summarizedCount?: number;
+  /** Message IDs in the folded prefix whose original attachments/details stay in recent context. */
+  contextPreservedMessageIds?: string[];
   /** Studio mode tag (marketing/developer/hunter) — drives the system directive. */
   mode?: string;
 }
@@ -199,7 +201,7 @@ interface AssistantContextValue extends AssistantData {
   deleteTask: (id: string) => Promise<void>;
   patchSession: (
     id: string,
-    patch: Partial<Pick<ChatSession, 'summary' | 'summarizedCount' | 'mode'>>,
+    patch: Partial<Pick<ChatSession, 'summary' | 'summarizedCount' | 'contextPreservedMessageIds' | 'mode'>>,
   ) => Promise<void>;
   saveAgentSettings: (patch: Partial<AgentSettings>) => Promise<void>;
   saveAppearanceSettings: (patch: Partial<AppearanceSettings>) => Promise<void>;
@@ -235,7 +237,8 @@ const DEFAULT_APPEARANCE: AppearanceSettings = {
   theme: 'system',
   accent: 'emerald',
   language: 'ar',
-  fontColor: '#F3F7F4',
+  // Empty means use a contrast-safe color from the selected theme.
+  fontColor: '',
 };
 
 let idCounter = 0;
@@ -715,7 +718,7 @@ export function AssistantProvider({
   const patchSession = useCallback(
     async (
       id: string,
-      patch: Partial<Pick<ChatSession, 'summary' | 'summarizedCount' | 'mode'>>,
+      patch: Partial<Pick<ChatSession, 'summary' | 'summarizedCount' | 'contextPreservedMessageIds' | 'mode'>>,
     ) => {
       await ensureLoaded();
       const sessions = dataRef.current.sessions.map((session) =>

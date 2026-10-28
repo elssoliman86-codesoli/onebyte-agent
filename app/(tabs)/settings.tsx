@@ -1,4 +1,4 @@
-import React, { useEffect, useRef, useState } from 'react';
+﻿import React, { useEffect, useRef, useState } from 'react';
 import {
     Platform,
   Pressable,
@@ -64,6 +64,7 @@ export default function SettingsScreen() {
     appendMessage,
     createSession,
     setActiveSession,
+    patchSession,
     createMemory,
     createTask,
     setTaskActive,
@@ -127,6 +128,7 @@ export default function SettingsScreen() {
         knowledge,
       }),
       appendMessage,
+      patchSession,
       createSession,
       setActiveSession,
       createMemory,
@@ -149,6 +151,7 @@ export default function SettingsScreen() {
     agent,
     appearance,
     appendMessage,
+    patchSession,
     createSession,
     setActiveSession,
     createMemory,
@@ -183,7 +186,7 @@ export default function SettingsScreen() {
       alertCompat('أضف الرابط أولًا', 'اكتب Base URL ثم افتح قائمة الموديلات.');
       return;
     }
-    if (!apiKey.trim() && !apiKeyConfigured) {
+    if (!keyless && !apiKey.trim() && !apiKeyConfigured) {
       alertCompat('أضف المفتاح أولًا', 'الصق مفتاح API ثم افتح قائمة الموديلات.');
       return;
     }
@@ -224,7 +227,7 @@ export default function SettingsScreen() {
     const modelId = model.trim();
     const key = apiKey.trim();
     const hasStoredKey = apiKeyConfigured && Platform.OS !== 'web';
-    if (!cleanBaseUrl || !modelId || (!key && !hasStoredKey)) {
+    if (!cleanBaseUrl || !modelId || (!keyless && !key && !hasStoredKey)) {
       probeAbortRef.current?.abort();
       setProbing(false);
       setProbe(null);
@@ -237,9 +240,14 @@ export default function SettingsScreen() {
     const timer = setTimeout(() => {
       void (async () => {
         try {
-          const resolvedKey = key || (await getStoredModelApiKey());
+          const resolvedKey = key || (keyless ? '' : await getStoredModelApiKey());
           const result = await probeModel({
-            settings: { providerName: providerName.trim() || 'Custom', baseUrl: cleanBaseUrl, model: modelId },
+            settings: {
+              providerName: providerName.trim() || 'Custom',
+              baseUrl: cleanBaseUrl,
+              model: modelId,
+              keyless,
+            },
             apiKey: resolvedKey,
             signal: controller.signal,
           });
@@ -259,7 +267,7 @@ export default function SettingsScreen() {
       clearTimeout(timer);
       controller.abort();
     };
-  }, [baseUrl, model, apiKey, apiKeyConfigured, providerName]);
+  }, [baseUrl, model, apiKey, apiKeyConfigured, providerName, keyless]);
 
   function applyPreset(name: string, presetBaseUrl: string, presetKeyless = false) {
     setProviderName(name);
@@ -267,8 +275,8 @@ export default function SettingsScreen() {
     setKeyless(presetKeyless);
     setModel('');
     setPicked(null);
-    // The key is the only thing left to fill: if it is already saved, jump
-    // straight to the model list; otherwise guide the user to the key field.
+    // Keyless providers can load immediately; keyed providers need a saved or
+    // newly entered key before their model catalog can be requested.
     if ((apiKeyConfigured || presetKeyless) && Platform.OS !== 'web') {
       setPickerVisible(true);
     }
@@ -352,11 +360,12 @@ export default function SettingsScreen() {
     setTestReply('');
     let reply = '';
     try {
-      const key = apiKey.trim() || (await getStoredModelApiKey());
+      const key = keyless ? apiKey.trim() : apiKey.trim() || (await getStoredModelApiKey());
       const settings: ProviderSettings = {
         providerName: providerName.trim() || 'Custom provider',
         baseUrl: baseUrl.trim(),
         model: model.trim(),
+        keyless,
       };
       await streamModelChat({
         settings,
@@ -533,7 +542,9 @@ export default function SettingsScreen() {
           {PROVIDER_PRESETS.find((p) => p.baseUrl === baseUrl.trim().replace(/\/+$/, ''))?.note ? (
             <Text style={[styles.body, { color: colors.primary }]}>
               {PROVIDER_PRESETS.find((p) => p.baseUrl === baseUrl.trim().replace(/\/+$/, ''))?.note}
-              {apiKeyConfigured || apiKey.trim()
+              {keyless
+                ? ' — لا يحتاج مفتاحًا؛ افتحي قائمة الموديلات أو ابدئي المحادثة مباشرة.'
+                : apiKeyConfigured || apiKey.trim()
                 ? ' — افتحي قائمة الموديلات واختاري، والفحص التلقائي هيوضحلك الكود جنب السعر.'
                 : ' — الصقي مفتاح المزود في الحقل الآمن تحت، ثم افتحي قائمة الموديلات.'}
             </Text>
@@ -626,8 +637,8 @@ export default function SettingsScreen() {
           />
           <View style={styles.keyStatus}>
             <StatusPill
-              label={apiKeyConfigured ? 'مفتاح محفوظ على الجهاز' : 'لا يوجد مفتاح محفوظ'}
-              tone={apiKeyConfigured ? 'success' : 'warning'}
+              label={keyless ? 'هذا المزود لا يحتاج مفتاحًا' : apiKeyConfigured ? 'مفتاح محفوظ على الجهاز' : 'لا يوجد مفتاح محفوظ'}
+              tone={keyless || apiKeyConfigured ? 'success' : 'warning'}
             />
             {apiKeyConfigured ? (
               <Pressable
@@ -681,7 +692,7 @@ export default function SettingsScreen() {
                 السماح للمساعد باستخدام أدوات الجهاز
               </Text>
               <Text style={[styles.body, { color: colors.mutedForeground }]}>
-                فتح Chrome والروابط والتطبيقات، قراءة الشاشة، الضغط والكتابة. كل إجراء يظهر لك لتوافق عليه أو ترفضه، وزر الإيقاف في الشات يقطع المهمة فورًا.
+                بعد تفعيل الخيار وخدمة إمكانية الوصول، ينفذ المساعد طلباتك على التطبيقات تلقائيًا. قد يشارك محتوى الشاشة مع مزود الذكاء الاصطناعي الذي اخترته. يطلب تأكيدك قبل إرسال أو نشر أو دفع أو حذف نهائي، ويمكنك إيقاف المهمة فورًا من الشات.
               </Text>
             </View>
           </View>
@@ -889,6 +900,23 @@ export default function SettingsScreen() {
         <SectionTitle title="لون الخط" />
         <Surface style={styles.formCard}>
           <View style={styles.presetWrap}>
+            <Pressable
+              accessibilityRole="button"
+              accessibilityLabel="لون الخط تلقائي حسب الثيم"
+              onPress={() =>
+                void saveAppearanceSettings({ fontColor: '' }).catch(() =>
+                  alertCompat('تعذّر الحفظ', 'حاولي مرة أخرى.'),
+                )
+              }
+              style={[
+                styles.accentSwatch,
+                { borderColor: appearance.fontColor ? 'transparent' : colors.foreground },
+              ]}
+            >
+              <View style={[styles.accentDot, { backgroundColor: colors.card }]}>
+                <Feather name="type" size={13} color={colors.foreground} />
+              </View>
+            </Pressable>
             {FONT_COLORS.map((color) => {
               const active = appearance.fontColor === color;
               return (
@@ -1063,6 +1091,9 @@ export default function SettingsScreen() {
               <Text style={[styles.body, { color: colors.mutedForeground }]}>
                 افتحي المتصفح على الكمبيوتر (نفس الواي فاي) وادخلي الرابط ورمز التفويض. نفس تصميم التطبيق ونفس المهام، وطلبات الموافقة تظهر هنا على الهاتف.
               </Text>
+              <Text style={[styles.body, { color: colors.warning }]}>
+                الاتصال المحلي يستخدم HTTP غير مشفّر؛ استخدميه فقط على شبكة موثوقة وأوقفي الخادم بعد الانتهاء.
+              </Text>
             </View>
           </View>
           {pcRunning ? (
@@ -1131,7 +1162,9 @@ export default function SettingsScreen() {
       <ModelPicker
         visible={pickerVisible}
         baseUrl={baseUrl}
-        getApiKey={async () => apiKey.trim() || (await getStoredModelApiKey())}
+        getApiKey={async () =>
+          keyless ? apiKey.trim() : apiKey.trim() || (await getStoredModelApiKey())
+        }
         currentModel={provider.model}
         onClose={() => setPickerVisible(false)}
         onPick={onPickModel}

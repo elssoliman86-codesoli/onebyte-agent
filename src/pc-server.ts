@@ -9,6 +9,7 @@ import { executeTool, toolsForRequest, type ToolSpec } from './tools';
 import { estimateTokens, planContext, workingBudget } from './context';
 import * as Device from './device';
 import { respondToPc, onPcRequest, pcServerAvailable } from './device';
+import { scheduleTaskReminder } from './task-reminders';
 
 /**
  * PC companion server: a tiny HTTP layer over the phone. A browser on the same
@@ -21,6 +22,10 @@ export interface PcServerContext {
   /** Fresh snapshot of all assistant data. */
   getData: () => AssistantData;
   appendMessage: (sessionId: string, message: ChatMessage) => Promise<void>;
+  patchSession: (
+    sessionId: string,
+    patch: Partial<Pick<ChatSession, 'summary' | 'summarizedCount' | 'contextPreservedMessageIds' | 'mode'>>,
+  ) => Promise<void>;
   createSession: () => Promise<string>;
   setActiveSession: (id: string) => Promise<void>;
   createMemory: (input: { title: string; content: string }) => Promise<void>;
@@ -51,15 +56,8 @@ interface LoginAttemptRecord {
 
 const loginAttempts = new Map<string, LoginAttemptRecord>();
 
-function getClientIp(event: { path: string }): string {
-  // In a real deployment, this would come from the socket.
-  // For now, use a hash of the request path as a weak client identifier.
-  // The Kotlin layer could be enhanced to pass the real client IP.
-  let hash = 0;
-  for (let i = 0; i < event.path.length; i++) {
-    hash = ((hash << 5) - hash + event.path.charCodeAt(i)) | 0;
-  }
-  return `client_${Math.abs(hash).toString(36)}`;
+function getClientIp(event: { clientIp?: string }): string {
+  return event.clientIp?.trim() || 'unknown';
 }
 
 function checkLoginLockout(clientIp: string): { allowed: boolean; retryAfterMs: number } {
@@ -244,6 +242,7 @@ async function route(event: {
   path: string;
   route: string;
   body: string;
+  clientIp?: string;
 }): Promise<void> {
   const { id, method, route: path } = event;
   try {
@@ -421,7 +420,7 @@ async function runPcChat(text: string): Promise<void> {
     const fresh = ctx.getData();
     const session = fresh.sessions.find((s) => s.id === sessionId);
     const deviceOn = fresh.agent.deviceControlEnabled;
-    const system = buildAssistantSystemPrompt(fresh.skills, fresh.memories, {
+    let system = buildAssistantSystemPrompt(fresh.skills, fresh.memories, {
       deviceControl: deviceOn,
       deviceAvailable: Device.isAvailable(),
       summary: session?.summary,
@@ -429,7 +428,7 @@ async function runPcChat(text: string): Promise<void> {
     const budget = workingBudget(fresh.provider, fresh.agent.maxWorkingTokens);
     const plan = planContext(
       session ?? null,
-      [userMessage],
+      [],
       estimateTokens(system),
       budget,
     );
@@ -443,6 +442,20 @@ async function runPcChat(text: string): Promise<void> {
         messages: plan.toSummarise,
         chunkTokens: Math.floor(budget * 0.5),
         signal: controller.signal,
+      });
+    }
+    if (session && plan.processedCount > 0) {
+      await ctx.patchSession(sessionId, {
+        summary,
+        summarizedCount: (session.summarizedCount ?? 0) + plan.processedCount,
+        contextPreservedMessageIds: plan.preservedMessageIds,
+      });
+    }
+    if (plan.toSummarise.length) {
+      system = buildAssistantSystemPrompt(fresh.skills, fresh.memories, {
+        deviceControl: deviceOn,
+        deviceAvailable: Device.isAvailable(),
+        summary,
       });
     }
 
@@ -465,7 +478,16 @@ async function runPcChat(text: string): Promise<void> {
           memories: fresh.memories,
           sessions: ctx.getData().sessions,
           createMemory: ctx.createMemory,
-          createTask: (input) => ctx.createTask(input).then(() => undefined),
+          createTask: async (input) => {
+            const taskId = await ctx.createTask(input);
+            const reminder = await scheduleTaskReminder({
+              id: taskId,
+              title: input.title,
+              time: input.time,
+            });
+            await ctx.setTaskActive(taskId, reminder.scheduled, reminder.notificationId);
+            return reminder.message;
+          },
         }),
       requestApproval: async (spec, args) => {
         approvalPending = true;

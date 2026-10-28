@@ -44,6 +44,10 @@ export interface ContextPlan {
   recent: ChatMessage[];
   /** Messages that should be folded into the running summary first. */
   toSummarise: ChatMessage[];
+  /** Number of leading messages moved into the summary/preserved prefix. */
+  processedCount: number;
+  /** IDs of critical messages in that prefix that must remain in recent context. */
+  preservedMessageIds: string[];
   usedTokens: number;
   budgetTokens: number;
 }
@@ -64,6 +68,9 @@ export function workingBudget(settings: ProviderSettings, maxWorkingTokens: numb
  */
 function isCriticalMessage(m: ChatMessage): boolean {
   const content = m.content;
+
+  // Image payloads cannot be reconstructed by the text summariser.
+  if (m.imageUri || m.images?.length) return true;
   
   // Tool results (assistant messages with steps)
   if (m.role === 'assistant' && m.steps && m.steps.length > 0) return true;
@@ -77,8 +84,10 @@ function isCriticalMessage(m: ChatMessage): boolean {
   // File paths (common patterns)
   if (content.match(/(?:[~\/\.][\w\-\.\/]+|[A-Za-z]:\\[\w\\\-]+)/)) return true;
   
-  // Commands — only lines starting with a command sigil or a bare command word
-  if (content.match(/^(?:[\$\#>]\s*)?\w[\w\-]*(?:\s+[\w\-=\./]+)*$/m)) return true;
+  // Commands — use shell prompts or known CLI names so ordinary sentences do not match.
+  const commandLine = /^(?:\$\s+|PS\s+[A-Z]:\\.*>\s+)\S+/im;
+  const knownCommand = /^(?:npm|npx|pnpm|yarn|bun|node|python(?:3)?|pip|git|eas|expo|adb|gradle|gradlew|curl|wget|powershell|pwsh|dotnet|cargo|go|make|Get-ChildItem|Get-Content|Set-Content|Write-Output|Test-Path|Invoke-WebRequest|Copy-Item|Remove-Item)(?:\s|$)/im;
+  if (commandLine.test(content) || content.split('\n').some((line) => knownCommand.test(line.trim()))) return true;
   
   // Explicit preferences/settings
   if (content.match(/(?:أفضّل|أريد|أحتاج|prefer|need|want|setting|إعداد)/i)) return true;
@@ -92,38 +101,60 @@ export function planContext(
   systemTokens: number,
   budget: number,
 ): ContextPlan {
-  const all = [...(session?.messages ?? []), ...extra].filter((m) => m.content.trim());
+  const all = [...(session?.messages ?? []), ...extra].filter(
+    (m) => m.content.trim() || m.imageUri || m.images?.length,
+  );
   const skip = Math.min(session?.summarizedCount ?? 0, all.length);
   let live = all.slice(skip);
+  const previouslyPreserved = new Set(session?.contextPreservedMessageIds ?? []);
+  const preservedPrefix = all.slice(0, skip).filter((message) => previouslyPreserved.has(message.id));
   const summaryTokens = estimateTokens(session?.summary ?? '');
+  const messageCost = (message: ChatMessage) => {
+    const imageCount = message.images?.length ?? (message.imageUri ? 1 : 0);
+    return estimateTokens(message.content) + 6 + imageCount * 1_000;
+  };
   const cost = (msgs: ChatMessage[]) =>
-    systemTokens + summaryTokens + msgs.reduce((n, m) => n + estimateTokens(m.content) + 6, 0);
+    systemTokens + summaryTokens + msgs.reduce((n, m) => n + messageCost(m), 0);
 
-  let used = cost(live);
+  let used = cost([...preservedPrefix, ...live]);
   if (used <= budget) {
-    return { recent: live, toSummarise: [], usedTokens: used, budgetTokens: budget };
+    return {
+      recent: [...preservedPrefix, ...live],
+      toSummarise: [],
+      processedCount: 0,
+      preservedMessageIds: preservedPrefix.map((message) => message.id),
+      usedTokens: used,
+      budgetTokens: budget,
+    };
   }
   // Fold oldest messages until we are at ~45% of budget.
-  // CRITICAL: Never summarise messages marked as critical (tool results, errors, code, etc.)
-  // Always keep at least the last 4 messages.
+  // Keep the last four messages live. Critical messages are also retained
+  // verbatim in the current context and copied into the protected summary.
   const target = budget * 0.45;
   const toSummarise: ChatMessage[] = [];
-  const preserved: ChatMessage[] = [];
-  while (live.length > 4 && cost(live) > target) {
+  const preserved = [...preservedPrefix];
+  let processedCount = 0;
+  while (live.length > 4 && cost([...preserved, ...live]) > target) {
     const candidate = live[0];
     if (isCriticalMessage(candidate)) {
-      // Keep critical messages in the recent section instead of summarising
       preserved.push(candidate);
-      live = live.slice(1);
-      continue;
     }
+    // Every removed message is recorded, so the cursor advances over one
+    // contiguous prefix instead of drifting across skipped critical messages.
     toSummarise.push(candidate);
+    processedCount += 1;
     live = live.slice(1);
   }
-  // Prepend preserved critical messages so they stay in the recent context
   const recent = [...preserved, ...live];
   used = cost(recent);
-  return { recent, toSummarise, usedTokens: used, budgetTokens: budget };
+  return {
+    recent,
+    toSummarise,
+    processedCount,
+    preservedMessageIds: [...new Set(preserved.map((message) => message.id))],
+    usedTokens: used,
+    budgetTokens: budget,
+  };
 }
 
 const SUMMARY_PROMPT =
@@ -156,6 +187,11 @@ function extractCriticalContent(messages: ChatMessage[]): string[] {
   
   for (const m of messages) {
     const content = m.content;
+
+    if (m.imageUri || m.images?.length) {
+      const count = m.images?.length ?? 1;
+      critical.push('[مرفق ' + count + ' صورة في الرسالة ' + m.id + '; الصورة الأصلية محفوظة في السياق.]');
+    }
     
     // Code blocks
     const codeBlocks = content.match(/```[\s\S]*?```/g);
@@ -186,9 +222,13 @@ function extractCriticalContent(messages: ChatMessage[]): string[] {
     const paths = content.match(/(?:[~\/\.][\w\-\.\/]+|[A-Za-z]:\\[\w\\\-]+)/g);
     if (paths) critical.push(...paths.slice(0, 5));
     
-    // Commands (lines starting with common command patterns)
-    const commands = content.match(/^(?:[\$\#>]\s*)?\w+(?:\s+\S+)*$/gm);
-    if (commands) critical.push(...commands.slice(0, 3));
+    // Capture only explicit shell prompts or recognized command names.
+    const commands = content.split('\n').filter((line) => {
+      const trimmed = line.trim();
+      return /^(?:\$\s+|PS\s+[A-Z]:\\.*>\s+)\S+/i.test(trimmed) ||
+        /^(?:npm|npx|pnpm|yarn|bun|node|python(?:3)?|pip|git|eas|expo|adb|gradle|gradlew|curl|wget|powershell|pwsh|dotnet|cargo|go|make|Get-ChildItem|Get-Content|Set-Content|Write-Output|Test-Path|Invoke-WebRequest|Copy-Item|Remove-Item)(?:\s|$)/i.test(trimmed);
+    });
+    critical.push(...commands.slice(0, 3));
   }
   
   // Deduplicate while preserving order

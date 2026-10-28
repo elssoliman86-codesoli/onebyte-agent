@@ -17,10 +17,12 @@ export function useColors() {
   const systemScheme = useColorScheme();
   let preference: 'system' | 'light' | 'dark' = 'system';
   let accentKey: AccentKey = 'emerald';
+  let selectedFontColor = '';
   try {
     const appearance = useAssistant().appearance;
     preference = appearance?.theme ?? 'system';
     accentKey = appearance?.accent ?? 'emerald';
+    selectedFontColor = appearance?.fontColor ?? '';
   } catch {
     // Used outside AssistantProvider (e.g. early error screens) — follow system.
   }
@@ -28,29 +30,39 @@ export function useColors() {
   // Default to dark (premium theme) for the best experience
   const palette = scheme === 'dark' ? colors.dark : colors.light;
   const accent = ACCENTS[accentKey] ?? ACCENTS.emerald;
+  const fontColor = /^#[0-9a-f]{6}$/i.test(selectedFontColor)
+    ? selectedFontColor
+    : palette.foreground;
 
-  // Extended color tokens from dark theme (premium theme)
-  const extendedColors = colors.dark;
+  // Extended color tokens follow the selected palette.
+  const extendedColors = palette as typeof colors.dark;
   
   return {
     ...palette,
+    text: fontColor,
+    foreground: fontColor,
+    cardForeground: fontColor,
     // Accent recolor (contrast-safe foreground per accent)
     tint: accent.primary,
     primary: accent.primary,
     primaryForeground: accent.primaryForeground,
     accent: accent.primary,
     accentForeground: accent.primaryForeground,
-    // Extended color tokens (always from dark/premium theme)
-    surfacePrimary: extendedColors.surfacePrimary,
-    surfaceElevated: extendedColors.surfaceElevated,
-    surfaceGlass: extendedColors.surfaceGlass,
+    // Extended color tokens follow the selected palette.
+    surfacePrimary: extendedColors.surfacePrimary ?? palette.card,
+    surfaceElevated: extendedColors.surfaceElevated ?? palette.card,
+    surfaceGlass: extendedColors.surfaceGlass ?? palette.card,
     borderHighlighted: accent.borderHighlighted,
-    borderSubtle: extendedColors.borderSubtle,
+    borderSubtle: extendedColors.borderSubtle ?? palette.border,
     emeraldPrimary: accent.primary,
     emeraldSecondary: accent.secondary,
     emeraldDeep: accent.deep,
     emeraldGlow: accent.glow,
     emeraldGlowStrong: accent.glowStrong,
+    textPrimary: fontColor,
+    textSecondary: extendedColors.textSecondary ?? palette.mutedForeground,
+    textMuted: extendedColors.textMuted ?? palette.mutedForeground,
+    information: extendedColors.information ?? '#1570EF',
     // Default radius for backward compatibility
     radius: radius.md,
     // Full radius tokens for components that need specific values

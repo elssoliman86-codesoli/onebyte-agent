@@ -6,6 +6,8 @@ import { useColors } from '@/hooks/useColors';
 import { useAssistant } from '@/src/assistant';
 import { useWorkspace } from '@/src/workspace';
 import { spacing, radius } from '@/src/design-tokens';
+import { alertCompat } from '@/src/web-alert';
+import type { StudioMode } from '@/src/modes';
 
 /**
  * Phone side drawer + its hamburger handle.
@@ -25,11 +27,11 @@ const NAV: { key: string; label: string; icon: string; route: string }[] = [
   { key: 'settings', label: 'الإعدادات', icon: 'settings', route: '/(tabs)/settings' },
 ];
 
-/** The three studio modes — each opens its specialised screen (new chat there is tagged with the mode). */
-const STUDIO_NAV: { key: string; label: string; icon: string; route: string }[] = [
-  { key: 'marketing', label: 'استوديو التسويق', icon: 'trending-up', route: '/(tabs)/marketing' },
-  { key: 'developer', label: 'مختبر المطوّر', icon: 'code', route: '/(tabs)/lab' },
-  { key: 'hunter', label: 'صياد الثغرات', icon: 'crosshair', route: '/(tabs)/hunter' },
+/** Studio entries start a normal chat with an internal mode prompt. */
+const STUDIO_NAV: { key: StudioMode; label: string; icon: string }[] = [
+  { key: 'marketing', label: 'استوديو التسويق', icon: 'trending-up' },
+  { key: 'developer', label: 'مختبر المطوّر', icon: 'code' },
+  { key: 'hunter', label: 'الأمن السيبراني', icon: 'shield' },
 ];
 
 export function ScreenTopBar({ active }: { active: string }) {
@@ -62,8 +64,16 @@ export function PhoneDrawer({
   onClose: () => void;
 }) {
   const colors = useColors();
-  const { sessions, activeSessionId, setActiveSession, provider, appearance, saveAppearanceSettings } =
-    useAssistant();
+  const {
+    sessions,
+    activeSessionId,
+    setActiveSession,
+    createSession,
+    patchSession,
+    provider,
+    appearance,
+    saveAppearanceSettings,
+  } = useAssistant();
   const { approvals } = useWorkspace();
   const pendingApprovals = approvals.filter((a) => a.status === 'pending').length;
   const recent = sessions.slice(0, 6);
@@ -76,6 +86,17 @@ export function PhoneDrawer({
   function openSession(id: string) {
     onClose();
     void setActiveSession(id).then(() => router.push('/(tabs)'));
+  }
+
+  async function openStudio(mode: StudioMode) {
+    onClose();
+    try {
+      const id = await createSession();
+      await patchSession(id, { mode });
+      router.replace('/(tabs)');
+    } catch {
+      alertCompat('تعذّر فتح الاستوديو', 'حاولي مرة أخرى.');
+    }
   }
 
   return (
@@ -161,7 +182,7 @@ export function PhoneDrawer({
                     key={item.key}
                     accessibilityRole="button"
                     accessibilityLabel={item.label}
-                    onPress={() => go(item.route)}
+                    onPress={() => void openStudio(item.key)}
                     style={[
                       styles.navItem,
                       isActive && { backgroundColor: colors.accent, borderColor: colors.border },

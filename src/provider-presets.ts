@@ -14,16 +14,15 @@ export interface ProviderPreset {
 
 export const PROVIDER_PRESETS: ProviderPreset[] = [
   {
-    name: '⭐ Free OneByte (مجاني بدون مفتاح)',
+    name: '⭐ Free OneByte (مجاني)',
     baseUrl: 'https://text.pollinations.ai/openai',
-    note: 'مدمج في التطبيق — يعمل على الهاتف مباشرة بدون أي مفتاح أو جهاز خارجي',
+    note: 'الخدمة القديمة قد تعمل بدون مفتاح؛ إذا طلب الخادم مفتاحًا فسيظهر السبب بوضوح',
     keyless: true,
   },
   {
-    name: '⭐ OpenCode Zen (مجاني بحدود)',
-    baseUrl: 'https://opencode.ai/zen/v1',
-    note: 'موديلات قوية مجانًا (GPT-5/Claude/DeepSeek-Free/GLM-Free) — بدون مفتاح مع حدود استخدام',
-    keyless: true,
+    name: 'OpenCode Console',
+    baseUrl: 'https://opencode.ai/inference/openai/v1',
+    note: 'يتطلب تسجيلًا ومفتاح API؛ مزود OpenCode يقيّد استخدام النماذج المجانية داخل تطبيقه',
   },
   { name: 'OpenRouter', baseUrl: 'https://openrouter.ai/api/v1', note: 'أكبر تجميعة وفيه موديلات مجانية' },
   {
@@ -33,8 +32,7 @@ export const PROVIDER_PRESETS: ProviderPreset[] = [
   },
   { name: 'OpenAI', baseUrl: 'https://api.openai.com/v1' },
   { name: 'DeepSeek', baseUrl: 'https://api.deepseek.com/v1', note: 'رخيص وقوي' },
-  { name: 'Google Gemini', baseUrl: 'https://generativelanguage.googleapis.com/v1beta/openai', note: 'مدخل OpenAI-compatible' },
-  { name: 'Anthropic Claude', baseUrl: 'https://api.anthropic.com/v1', note: 'مدخل OpenAI-compatible' },
+  { name: 'Google Gemini', baseUrl: 'https://generativelanguage.googleapis.com/v1beta/openai', note: 'متوافق مع واجهة OpenAI — يحتاج مفتاح Google AI Studio' },
   { name: 'Qwen (DashScope)', baseUrl: 'https://dashscope-intl.aliyuncs.com/compatible-mode/v1' },
   { name: 'NVIDIA NIM', baseUrl: 'https://integrate.api.nvidia.com/v1' },
   { name: 'GMI Cloud', baseUrl: 'https://api.gmi-serving.com/v1' },

@@ -41,7 +41,7 @@ export function HomeScreen({
   onOpenProviderSelector: () => void;
   /** Prefill the composer with a starter prompt (real action, not navigation). */
   onSuggest: (text: string) => void;
-  /** Start a chat using an active skill: prefill "/skill <name>" in the composer. */
+  /** Select an active skill for private assistant context without showing its instructions. */
   onUseSkill: (name: string) => void;
 }) {
   const colors = useColors();
