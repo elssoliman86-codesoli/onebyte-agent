@@ -900,6 +900,8 @@ html.desktop-mode #login{
 
   function showLogin(){
     var app=document.getElementById('app');
+    var existing=document.getElementById('login');
+    if(existing) existing.remove();
     var box=document.createElement('div');
     box.id='login';
     box.innerHTML='<h2 style="font-size:18px;margin-bottom:4px">OneByte Agent</h2>'+
@@ -907,7 +909,7 @@ html.desktop-mode #login{
       '<input id="pin" inputmode="text" maxlength="6" placeholder="••••••" autocomplete="one-time-code">'+
       '<div id="loginErr" style="color:var(--destructive);font-size:12px;min-height:16px"></div>'+
       '<button class="btn" id="loginBtn" style="width:100%">'+t('connect')+'</button>';
-    app.innerHTML='';
+    // Keep the desktop UI mounted behind the login card so boot() can reveal it after authentication.
     app.appendChild(box);
     el('loginBtn').addEventListener('click',login);
     el('pin').addEventListener('keydown',function(e){ if(e.key==='Enter') login(); });
