@@ -754,7 +754,7 @@ html.desktop-mode #login{
   // The phone-linked PC server is separate from the Expo web shell. Honor the same desktop query here.
   var desktopMode = false;
   try {
-    desktopMode = new URLSearchParams(window.location.search).get('desktop') === '1' || /\\/desktop\\/?$/.test(window.location.pathname);
+    desktopMode = new URLSearchParams(window.location.search).get('desktop') === '1' || window.location.pathname === '/desktop' || window.location.pathname === '/desktop/';
   } catch (_) {}
   document.documentElement.classList.toggle('desktop-mode', desktopMode);
   var token = sessionStorage.getItem('ob_token') || '';
