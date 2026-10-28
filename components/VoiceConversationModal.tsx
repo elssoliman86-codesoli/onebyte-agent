@@ -23,6 +23,7 @@ interface VoiceConversationModalProps {
   modelLabel?: string;
   onClose: () => void;
   onSend: (text: string) => Promise<string>;
+  onStop: () => void;
   onUseKeyboard: (transcript: string) => void;
 }
 
@@ -38,6 +39,7 @@ export function VoiceConversationModal({
   modelLabel,
   onClose,
   onSend,
+  onStop,
   onUseKeyboard,
 }: VoiceConversationModalProps) {
   const [state, setState] = useState<VoiceState>('ready');
@@ -48,54 +50,111 @@ export function VoiceConversationModal({
   const turnActive = useRef(false);
   const visibleRef = useRef(visible);
   const sendRef = useRef(onSend);
+  const stopRef = useRef(onStop);
+  const cancelledRef = useRef(false);
 
   visibleRef.current = visible;
   sendRef.current = onSend;
+  stopRef.current = onStop;
 
   const startTurn = useCallback(async () => {
     if (turnActive.current || !visibleRef.current) return;
     turnActive.current = true;
+    cancelledRef.current = false;
     setError('');
     setState('listening');
     try {
-      const results = await speechService.startListening({
+      let spoken = (await speechService.startListening({
         language: speechLocale(language),
         maxResults: 1,
         partialResults: false,
         prompt: 'تحدث الآن',
-      });
-      if (!visibleRef.current) return;
-      const spoken = (results ?? []).join(' ').trim();
-      if (!spoken) {
-        setError('لم أسمع كلامًا واضحًا. اضغط الميكروفون وحاول مرة أخرى.');
-        setState('ready');
-        return;
+      }) ?? []).join(' ').trim();
+
+      while (visibleRef.current && !cancelledRef.current && spoken) {
+        setTranscript(spoken);
+        setState('thinking');
+        const answer = await sendRef.current(spoken);
+        if (!visibleRef.current || cancelledRef.current) return;
+        if (!answer.trim()) {
+          setError('لم يصل رد من الموديل. راجع الاتصال أو إعدادات الموديل ثم حاول مرة أخرى.');
+          setState('error');
+          return;
+        }
+        setReply(answer.trim());
+        setState('speaking');
+
+        // Listen while TTS is speaking so the user can interrupt naturally.
+        // A transcript that substantially matches the assistant reply is treated as speaker echo.
+        const speechPromise = speechService.speak(answer, {
+          language: speechLocale(language),
+          rate: 0.96,
+        }).then(() => ({ kind: 'speech' as const }), (error: unknown) => ({ kind: 'speech-error' as const, error }));
+        const listenPromise = speechService.startListening({
+          language: speechLocale(language),
+          maxResults: 1,
+          partialResults: false,
+          prompt: 'يمكنك المقاطعة والتحدث',
+        }).then(
+          (results) => ({ kind: 'heard' as const, text: (results ?? []).join(' ').trim() }),
+          () => ({ kind: 'listen-error' as const }),
+        );
+
+        const duringReply = await Promise.race([speechPromise, listenPromise]);
+        if (!visibleRef.current || cancelledRef.current) {
+          await speechService.cancelListening().catch(() => undefined);
+          await speechService.stopSpeaking().catch(() => undefined);
+          return;
+        }
+
+        if (duringReply.kind === 'heard' && duringReply.text) {
+          const normalize = (value: string) => value.toLocaleLowerCase()
+            .replace(/[^\p{L}\p{N}\s]/gu, ' ')
+            .split(/\s+/).filter((word) => word.length > 1);
+          const heardWords = new Set(normalize(duringReply.text));
+          const replyWords = normalize(answer);
+          const overlap = replyWords.length
+            ? replyWords.filter((word) => heardWords.has(word)).length / Math.max(1, heardWords.length)
+            : 0;
+          if (overlap < 0.62 && heardWords.size >= 2) {
+            // Genuine user speech interrupts TTS and becomes the next turn.
+            await speechService.stopSpeaking().catch(() => undefined);
+            spoken = duringReply.text;
+            continue;
+          }
+        }
+
+        // TTS ended or recognition was only an echo/noise: stop the parallel recognizer,
+        // wait for TTS cleanup, then return to the normal always-listening loop.
+        await speechService.cancelListening().catch(() => undefined);
+        await speechPromise;
+        spoken = '';
       }
 
-      setTranscript(spoken);
-      setState('thinking');
-      const answer = await sendRef.current(spoken);
-      if (!visibleRef.current) return;
-      if (!answer.trim()) {
-        setError('لم يصل رد من الموديل. راجع الاتصال أو إعدادات الموديل ثم حاول مرة أخرى.');
-        setState('error');
-        return;
-      }
-      setReply(answer.trim());
-      setState('speaking');
-      await speechService.speak(answer, { language: speechLocale(language), rate: 0.96 });
-      if (visibleRef.current) setState('ready');
+      if (!visibleRef.current || cancelledRef.current) return;
+      setError('لم أسمع كلامًا واضحًا. سأعيد الاستماع تلقائيًا.');
+      setState('ready');
     } catch (cause) {
-      if (!visibleRef.current) return;
+      if (!visibleRef.current || cancelledRef.current) return;
       const message = cause instanceof Error ? cause.message : '';
       setError(
         /permission|إذن|السماح/i.test(message)
           ? 'اسمح للتطبيق باستخدام الميكروفون من إعدادات Android.'
-          : message || 'تعذّر بدء المحادثة الصوتية. حاول مرة أخرى.',
+          : /speech timeout|no speech|no recognition results/i.test(message)
+            ? 'لم أسمع كلامًا واضحًا. سأعيد الاستماع تلقائيًا.'
+            : message || 'تعذّر بدء المحادثة الصوتية. سأحاول الاستماع مرة أخرى.',
       );
       setState('error');
     } finally {
       turnActive.current = false;
+      if (visibleRef.current && !cancelledRef.current) {
+        setState((current) => current === 'error' ? 'error' : 'ready');
+        setTimeout(() => {
+          if (visibleRef.current && !turnActive.current && !cancelledRef.current) {
+            void startTurnRef.current();
+          }
+        }, 350);
+      }
     }
   }, [language]);
 
@@ -107,11 +166,13 @@ export function VoiceConversationModal({
       visibleRef.current = false;
       void speechService.cancelListening().catch(() => undefined);
       void speechService.stopSpeaking().catch(() => undefined);
+      cancelledRef.current = true;
       turnActive.current = false;
       return;
     }
 
     visibleRef.current = true;
+    cancelledRef.current = false;
     setTranscript('');
     setReply('');
     setError('');
@@ -151,7 +212,18 @@ export function VoiceConversationModal({
       return;
     }
     if (state === 'speaking') {
-      void speechService.stopSpeaking().finally(() => setState('ready'));
+      cancelledRef.current = false;
+      void speechService.stopSpeaking().finally(() => {
+        if (visibleRef.current) setState('ready');
+      });
+      return;
+    }
+    if (state === 'thinking') {
+      cancelledRef.current = true;
+      stopRef.current();
+      void speechService.cancelListening().catch(() => undefined);
+      void speechService.stopSpeaking().catch(() => undefined);
+      setState('ready');
       return;
     }
     if (state === 'ready' || state === 'error') void startTurnRef.current();
@@ -164,7 +236,7 @@ export function VoiceConversationModal({
         ? 'أجهّز الرد…'
         : state === 'speaking'
           ? 'المساعد يتحدث…'
-          : error || 'اضغط الميكروفون وتحدث';
+          : error || 'أنا سامعك… اتكلم بشكل طبيعي';
   const orbScale = pulse.interpolate({ inputRange: [0, 1], outputRange: [1, 1.075] });
   const ringOpacity = pulse.interpolate({ inputRange: [0, 1], outputRange: [0.2, 0.72] });
 
@@ -231,15 +303,11 @@ export function VoiceConversationModal({
             </Svg>
           </Animated.View>
           <View style={styles.orbIcon}>
-            {state === 'thinking' ? (
-              <ActivityIndicator size="small" color="#03190F" />
-            ) : (
-              <Feather
-                name={state === 'speaking' ? 'volume-2' : 'mic'}
-                size={28}
-                color="#03190F"
-              />
-            )}
+            <Feather
+              name={state === 'speaking' ? 'volume-2' : state === 'thinking' ? 'cpu' : 'mic'}
+              size={28}
+              color="#03190F"
+            />
           </View>
         </View>
 
@@ -273,9 +341,8 @@ export function VoiceConversationModal({
           </Pressable>
           <Pressable
             accessibilityRole="button"
-            accessibilityLabel={state === 'listening' ? 'إنهاء الاستماع' : 'تحدث الآن'}
+            accessibilityLabel={state === 'listening' ? 'إنهاء الاستماع' : state === 'thinking' ? 'إيقاف الطلب' : state === 'speaking' ? 'مقاطعة الرد الصوتي' : 'بدء الاستماع'}
             onPress={handleMainButton}
-            disabled={state === 'thinking'}
             style={({ pressed }) => [
               styles.micButton,
               state === 'thinking' && styles.micButtonDisabled,
@@ -283,7 +350,7 @@ export function VoiceConversationModal({
             ]}
           >
             <Feather
-              name={state === 'listening' ? 'square' : state === 'speaking' ? 'volume-x' : 'mic'}
+              name={state === 'listening' ? 'square' : state === 'speaking' ? 'volume-x' : state === 'thinking' ? 'square' : 'mic'}
               size={24}
               color="#04140D"
             />
@@ -297,7 +364,7 @@ export function VoiceConversationModal({
             <Feather name="x" size={19} color="#B8C9BF" />
           </Pressable>
         </View>
-        <Text style={styles.footer}>اضغط الميكروفون للتحدث مرة أخرى</Text>
+        <Text style={styles.footer}>تقدر تتكلم في أي وقت أو تقاطع الرد — الإغلاق يدوي</Text>
       </SafeAreaView>
     </Modal>
   );
