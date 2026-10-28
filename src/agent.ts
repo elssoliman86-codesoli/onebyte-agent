@@ -1,4 +1,6 @@
-import { fetch } from 'expo/fetch';
+import { fetchWithRetry } from './fetch-with-retry';
+import { storage } from './storage';
+import { checkServiceHealth } from './device';
 import type { ProviderSettings, ToolStep } from './assistant';
 import { endpointFor, type ProviderChatMessage } from './model-provider';
 import {
@@ -6,6 +8,7 @@ import {
   toOpenAITools,
   type ToolSpec,
 } from './tools';
+import type { AgentCheckpoint } from './storage';
 
 export interface ToolCall {
   id: string;
@@ -66,12 +69,23 @@ export async function streamCompletion({
   };
   // Keyless providers (Free OneByte) skip auth entirely.
   if (apiKey) headers.Authorization = `Bearer ${apiKey}`;
-  const response = await fetch(endpointFor(settings.baseUrl), {
-    method: 'POST',
-    headers,
-    body: JSON.stringify(body),
-    signal,
-  });
+  const response = await fetchWithRetry(
+    endpointFor(settings.baseUrl),
+    {
+      method: 'POST',
+      headers,
+      body: JSON.stringify(body),
+    },
+    {
+      timeout: 90_000, // 90s for streaming responses
+      maxRetries: 2,
+      baseDelay: 1_000,
+      signal,
+      onRetry: (attempt, error, delay) => {
+        console.warn(`[streamCompletion] Retry ${attempt}/2 after ${Math.round(delay)}ms:`, error.message);
+      },
+    },
+  );
   if (!response.ok) {
     if (specs.length && (response.status === 400 || response.status === 422)) {
       throw new ToolsUnsupportedError('الموديل أو المزود لا يدعم استدعاء الأدوات.');
@@ -190,6 +204,28 @@ export interface AgentRunResult {
  * Every non-local tool waits for an explicit user decision; "turn" approvals are per-tool
  * and expire when this run ends.
  */
+export interface RunAgentOptions {
+  settings: ProviderSettings;
+  apiKey: string;
+  messages: ProviderChatMessage[];
+  specs: ToolSpec[];
+  maxSteps: number;
+  execute: (name: string, args: Record<string, unknown>) => Promise<string>;
+  requestApproval: (spec: ToolSpec, args: Record<string, unknown>) => Promise<ApprovalDecision>;
+  onText: (fullTextSoFar: string) => void;
+  onThinking?: (chunk: string) => void;
+  onStep: (steps: ToolStep[]) => void;
+  signal?: AbortSignal;
+  /** Optional checkpoint to resume from. */
+  checkpoint?: AgentCheckpoint | null;
+  /** Session ID for checkpoint persistence. */
+  sessionId: string;
+  /** Original user message that started this run. */
+  originalUserMessage: string;
+  /** Called when a checkpoint is saved. */
+  onCheckpoint?: (checkpoint: AgentCheckpoint) => void;
+}
+
 export async function runAgent({
   settings,
   apiKey,
@@ -202,61 +238,95 @@ export async function runAgent({
   onThinking,
   onStep,
   signal,
-}: {
-  settings: ProviderSettings;
-  apiKey: string;
-  messages: ProviderChatMessage[];
-  specs: ToolSpec[];
-  maxSteps: number;
-  execute: (name: string, args: Record<string, unknown>) => Promise<string>;
-  requestApproval: (spec: ToolSpec, args: Record<string, unknown>) => Promise<ApprovalDecision>;
-  onText: (fullTextSoFar: string) => void;
-  onThinking?: (chunk: string) => void;
-  onStep: (steps: ToolStep[]) => void;
-  signal?: AbortSignal;
-}): Promise<AgentRunResult> {
-  const wire: WireMessage[] = [...messages];
-  const steps: ToolStep[] = [];
-  // "Turn" approvals are keyed by the individual tool name, not its group: approving one
-  // action for the rest of the run must never silently authorize a different action.
-  const allowedForTurn = new Set<string>();
+  checkpoint,
+  sessionId,
+  originalUserMessage,
+  onCheckpoint,
+}: RunAgentOptions): Promise<AgentRunResult> {
+  // Restore from checkpoint if provided
+  let wire: WireMessage[];
+  let steps: ToolStep[];
   let finalText = '';
   let finalThinking = '';
+  const allowedForTurn = new Set<string>();
   let activeSpecs = specs;
   let toolsWereUnsupported = false;
+  let startRound = 0;
 
-  for (let round = 0; round <= maxSteps; round += 1) {
-    if (signal?.aborted) throw new Error('تم إيقاف المهمة.');
-    let roundText = '';
-    let result: { text: string; toolCalls: ToolCall[] };
-    try {
-      result = await streamCompletion({
-        settings,
-        apiKey,
-        messages: wire,
-        specs: round === maxSteps ? [] : activeSpecs,
-        onText: (chunk) => {
-          roundText += chunk;
-          onText(finalText + roundText);
-        },
-        onThinking: (chunk) => {
-          finalThinking += chunk;
-          onThinking?.(chunk);
-        },
-        signal,
-      });
-    } catch (error) {
-      if (error instanceof ToolsUnsupportedError && activeSpecs.length) {
-        activeSpecs = [];
-        toolsWereUnsupported = true;
-        round -= 1;
-        continue;
+  if (checkpoint) {
+    // Resume from checkpoint
+    wire = [...checkpoint.wire];
+    steps = [...checkpoint.steps];
+    finalText = checkpoint.finalText;
+    finalThinking = checkpoint.finalThinking;
+    checkpoint.allowedForTurn.forEach((name) => allowedForTurn.add(name));
+    // Restore activeSpecs by matching names
+    activeSpecs = specs.filter((s) => checkpoint.activeSpecsNames.includes(s.name));
+    toolsWereUnsupported = checkpoint.toolsWereUnsupported;
+    startRound = checkpoint.round;
+    console.log(`[runAgent] Resumed from checkpoint at round ${startRound}`);
+  } else {
+    wire = [...messages];
+    steps = [];
+  }
+
+  const saveCheckpoint = async (round: number) => {
+    const cp: AgentCheckpoint = {
+      version: 1,
+      sessionId,
+      createdAt: new Date().toISOString(),
+      round,
+      wire: [...wire],
+      steps: [...steps],
+      finalText,
+      finalThinking,
+      allowedForTurn: [...allowedForTurn],
+      activeSpecsNames: activeSpecs.map((s) => s.name),
+      toolsWereUnsupported,
+      maxSteps,
+      originalUserMessage,
+      provider: settings,
+    };
+    await storage.saveCheckpoint(cp);
+    onCheckpoint?.(cp);
+  };
+
+  try {
+    for (let round = startRound; round <= maxSteps; round += 1) {
+      if (signal?.aborted) throw new Error('تم إيقاف المهمة.');
+      let roundText = '';
+      let result: { text: string; toolCalls: ToolCall[] };
+      try {
+        result = await streamCompletion({
+          settings,
+          apiKey,
+          messages: wire,
+          specs: round === maxSteps ? [] : activeSpecs,
+          onText: (chunk) => {
+            roundText += chunk;
+            onText(finalText + roundText);
+          },
+          onThinking: (chunk) => {
+            finalThinking += chunk;
+            onThinking?.(chunk);
+          },
+          signal,
+        });
+      } catch (error) {
+        if (error instanceof ToolsUnsupportedError && activeSpecs.length) {
+          activeSpecs = [];
+          toolsWereUnsupported = true;
+          round -= 1;
+          continue;
+        }
+        throw error;
       }
-      throw error;
-    }
 
     if (result.text) finalText += result.text + (result.toolCalls.length ? '\n\n' : '');
-    if (!result.toolCalls.length) break;
+    if (!result.toolCalls.length) {
+      await saveCheckpoint(round + 1);
+      break;
+    }
 
     wire.push({
       role: 'assistant',
@@ -316,7 +386,32 @@ export async function runAgent({
         tool_call_id: call.id,
         content: output.length > MAX_TOOL_RESULT ? `${output.slice(0, MAX_TOOL_RESULT)}\n…(مقتطع)` : output,
       });
+      // Save checkpoint after each tool execution
+      await saveCheckpoint(round);
     }
+
+    // Accessibility service health check (Android only, when device control is enabled)
+    // Runs after each round to catch service crashes during long tasks.
+    if (specs.some((s) => s.group.startsWith('device_'))) {
+      try {
+        const health = await checkServiceHealth();
+        if (!health.healthy) {
+          throw new Error(
+            `خدمة إمكانية الوصول توقفت بشكل غير متوقع: ${health.reason ?? 'غير معروف'}. ` +
+              `أعد تفعيلها من الإعدادات وأكمل المهمة.`,
+          );
+        }
+      } catch (healthError) {
+        // If health check itself fails (e.g., native module not available), log but don't fail
+        // unless we're on Android with device control enabled.
+        console.warn('[runAgent] Accessibility health check failed:', healthError);
+      }
+    }
+  }
+  } finally {
+    // Clear checkpoint on completion (success or abort)
+    // Don't await to avoid slowing down the response
+    storage.clearCheckpoint().catch(() => undefined);
   }
   return { text: finalText.trim(), thinking: finalThinking.trim(), steps, toolsWereUnsupported };
 }

@@ -1,10 +1,13 @@
-import { fetch } from 'expo/fetch';
+import { fetchWithRetry, type FetchRetryOptions } from './fetch-with-retry';
 import type {
   AssistantMemory,
   AssistantSkill,
   ChatMessage,
   ProviderSettings,
 } from './assistant';
+import { buildResponseStyleDirective, type ResponseStyle } from './response-style';
+import { languageByCode } from './i18n';
+import { buildModeDirective, type StudioMode } from './modes';
 
 export type ProviderContentPart =
   | { type: 'text'; text: string }
@@ -27,6 +30,12 @@ export interface PromptOptions {
   deviceControl: boolean;
   deviceAvailable: boolean;
   summary?: string;
+  /** The invisible response-backend directives ("مهارة الرد") from settings. */
+  responseStyle?: ResponseStyle;
+  /** Reply language for the model (defaults to following the user's text). */
+  replyLanguage?: string;
+  /** Studio mode of the session (marketing/developer/hunter) — mode directive. */
+  mode?: StudioMode;
 }
 
 const INLINE_SKILLS_CHAR_LIMIT = 6000;
@@ -76,6 +85,20 @@ export function buildAssistantSystemPrompt(
   if (options.summary) {
     lines.push(`\nملخص الجزء السابق من هذه المحادثة (تم ضغطه تلقائيًا):\n${options.summary}`);
   }
+  // Response backend: invisible directives the reply passes through before
+  // reaching the user (single model pass — no extra call, no added latency).
+  if (options.responseStyle) {
+    lines.push(buildResponseStyleDirective(options.responseStyle));
+  }
+  if (options.mode) {
+    lines.push(buildModeDirective(options.mode));
+  }
+  if (options.replyLanguage) {
+    const lang = languageByCode(options.replyLanguage);
+    lines.push(
+      `【لغة الرد】 اكتب كل ردودك بـ${lang.modelLanguage} حتى لو كتب المستخدم بلغة أخرى، إلا إذا طلب صراحةً لغة مختلفة في رسالته.`,
+    );
+  }
   return lines.join('\n');
 }
 
@@ -113,16 +136,27 @@ export async function streamModelChat({
     Accept: 'text/event-stream',
   };
   if (apiKey) headers.Authorization = `Bearer ${apiKey}`;
-  const response = await fetch(endpointFor(settings.baseUrl), {
-    method: 'POST',
-    headers,
-    body: JSON.stringify({
-      model: settings.model.trim(),
-      messages,
-      stream: true,
-    }),
-    signal,
-  });
+  const response = await fetchWithRetry(
+    endpointFor(settings.baseUrl),
+    {
+      method: 'POST',
+      headers,
+      body: JSON.stringify({
+        model: settings.model.trim(),
+        messages,
+        stream: true,
+      }),
+    },
+    {
+      timeout: 90_000, // 90s for streaming responses
+      maxRetries: 2,
+      baseDelay: 1_000,
+      signal,
+      onRetry: (attempt, error, delay) => {
+        console.warn(`[streamModelChat] Retry ${attempt}/2 after ${Math.round(delay)}ms:`, error.message);
+      },
+    },
+  );
 
   if (!response.ok) throw errorForStatus(response.status);
 
@@ -232,18 +266,26 @@ export async function probeModel({
     return { status: null, ok: false, message: 'اكتبي اسم الموديل أولًا.' };
   }
   try {
-    const response = await fetch(endpointFor(settings.baseUrl), {
-      method: 'POST',
-      headers: {
-        Authorization: `Bearer ${apiKey}`,
-        'Content-Type': 'application/json',
+    const response = await fetchWithRetry(
+      endpointFor(settings.baseUrl),
+      {
+        method: 'POST',
+        headers: {
+          Authorization: `Bearer ${apiKey}`,
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          model: settings.model.trim(),
+          messages: [{ role: 'user', content: 'ping' }],
+        }),
       },
-      body: JSON.stringify({
-        model: settings.model.trim(),
-        messages: [{ role: 'user', content: 'ping' }],
-      }),
-      signal,
-    });
+      {
+        timeout: 30_000,
+        maxRetries: 2,
+        baseDelay: 1_000,
+        signal,
+      },
+    );
     if (!response.ok) {
       return { status: response.status, ok: false, message: probeHint(response.status) };
     }

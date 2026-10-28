@@ -2,16 +2,17 @@ import React from 'react';
 import {
   Platform,
   StyleSheet,
-  useColorScheme,
   View,
   type ColorValue,
 } from 'react-native';
 import { useColors } from '@/hooks/useColors';
 import { Feather } from '@expo/vector-icons';
-import { BlurView } from 'expo-blur';
 import { isLiquidGlassAvailable } from 'expo-glass-effect';
-import { Tabs } from 'expo-router';
+import { Slot, Tabs, usePathname } from 'expo-router';
 import { NativeTabs } from 'expo-router/unstable-native-tabs';
+import { DesktopShell } from '@/components/desktop/DesktopShell';
+import { DesktopChat } from '@/components/desktop/DesktopChat';
+import { useIsDesktopViewport } from '@/components/desktop/useDesktopViewport';
 
 // IMPORTANT: iOS 26 uses NativeTabs for native tabs with liquid glass support.
 // NativeTabs intentionally does NOT use custom design tokens — liquid glass
@@ -50,10 +51,6 @@ function NativeTabLayout() {
 
 function ClassicTabLayout() {
   const colors = useColors();
-  const colorScheme = useColorScheme();
-  const isDark = colorScheme === 'dark';
-  const isIOS = Platform.OS === 'ios';
-  const isWeb = Platform.OS === 'web';
   const tabIcon = (name: string, color: ColorValue) => {
     const icons: Record<string, React.ComponentProps<typeof Feather>['name']> = {
       index: 'message-circle',
@@ -71,31 +68,11 @@ function ClassicTabLayout() {
         tabBarActiveTintColor: colors.primary,
         tabBarInactiveTintColor: colors.mutedForeground,
         headerShown: false,
-        tabBarStyle: {
-          position: 'absolute',
-          backgroundColor: isIOS ? 'transparent' : colors.card,
-          borderTopWidth: 1,
-          borderTopColor: colors.border,
-          elevation: 0,
-          height: isWeb ? 84 : 66,
-          paddingTop: 8,
-          paddingBottom: isWeb ? 34 : 7,
-        },
-        tabBarBackground: () =>
-          isIOS ? (
-            <BlurView
-              intensity={100}
-              tint={isDark ? 'dark' : 'light'}
-              style={StyleSheet.absoluteFill}
-            />
-          ) : isWeb ? (
-            <View
-              style={[
-                StyleSheet.absoluteFill,
-                { backgroundColor: colors.background },
-              ]}
-            />
-          ) : null,
+        // Navigation moved into the phone side drawer (PhoneDrawer) — the
+        // classic bottom tab bar is hidden everywhere it would render.
+        // The screens stay registered (routes keep working) but no tab bar.
+        tabBarStyle: { display: 'none' },
+        tabBarButton: () => null,
       }}
     >
       <Tabs.Screen
@@ -136,11 +113,69 @@ function ClassicTabLayout() {
       <Tabs.Screen name="assessments" options={{ href: null }} />
       <Tabs.Screen name="approvals" options={{ href: null }} />
       <Tabs.Screen name="findings" options={{ href: null }} />
+      {/* Studio modes — drawer-only access, no tab bar entries. */}
+      <Tabs.Screen name="marketing" options={{ href: null }} />
+      <Tabs.Screen name="lab" options={{ href: null }} />
+      <Tabs.Screen name="hunter" options={{ href: null }} />
     </Tabs>
   );
 }
 
+/**
+ * Desktop center workspace. The chat route gets the dedicated desktop chat
+ * presentation (DesktopChat); every other screen renders its existing route
+ * element untouched inside the shell.
+ *
+ * Router constraint: <Slot /> (the navigator) must stay MOUNTED on every
+ * desktop route. Unmounting it for the chat route made expo-router's state
+ * churn infinitely ("Maximum update depth exceeded") when navigating back.
+ * So the Slot layer always renders — hidden (display none, no pointer events)
+ * while the home route shows DesktopChat on top of it.
+ */
+function DesktopCenter() {
+  const pathname = usePathname();
+  const clean = pathname.replace(/^\/\(tabs\)/, '');
+  const isHome = clean === '' || clean === '/';
+  return (
+    <View style={desktopCenterStyles.centerStack}>
+      <View
+        style={[desktopCenterStyles.centerLayer, isHome && desktopCenterStyles.centerLayerHidden]}
+        pointerEvents={isHome ? 'none' : 'auto'}
+      >
+        <Slot />
+      </View>
+      {isHome ? (
+        <View style={desktopCenterStyles.centerLayer}>
+          <DesktopChat />
+        </View>
+      ) : null}
+    </View>
+  );
+}
+
+const desktopCenterStyles = StyleSheet.create({
+  centerStack: { flex: 1, minHeight: 0, minWidth: 0 },
+  centerLayer: {
+    position: 'absolute',
+    top: 0,
+    left: 0,
+    right: 0,
+    bottom: 0,
+  },
+  centerLayerHidden: { display: 'none' },
+});
+
 export default function TabLayout() {
+  const isDesktop = useIsDesktopViewport();
+  // Desktop viewport (web only): custom command-center shell instead of the
+  // tab bar. The mobile tab bar is not rendered simultaneously.
+  if (isDesktop) {
+    return (
+      <DesktopShell>
+        <DesktopCenter />
+      </DesktopShell>
+    );
+  }
   if (isLiquidGlassAvailable()) {
     return <NativeTabLayout />;
   }

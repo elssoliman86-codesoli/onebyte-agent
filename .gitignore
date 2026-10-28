@@ -40,3 +40,5 @@ yarn-error.*
 
 .env
 .api-push.py
+dist-web/
+.zcode/

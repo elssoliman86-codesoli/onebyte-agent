@@ -1,5 +1,10 @@
-import AsyncStorage from '@react-native-async-storage/async-storage';
-import * as SecureStore from 'expo-secure-store';
+import { storage } from './storage';
+import type { KnowledgeEntry, ExtractedFact } from './knowledge';
+import { mergeFacts, KNOWLEDGE_MAX_ENTRIES } from './knowledge';
+import { DEFAULT_RESPONSE_STYLE, normalizeResponseStyle, type ResponseStyle } from './response-style';
+import { coreSkillsAsAssistantSkills } from './core-skills';
+import type { AccentKey } from '../constants/colors';
+export type { AccentKey };
 import React, {
   createContext,
   useCallback,
@@ -9,7 +14,6 @@ import React, {
   useRef,
   useState,
 } from 'react';
-import { Platform } from 'react-native';
 
 export type ChatRole = 'user' | 'assistant';
 
@@ -34,6 +38,8 @@ export interface ChatMessage {
   skill?: string;
   /** Attached image (data or file URI) sent with this message, if any. */
   imageUri?: string;
+  /** Attached images (data URIs) — unlimited per message. */
+  images?: string[];
   /** Names of text files attached to this message (display chips). */
   files?: string[];
 }
@@ -48,6 +54,8 @@ export interface ChatSession {
   summary?: string;
   /** How many leading messages are already folded into `summary`. */
   summarizedCount?: number;
+  /** Studio mode tag (marketing/developer/hunter) — drives the system directive. */
+  mode?: string;
 }
 
 export interface ProviderSettings {
@@ -75,12 +83,18 @@ export interface AgentSettings {
    * Key format: tool name, or `open_app:<package>` for a specific app.
    */
   autoApprovedTools: string[];
+  /** The invisible reply-styling backend ("مهارة الرد") applied to every response. */
+  responseStyle: ResponseStyle;
 }
 
 export type ThemePreference = 'system' | 'light' | 'dark';
 
 export interface AppearanceSettings {
   theme: ThemePreference;
+  /** Accent color theme (default emerald; also blue/red/purple/amber). */
+  accent: AccentKey;
+  /** App UI + model reply language code (see src/i18n.ts). */
+  language: string;
 }
 
 export interface SkillVersion {
@@ -100,6 +114,8 @@ export interface AssistantSkill {
   createdAt: string;
   updatedAt: string;
   versions: SkillVersion[];
+  /** Core built-in skill (shipped with the app; seeded automatically). */
+  core?: boolean;
 }
 
 export interface AssistantMemory {
@@ -130,6 +146,8 @@ interface AssistantData {
   tasks: DailyTask[];
   agent: AgentSettings;
   appearance: AppearanceSettings;
+  /** Automatic per-user knowledge base (background facts, not shown in chat). */
+  knowledge: KnowledgeEntry[];
 }
 
 export type { AssistantData };
@@ -179,17 +197,20 @@ interface AssistantContextValue extends AssistantData {
   deleteTask: (id: string) => Promise<void>;
   patchSession: (
     id: string,
-    patch: Partial<Pick<ChatSession, 'summary' | 'summarizedCount'>>,
+    patch: Partial<Pick<ChatSession, 'summary' | 'summarizedCount' | 'mode'>>,
   ) => Promise<void>;
   saveAgentSettings: (patch: Partial<AgentSettings>) => Promise<void>;
   saveAppearanceSettings: (patch: Partial<AppearanceSettings>) => Promise<void>;
+  /** Merge extracted facts into the automatic knowledge base (background). */
+  addKnowledge: (facts: ExtractedFact[], sessionId?: string) => Promise<void>;
+  /** Wipe the automatic knowledge base (privacy control in Memory screen). */
+  clearKnowledge: () => Promise<void>;
   setPendingPrompt: (prompt: string) => void;
   consumePendingPrompt: () => void;
   exportLocalData: () => string;
 }
 
 const DATA_KEY = '@onebyte-agent/assistant-v1';
-const API_KEY_ID = 'onebyte-agent.model-provider-key.v1';
 // Out of the box the app works on Free OneByte: a keyless free endpoint
 // that runs entirely from the phone — no key, no external device.
 const DEFAULT_PROVIDER: ProviderSettings = {
@@ -205,9 +226,14 @@ const DEFAULT_AGENT: AgentSettings = {
   maxSteps: 25,
   maxWorkingTokens: 100_000,
   autoApprovedTools: [],
+  responseStyle: DEFAULT_RESPONSE_STYLE,
 };
 
-const DEFAULT_APPEARANCE: AppearanceSettings = { theme: 'system' };
+const DEFAULT_APPEARANCE: AppearanceSettings = {
+  theme: 'system',
+  accent: 'emerald',
+  language: 'ar',
+};
 
 let idCounter = 0;
 function makeId(prefix: string): string {
@@ -256,17 +282,23 @@ function normalizeData(raw: unknown): AssistantData {
       autoApprovedTools: Array.isArray(value.agent?.autoApprovedTools)
         ? value.agent.autoApprovedTools.filter((x): x is string => typeof x === 'string')
         : [],
+      // Legacy stored data has no responseStyle — normalize with tolerance.
+      responseStyle: normalizeResponseStyle(value.agent?.responseStyle),
     },
     appearance: {
       ...DEFAULT_APPEARANCE,
       ...(value.appearance && typeof value.appearance === 'object' ? value.appearance : {}),
     },
+    knowledge: Array.isArray(value.knowledge) ? value.knowledge : [],
   };
 }
 
 async function readApiKey(): Promise<string | null> {
-  if (Platform.OS === 'web') return null;
-  return SecureStore.getItemAsync(API_KEY_ID);
+  // Route through storage so native (SecureStore) and the disclosed desktop
+  // browser adapter share ONE key id. Previously this read a different
+  // SecureStore id than the one written by storage.saveApiKey, which broke
+  // keyed providers everywhere.
+  return storage.readApiKey();
 }
 
 const AssistantContext = createContext<AssistantContextValue | null>(null);
@@ -285,21 +317,67 @@ export function AssistantProvider({
     tasks: [],
     agent: DEFAULT_AGENT,
     appearance: DEFAULT_APPEARANCE,
+    knowledge: [],
   });
   const dataRef = useRef(data);
-  const writeQueue = useRef<Promise<void>>(Promise.resolve());
   const [loading, setLoading] = useState(true);
   const [storageError, setStorageError] = useState<string | null>(null);
   const [apiKeyConfigured, setApiKeyConfigured] = useState(false);
   const [pendingPrompt, setPendingPromptState] = useState('');
+  // Mutations wait for the initial storage read: acting on the defaults
+  // before hydration would silently overwrite the user's saved data.
+  const loadPromiseRef = useRef<Promise<void> | null>(null);
+  const ensureLoaded = useCallback(async () => {
+    if (loadPromiseRef.current) await loadPromiseRef.current;
+  }, []);
 
   useEffect(() => {
     let active = true;
     const load = async () => {
       try {
-        const raw = await AsyncStorage.getItem(DATA_KEY);
-        const restored = raw ? normalizeData(JSON.parse(raw)) : dataRef.current;
-        const key = await readApiKey();
+        const restored = await storage.loadAll();
+        // Legacy tolerance: give stored agent/appearance the new fields
+        // (responseStyle defaults, accent + language) before anything reads them.
+        restored.appearance = {
+          ...DEFAULT_APPEARANCE,
+          ...(restored.appearance ?? {}),
+        };
+        restored.agent = {
+          ...DEFAULT_AGENT,
+          ...(restored.agent ?? {}),
+          responseStyle: normalizeResponseStyle(restored.agent?.responseStyle),
+        };
+        const key = await storage.readApiKey();
+        // Seed the core built-in skills exactly once: when no core skill is
+        // stored yet. User-created skills always come after them.
+        let skills = Array.isArray(restored.skills) ? restored.skills : [];
+        if (!skills.some((skill) => skill.core)) {
+          skills = [...coreSkillsAsAssistantSkills(), ...skills];
+          restored.skills = skills;
+          void storage.setSkills(skills);
+        } else {
+          // Keep core skills in sync with the shipped copy (copy upgrades),
+          // while respecting each skill's active/archived state.
+          const seeds = coreSkillsAsAssistantSkills();
+          let changed = false;
+          skills = skills.map((skill) => {
+            if (!skill.core) return skill;
+            const seed = seeds.find((s) => s.name === skill.name);
+            if (!seed || seed.instructions === skill.instructions) return skill;
+            changed = true;
+            return {
+              ...skill,
+              description: seed.description,
+              instructions: seed.instructions,
+              versions: [...skill.versions, { version: skill.versions.length + 1, name: seed.name, description: seed.description, instructions: seed.instructions, savedAt: now() }],
+              updatedAt: now(),
+            };
+          });
+          if (changed) {
+            restored.skills = skills;
+            void storage.setSkills(skills);
+          }
+        }
         if (!active) return;
         dataRef.current = restored;
         setData(restored);
@@ -315,21 +393,30 @@ export function AssistantProvider({
         if (active) setLoading(false);
       }
     };
-    void load();
+    loadPromiseRef.current = load();
+    void loadPromiseRef.current;
     return () => {
       active = false;
     };
   }, []);
 
-  const commit = useCallback(async (next: AssistantData) => {
+  // Optimistic updates: update local state immediately, persist in background.
+  const persist = useCallback(async (patch: Partial<AssistantData>) => {
+    const next = { ...dataRef.current, ...patch };
     dataRef.current = next;
     setData(next);
-    const write = writeQueue.current.then(() =>
-      AsyncStorage.setItem(DATA_KEY, JSON.stringify(next)),
-    );
-    writeQueue.current = write.catch(() => undefined);
     try {
-      await write;
+      await Promise.all([
+        patch.sessions !== undefined ? storage.setSessions(next.sessions) : Promise.resolve(),
+        patch.activeSessionId !== undefined ? storage.setActiveSessionId(next.activeSessionId) : Promise.resolve(),
+        patch.provider !== undefined ? storage.setProvider(next.provider) : Promise.resolve(),
+        patch.skills !== undefined ? storage.setSkills(next.skills) : Promise.resolve(),
+        patch.memories !== undefined ? storage.setMemories(next.memories) : Promise.resolve(),
+        patch.tasks !== undefined ? storage.setTasks(next.tasks) : Promise.resolve(),
+        patch.agent !== undefined ? storage.setAgentSettings(next.agent) : Promise.resolve(),
+        patch.appearance !== undefined ? storage.setAppearance(next.appearance) : Promise.resolve(),
+        patch.knowledge !== undefined ? storage.setKnowledge(next.knowledge) : Promise.resolve(),
+      ]);
       setStorageError(null);
     } catch {
       setStorageError('لم يتم حفظ التغيير على هذا الجهاز. حاولي مرة أخرى.');
@@ -339,99 +426,123 @@ export function AssistantProvider({
 
   const setActiveSession = useCallback(
     async (id: string) => {
+      await ensureLoaded();
       const current = dataRef.current;
       if (!current.sessions.some((session) => session.id === id)) return;
-      await commit({ ...current, activeSessionId: id });
+      await persist({ activeSessionId: id });
     },
-    [commit],
+    [persist],
   );
 
   const createSession = useCallback(async () => {
+    await ensureLoaded();
     const current = dataRef.current;
-    const session = newSession();
-    await commit({
-      ...current,
-      sessions: [session, ...current.sessions],
-      activeSessionId: session.id,
-    });
-    return session.id;
-  }, [commit]);
+    const session: ChatSession = {
+      id: `session_${Date.now()}_${Math.random().toString(36).slice(2, 9)}`,
+      title: 'محادثة جديدة',
+      messages: [],
+      createdAt: new Date().toISOString(),
+      updatedAt: new Date().toISOString(),
+    };
+    const sessions = [session, ...current.sessions];
+    dataRef.current = { ...current, sessions, activeSessionId: session.id };
+    setData(dataRef.current);
+    try {
+      await Promise.all([
+        storage.setSessions(sessions),
+        storage.setActiveSessionId(session.id),
+      ]);
+      return session.id;
+    } catch {
+      setStorageError('لم يتم حفظ الجلسة الجديدة. حاولي مرة أخرى.');
+      throw new Error('تعذّر إنشاء جلسة جديدة.');
+    }
+  }, []);
 
   const deleteSession = useCallback(
     async (id: string) => {
+      await ensureLoaded();
       const current = dataRef.current;
       const sessions = current.sessions.filter((session) => session.id !== id);
       const activeSessionId =
-        current.activeSessionId === id
-          ? sessions[0]?.id ?? null
-          : current.activeSessionId;
-      await commit({ ...current, sessions, activeSessionId });
+        current.activeSessionId === id ? sessions[0]?.id ?? null : current.activeSessionId;
+      dataRef.current = { ...current, sessions, activeSessionId };
+      setData(dataRef.current);
+      try {
+        await Promise.all([
+          storage.setSessions(sessions),
+          storage.setActiveSessionId(activeSessionId),
+        ]);
+      } catch {
+        setStorageError('لم يتم حذف الجلسة. حاولي مرة أخرى.');
+        throw new Error('تعذّر حذف الجلسة.');
+      }
     },
-    [commit],
+    [],
   );
 
   const appendMessage = useCallback(
     async (sessionId: string, message: ChatMessage) => {
+      await ensureLoaded();
       const current = dataRef.current;
       const sessions = current.sessions.map((session) => {
         if (session.id !== sessionId) return session;
-        const firstUserMessage =
-          session.messages.length === 0 && message.role === 'user';
+        const firstUserMessage = session.messages.length === 0 && message.role === 'user';
         return {
           ...session,
           title: firstUserMessage
             ? message.content.trim().slice(0, 34) || 'محادثة جديدة'
             : session.title,
           messages: [...session.messages, message],
-          updatedAt: now(),
+          updatedAt: new Date().toISOString(),
         };
       });
-      await commit({ ...current, sessions });
+      dataRef.current = { ...current, sessions };
+      setData(dataRef.current);
+      try {
+        // Only sessions key is rewritten — O(1) for the most frequent operation
+        await storage.appendMessage(sessionId, message);
+      } catch {
+        setStorageError('لم يتم حفظ الرسالة. حاولي مرة أخرى.');
+        throw new Error('تعذّر حفظ الرسالة.');
+      }
     },
-    [commit],
+    [],
   );
 
   const saveProvider = useCallback(
     async (settings: ProviderSettings, apiKey?: string) => {
+      await ensureLoaded();
       const trimmedKey = apiKey?.trim();
-      if (Platform.OS === 'web' && trimmedKey) {
-        throw new Error(
-          'حفظ مفتاح الموديل متاح داخل تطبيق Android/iOS فقط، لحمايته في خزنة الجهاز.',
-        );
-      }
       if (trimmedKey) {
-        await SecureStore.setItemAsync(API_KEY_ID, trimmedKey, {
-          keychainAccessible: SecureStore.WHEN_UNLOCKED_THIS_DEVICE_ONLY,
-        });
-        setApiKeyConfigured(true);
+        // storage.saveApiKey routes to SecureStore on native and to the
+        // disclosed browser adapter on web/desktop.
+        await storage.saveApiKey(trimmedKey);
       }
-      await commit({
-        ...dataRef.current,
-        provider: {
-          baseUrl: settings.baseUrl.trim().replace(/\/+$/, ''),
-          model: settings.model.trim(),
-          providerName: settings.providerName.trim() || 'Custom provider',
-          contextLength: settings.contextLength ?? null,
-          promptPrice: settings.promptPrice ?? null,
-          completionPrice: settings.completionPrice ?? null,
-          free: settings.free ?? false,
-        },
-      });
+      const provider = {
+        baseUrl: settings.baseUrl.trim().replace(/\/+$/, ''),
+        model: settings.model.trim(),
+        providerName: settings.providerName.trim() || 'Custom provider',
+        contextLength: settings.contextLength ?? null,
+        promptPrice: settings.promptPrice ?? null,
+        completionPrice: settings.completionPrice ?? null,
+        free: settings.free ?? false,
+        keyless: settings.keyless ?? false,
+      };
+      await persist({ provider });
     },
-    [commit],
+    [persist],
   );
 
   const removeApiKey = useCallback(async () => {
-    if (Platform.OS === 'web') {
-      setApiKeyConfigured(false);
-      return;
-    }
-    await SecureStore.deleteItemAsync(API_KEY_ID);
+    await ensureLoaded();
+    await storage.removeApiKey();
     setApiKeyConfigured(false);
   }, []);
 
   const createSkill = useCallback(
     async (input: { name: string; description: string; instructions: string }) => {
+      await ensureLoaded();
       const timestamp = now();
       const skill: AssistantSkill = {
         id: makeId('skill'),
@@ -449,12 +560,12 @@ export function AssistantProvider({
           },
         ],
       };
-      await commit({
-        ...dataRef.current,
-        skills: [skill, ...dataRef.current.skills],
-      });
+      const skills = [skill, ...dataRef.current.skills];
+      dataRef.current = { ...dataRef.current, skills };
+      setData(dataRef.current);
+      await storage.setSkills(skills);
     },
-    [commit],
+    [],
   );
 
   const updateSkill = useCallback(
@@ -462,6 +573,7 @@ export function AssistantProvider({
       id: string,
       input: { name: string; description: string; instructions: string },
     ) => {
+      await ensureLoaded();
       const timestamp = now();
       const skills = dataRef.current.skills.map((skill) => {
         if (skill.id !== id) return skill;
@@ -476,23 +588,29 @@ export function AssistantProvider({
           ],
         };
       });
-      await commit({ ...dataRef.current, skills });
+      dataRef.current = { ...dataRef.current, skills };
+      setData(dataRef.current);
+      await storage.setSkills(skills);
     },
-    [commit],
+    [],
   );
 
   const setSkillActive = useCallback(
     async (id: string, active: boolean) => {
+      await ensureLoaded();
       const skills = dataRef.current.skills.map((skill) =>
         skill.id === id ? { ...skill, active, updatedAt: now() } : skill,
       );
-      await commit({ ...dataRef.current, skills });
+      dataRef.current = { ...dataRef.current, skills };
+      setData(dataRef.current);
+      await storage.setSkills(skills);
     },
-    [commit],
+    [],
   );
 
   const createMemory = useCallback(
     async (input: { title: string; content: string }) => {
+      await ensureLoaded();
       const timestamp = now();
       const memory: AssistantMemory = {
         id: makeId('memory'),
@@ -502,34 +620,40 @@ export function AssistantProvider({
         createdAt: timestamp,
         updatedAt: timestamp,
       };
-      await commit({
-        ...dataRef.current,
-        memories: [memory, ...dataRef.current.memories],
-      });
+      const memories = [memory, ...dataRef.current.memories];
+      dataRef.current = { ...dataRef.current, memories };
+      setData(dataRef.current);
+      await storage.setMemories(memories);
     },
-    [commit],
+    [],
   );
 
   const updateMemory = useCallback(
     async (id: string, input: { title: string; content: string }) => {
+      await ensureLoaded();
       const memories = dataRef.current.memories.map((memory) =>
         memory.id === id
           ? { ...memory, ...input, updatedAt: now() }
           : memory,
       );
-      await commit({ ...dataRef.current, memories });
+      dataRef.current = { ...dataRef.current, memories };
+      setData(dataRef.current);
+      await storage.setMemories(memories);
     },
-    [commit],
+    [],
   );
 
   const setMemoryActive = useCallback(
     async (id: string, active: boolean) => {
+      await ensureLoaded();
       const memories = dataRef.current.memories.map((memory) =>
         memory.id === id ? { ...memory, active, updatedAt: now() } : memory,
       );
-      await commit({ ...dataRef.current, memories });
+      dataRef.current = { ...dataRef.current, memories };
+      setData(dataRef.current);
+      await storage.setMemories(memories);
     },
-    [commit],
+    [],
   );
 
   const createTask = useCallback(
@@ -539,6 +663,7 @@ export function AssistantProvider({
       time: string;
       notificationId?: string;
     }) => {
+      await ensureLoaded();
       const task: DailyTask = {
         id: makeId('task'),
         title: input.title.trim(),
@@ -548,64 +673,98 @@ export function AssistantProvider({
         notificationId: input.notificationId,
         createdAt: now(),
       };
-      await commit({ ...dataRef.current, tasks: [task, ...dataRef.current.tasks] });
+      const tasks = [task, ...dataRef.current.tasks];
+      dataRef.current = { ...dataRef.current, tasks };
+      setData(dataRef.current);
+      await storage.setTasks(tasks);
       return task.id;
     },
-    [commit],
+    [],
   );
 
   const setTaskActive = useCallback(
     async (id: string, active: boolean, notificationId?: string) => {
+      await ensureLoaded();
       const tasks = dataRef.current.tasks.map((task) =>
         task.id === id
           ? { ...task, active, notificationId }
           : task,
       );
-      await commit({ ...dataRef.current, tasks });
+      dataRef.current = { ...dataRef.current, tasks };
+      setData(dataRef.current);
+      await storage.setTasks(tasks);
     },
-    [commit],
+    [],
   );
 
   const deleteTask = useCallback(
     async (id: string) => {
+      await ensureLoaded();
       const tasks = dataRef.current.tasks.filter((task) => task.id !== id);
-      await commit({ ...dataRef.current, tasks });
+      dataRef.current = { ...dataRef.current, tasks };
+      setData(dataRef.current);
+      await storage.setTasks(tasks);
     },
-    [commit],
+    [],
   );
 
   const patchSession = useCallback(
     async (
       id: string,
-      patch: Partial<Pick<ChatSession, 'summary' | 'summarizedCount'>>,
+      patch: Partial<Pick<ChatSession, 'summary' | 'summarizedCount' | 'mode'>>,
     ) => {
+      await ensureLoaded();
       const sessions = dataRef.current.sessions.map((session) =>
         session.id === id ? { ...session, ...patch } : session,
       );
-      await commit({ ...dataRef.current, sessions });
+      dataRef.current = { ...dataRef.current, sessions };
+      setData(dataRef.current);
+      await storage.setSessions(sessions);
     },
-    [commit],
+    [],
   );
 
   const saveAgentSettings = useCallback(
     async (patch: Partial<AgentSettings>) => {
-      await commit({
-        ...dataRef.current,
-        agent: { ...dataRef.current.agent, ...patch },
-      });
+      await ensureLoaded();
+      const agent = { ...dataRef.current.agent, ...patch };
+      dataRef.current = { ...dataRef.current, agent };
+      setData(dataRef.current);
+      await storage.setAgentSettings(agent);
     },
-    [commit],
+    [],
   );
 
   const saveAppearanceSettings = useCallback(
     async (patch: Partial<AppearanceSettings>) => {
-      await commit({
-        ...dataRef.current,
-        appearance: { ...dataRef.current.appearance, ...patch },
-      });
+      await ensureLoaded();
+      const appearance = { ...dataRef.current.appearance, ...patch };
+      dataRef.current = { ...dataRef.current, appearance };
+      setData(dataRef.current);
+      await storage.setAppearance(appearance);
     },
-    [commit],
+    [],
   );
+
+  // ─── Automatic knowledge base (background, never shown in chat) ───────
+  const addKnowledge = useCallback(
+    async (facts: ExtractedFact[], sessionId?: string) => {
+      if (!facts.length) return;
+      await ensureLoaded();
+      const knowledge = mergeFacts(dataRef.current.knowledge ?? [], facts, sessionId);
+      dataRef.current = { ...dataRef.current, knowledge };
+      setData(dataRef.current);
+      await storage.setKnowledge(knowledge);
+    },
+    [],
+  );
+
+  const clearKnowledge = useCallback(async () => {
+    await ensureLoaded();
+    dataRef.current = { ...dataRef.current, knowledge: [] };
+    setData(dataRef.current);
+    await storage.setKnowledge([]);
+  }, []);
 
   const activeSession = useMemo(
     () =>
@@ -640,6 +799,8 @@ export function AssistantProvider({
       patchSession,
       saveAgentSettings,
       saveAppearanceSettings,
+      addKnowledge,
+      clearKnowledge,
       setPendingPrompt: setPendingPromptState,
       consumePendingPrompt: () => setPendingPromptState(''),
       exportLocalData: () =>
@@ -678,6 +839,8 @@ export function AssistantProvider({
       patchSession,
       saveAgentSettings,
       saveAppearanceSettings,
+      addKnowledge,
+      clearKnowledge,
     ],
   );
 

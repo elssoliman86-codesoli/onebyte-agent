@@ -1,9 +1,10 @@
-import type { AssistantData, ChatMessage, ToolStep } from './assistant';
+import type { AssistantData, ChatMessage, ToolStep, ChatSession, DailyTask, AssistantSkill, AssistantMemory } from './assistant';
 import {
   buildAssistantSystemPrompt,
   toProviderMessages,
 } from './model-provider';
 import { runAgent, type ApprovalDecision } from './agent';
+import { storage } from './storage';
 import { executeTool, toolsForRequest, type ToolSpec } from './tools';
 import { estimateTokens, planContext, workingBudget } from './context';
 import * as Device from './device';
@@ -32,15 +33,144 @@ export type PcApprovalHandler = (
   args: Record<string, unknown>,
 ) => Promise<ApprovalDecision>;
 
+// ─── Security Constants ──────────────────────────────────────────────
+const PIN_LENGTH = 6;
+const PIN_ALPHANUMERIC = true; // true = alphanumeric, false = digits only
+const TOKEN_BYTES = 32;
+const TOKEN_EXPIRY_MS = 4 * 60 * 60 * 1000; // 4 hours
+const MAX_LOGIN_ATTEMPTS = 5;
+const LOCKOUT_BASE_MS = 2_000; // 2s base, doubles each attempt (2s, 4s, 8s, 16s, 32s...)
+const MAX_LOCKOUT_MS = 5 * 60 * 1000; // 5 minutes max
+
+// ─── Login Attempt Tracking ──────────────────────────────────────────
+interface LoginAttemptRecord {
+  count: number;
+  lastAttempt: number;
+  lockedUntil: number;
+}
+
+const loginAttempts = new Map<string, LoginAttemptRecord>();
+
+function getClientIp(event: { path: string }): string {
+  // In a real deployment, this would come from the socket.
+  // For now, use a hash of the request path as a weak client identifier.
+  // The Kotlin layer could be enhanced to pass the real client IP.
+  let hash = 0;
+  for (let i = 0; i < event.path.length; i++) {
+    hash = ((hash << 5) - hash + event.path.charCodeAt(i)) | 0;
+  }
+  return `client_${Math.abs(hash).toString(36)}`;
+}
+
+function checkLoginLockout(clientIp: string): { allowed: boolean; retryAfterMs: number } {
+  const record = loginAttempts.get(clientIp);
+  const now = Date.now();
+
+  if (!record || record.count === 0) {
+    return { allowed: true, retryAfterMs: 0 };
+  }
+
+  if (now < record.lockedUntil) {
+    return { allowed: false, retryAfterMs: record.lockedUntil - now };
+  }
+
+  // Lockout expired, reset count
+  if (now > record.lockedUntil) {
+    loginAttempts.delete(clientIp);
+    return { allowed: true, retryAfterMs: 0 };
+  }
+
+  return { allowed: true, retryAfterMs: 0 };
+}
+
+function recordFailedLogin(clientIp: string): void {
+  const record = loginAttempts.get(clientIp) || { count: 0, lastAttempt: 0, lockedUntil: 0 };
+  const now = Date.now();
+  record.count += 1;
+  record.lastAttempt = now;
+
+  if (record.count >= MAX_LOGIN_ATTEMPTS) {
+    const delay = Math.min(LOCKOUT_BASE_MS * Math.pow(2, record.count - MAX_LOGIN_ATTEMPTS), MAX_LOCKOUT_MS);
+    record.lockedUntil = now + delay;
+  }
+
+  loginAttempts.set(clientIp, record);
+}
+
+function recordSuccessfulLogin(clientIp: string): void {
+  loginAttempts.delete(clientIp);
+}
+
+// ─── Token Management ────────────────────────────────────────────────
+function generateSecurePin(): string {
+  if (PIN_ALPHANUMERIC) {
+    const chars = 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789'; // excludes confusing chars
+    let pin = '';
+    const randomValues = new Uint8Array(PIN_LENGTH);
+    crypto.getRandomValues(randomValues);
+    for (let i = 0; i < PIN_LENGTH; i++) {
+      pin += chars[randomValues[i] % chars.length];
+    }
+    return pin;
+  } else {
+    const min = Math.pow(10, PIN_LENGTH - 1);
+    const max = Math.pow(10, PIN_LENGTH) - 1;
+    const randomValues = new Uint32Array(1);
+    crypto.getRandomValues(randomValues);
+    return String(min + (randomValues[0] % (max - min + 1)));
+  }
+}
+
+function generateSecureToken(): string {
+  const randomBytes = new Uint8Array(TOKEN_BYTES);
+  crypto.getRandomValues(randomBytes);
+  return 'pc-' + Array.from(randomBytes, b => b.toString(16).padStart(2, '0')).join('');
+}
+
+interface TokenRecord {
+  token: string;
+  expiresAt: number;
+  createdAt: number;
+}
+
+const tokenStore = new Map<string, TokenRecord>();
+
+function createToken(): string {
+  const token = generateSecureToken();
+  const now = Date.now();
+  tokenStore.set(token, { token, expiresAt: now + TOKEN_EXPIRY_MS, createdAt: now });
+  // Cleanup expired tokens
+  for (const [t, rec] of tokenStore.entries()) {
+    if (rec.expiresAt < now) tokenStore.delete(t);
+  }
+  return token;
+}
+
+function validateToken(token: string): boolean {
+  const record = tokenStore.get(token);
+  if (!record) return false;
+  if (Date.now() > record.expiresAt) {
+    tokenStore.delete(token);
+    return false;
+  }
+  return true;
+}
+
+function revokeToken(token: string): void {
+  tokenStore.delete(token);
+}
+
 let contextRef: PcServerContext | null = null;
 let approvalHandler: PcApprovalHandler | null = null;
 let unsubscribe: (() => void) | null = null;
 let pin = '';
-let token = '';
 let running = false;
 let abortRef: AbortController | null = null;
 let liveText = '';
 let approvalPending = false;
+
+// Current active token
+let currentToken: string | null = null;
 
 export function configurePcServer(ctx: PcServerContext): void {
   contextRef = ctx;
@@ -65,8 +195,8 @@ export async function startPcControl(): Promise<{ url: string; pin: string }> {
     throw new Error('خادم الكمبيوتر متاح فقط في نسخة Android المثبتة.');
   }
   if (running) return getPcAccess();
-  pin = String(Math.floor(10000 + Math.random() * 89999));
-  token = `pc-${Math.random().toString(36).slice(2)}${Date.now().toString(36)}`;
+  pin = generateSecurePin();
+  currentToken = createToken();
   const ok = await Device.startPcServer(8089);
   if (!ok) throw new Error('تعذّر تشغيل الخادم (البورت مشغول؟).');
   running = true;
@@ -78,6 +208,9 @@ export async function startPcControl(): Promise<{ url: string; pin: string }> {
 
 export async function stopPcControl(): Promise<void> {
   running = false;
+  pin = '';
+  currentToken = null;
+  revokeToken(currentToken ?? '');
   abortRef?.abort();
   unsubscribe?.();
   unsubscribe = null;
@@ -85,6 +218,7 @@ export async function stopPcControl(): Promise<void> {
 }
 
 function authorized(event: { path: string; body: string }): boolean {
+  if (!currentToken) return false;
   const urlToken = event.path.split('token=')[1]?.split('&')[0] ?? '';
   let bodyToken = '';
   try {
@@ -92,7 +226,7 @@ function authorized(event: { path: string; body: string }): boolean {
   } catch {
     bodyToken = '';
   }
-  return token !== '' && (urlToken === token || bodyToken === token);
+  return (urlToken === currentToken || bodyToken === currentToken) && validateToken(currentToken);
 }
 
 function json(id: string, status: number, payload: unknown): void {
@@ -119,11 +253,31 @@ async function route(event: {
       return html(id, PAGE_HTML);
     }
     if (path === '/api/login') {
+      const clientIp = getClientIp(event);
+      const lockout = checkLoginLockout(clientIp);
+      if (!lockout.allowed) {
+        const minutes = Math.ceil(lockout.retryAfterMs / 60000);
+        return json(id, 429, {
+          ok: false,
+          error: `تم تجاوز عدد محاولات تسجيل الدخول. حاول مجدداً بعد ${minutes} دقيقة.`,
+          retryAfterMs: lockout.retryAfterMs,
+        });
+      }
+
       const supplied = (safeParse(event.body).pin ?? '').toString();
       if (running && supplied === pin) {
-        return json(id, 200, { ok: true, token });
+        recordSuccessfulLogin(clientIp);
+        currentToken = createToken();
+        return json(id, 200, { ok: true, token: currentToken });
       }
-      return json(id, 401, { ok: false, error: 'رمز غير صحيح' });
+
+      recordFailedLogin(clientIp);
+      const attemptsLeft = Math.max(0, MAX_LOGIN_ATTEMPTS - (loginAttempts.get(clientIp)?.count ?? 1));
+      return json(id, 401, {
+        ok: false,
+        error: `رمز غير صحيح. متبقي ${attemptsLeft} محاولة قبل الحظر المؤقت.`,
+        attemptsLeft,
+      });
     }
     if (!authorized(event)) {
       return json(id, 401, { ok: false, error: 'غير مصرح' });
@@ -135,7 +289,7 @@ async function route(event: {
       case '/api/state': {
         const data = ctx.getData();
         const session =
-          data.sessions.find((s) => s.id === data.activeSessionId) ?? null;
+          data.sessions.find((s: ChatSession) => s.id === data.activeSessionId) ?? null;
         return json(id, 200, {
           ok: true,
           running: abortRef !== null,
@@ -143,7 +297,7 @@ async function route(event: {
           approvalPending,
           activeTitle: session?.title ?? 'محادثة جديدة',
           activeSessionId: session?.id ?? null,
-          sessions: data.sessions.slice(0, 30).map((s) => ({
+          sessions: data.sessions.slice(0, 30).map((s: ChatSession) => ({
             id: s.id,
             title: s.title,
             updatedAt: s.updatedAt,
@@ -154,13 +308,13 @@ async function route(event: {
             available: Device.isAvailable(),
             serviceOn: Device.isServiceEnabled(),
           },
-          tasks: data.tasks.map((t) => ({
+          tasks: data.tasks.map((t: DailyTask) => ({
             title: t.title,
             time: t.time,
             active: t.active,
           })),
-          skills: data.skills.map((s) => ({ name: s.name, active: s.active })),
-          memories: data.memories.map((m) => ({ title: m.title, active: m.active })),
+          skills: data.skills.map((s: AssistantSkill) => ({ name: s.name, active: s.active })),
+          memories: data.memories.map((m: AssistantMemory) => ({ title: m.title, active: m.active })),
           provider: {
             name: data.provider.providerName,
             model: data.provider.model,
@@ -283,6 +437,10 @@ async function runPcChat(text: string): Promise<void> {
       });
     }
 
+    // Load checkpoint if exists (for resume after interrupt)
+    const checkpoint = await storage.loadCheckpoint();
+    const hasValidCheckpoint = checkpoint && checkpoint.sessionId === sessionId;
+
     const result = await runAgent({
       settings: fresh.provider,
       apiKey: settingsApiKey,
@@ -312,6 +470,12 @@ async function runPcChat(text: string): Promise<void> {
       onText: (soFar) => publish(soFar, steps),
       onStep: (next) => publish(fullResponse, next),
       signal: controller.signal,
+      checkpoint: hasValidCheckpoint ? checkpoint : null,
+      sessionId,
+      originalUserMessage: userMessage.content,
+      onCheckpoint: (cp) => {
+        // Checkpoint saved automatically to storage
+      },
     });
     fullResponse = result.text || (steps.length ? 'تم تنفيذ الخطوات.' : '');
     publish(fullResponse, result.steps);
@@ -442,8 +606,8 @@ select{background:var(--muted);color:var(--fg);border:1px solid var(--border);bo
   var pollTimer = null, lastCount = -1, running = false;
 
   var I18N = {
-    ar:{login:'أدخل رمز التفويض الظاهر في التطبيق', connect:'اتصال', wrong:'رمز غير صحيح', placeholder:'اكتب رسالتك… (يمكنك /help)', send:'إرسال', stop:'■ إيقاف', approve:'⏳ في انتظار موافقتك على الهاتف — افتحي التطبيق ووافقي على الطلب', writing:'المساعد بيكتب…', none:'لا يوجد محتوى بعد', tasks:'المهام اليومية', skills:'المهارات', memory:'الذاكرة', settings:'الإعدادات', device:'التحكم في الهاتف', on:'مفعّل', off:'متوقف', model:'الموديل', active:'نشطة', inactive:'مؤرشفة', newChat:'+ محادثة'},
-    en:{login:'Enter the PIN shown in the phone app', connect:'Connect', wrong:'Wrong PIN', placeholder:'Type a message… (/help works)', send:'Send', stop:'■ Stop', approve:'⏳ Waiting for your approval on the phone', writing:'Assistant is typing…', none:'Nothing here yet', tasks:'Daily tasks', skills:'Skills', memory:'Memory', settings:'Settings', device:'Device control', on:'ON', off:'OFF', model:'Model', active:'active', inactive:'archived', newChat:'+ New chat'}
+    ar:{login:'أدخل رمز التفويض الظاهر في التطبيق (6 حروف/أرقام)', connect:'اتصال', wrong:'رمز غير صحيح', placeholder:'اكتب رسالتك… (يمكنك /help)', send:'إرسال', stop:'■ إيقاف', approve:'⏳ في انتظار موافقتك على الهاتف — افتحي التطبيق ووافقي على الطلب', writing:'المساعد بيكتب…', none:'لا يوجد محتوى بعد', tasks:'المهام اليومية', skills:'المهارات', memory:'الذاكرة', settings:'الإعدادات', device:'التحكم في الهاتف', on:'مفعّل', off:'متوقف', model:'الموديل', active:'نشطة', inactive:'مؤرشفة', newChat:'+ محادثة'},
+    en:{login:'Enter the PIN shown in the phone app (6 chars)', connect:'Connect', wrong:'Wrong PIN', placeholder:'Type a message… (/help works)', send:'Send', stop:'■ Stop', approve:'⏳ Waiting for your approval on the phone', writing:'Assistant is typing…', none:'Nothing here yet', tasks:'Daily tasks', skills:'Skills', memory:'Memory', settings:'Settings', device:'Device control', on:'ON', off:'OFF', model:'Model', active:'active', inactive:'archived', newChat:'+ New chat'}
   };
   function t(k){ return (I18N[lang] || I18N.ar)[k]; }
 
@@ -586,7 +750,7 @@ select{background:var(--muted);color:var(--fg);border:1px solid var(--border);bo
     box.id='login';
     box.innerHTML='<h2 style="font-size:18px;margin-bottom:4px">OneByte Agent</h2>'+
       '<div class="meta" style="font-size:12px;color:var(--mutedFg)">'+t('login')+'</div>'+
-      '<input id="pin" inputmode="numeric" maxlength="5" placeholder="•••••">'+
+      '<input id="pin" inputmode="text" maxlength="6" placeholder="••••••" autocomplete="one-time-code">'+
       '<div id="loginErr" style="color:var(--destructive);font-size:12px;min-height:16px"></div>'+
       '<button class="btn" id="loginBtn" style="width:100%">'+t('connect')+'</button>';
     app.innerHTML='';

@@ -1,7 +1,6 @@
-import React, { useMemo, useState } from 'react';
+﻿import React, { useMemo, useState } from 'react';
 import {
-  Alert,
-  Modal,
+    Modal,
   Pressable,
   ScrollView,
   StyleSheet,
@@ -10,7 +9,10 @@ import {
 } from 'react-native';
 import { Feather } from '@expo/vector-icons';
 import { useColors } from '@/hooks/useColors';
+import { alertCompat } from '@/src/web-alert';
 import { useAssistant, type AssistantMemory } from '@/src/assistant';
+import { ScreenTopBar } from '@/components/PhoneDrawer';
+import type { KnowledgeEntry } from '@/src/knowledge';
 import {
   ActionButton,
   AppScreen,
@@ -25,7 +27,14 @@ const emptyMemory = { title: '', content: '' };
 
 export default function MemoryScreen() {
   const colors = useColors();
-  const { memories, createMemory, updateMemory, setMemoryActive } = useAssistant();
+  const {
+    memories,
+    knowledge,
+    clearKnowledge,
+    createMemory,
+    updateMemory,
+    setMemoryActive,
+  } = useAssistant();
   const [visible, setVisible] = useState(false);
   const [selected, setSelected] = useState<AssistantMemory | null>(null);
   const [form, setForm] = useState(emptyMemory);
@@ -52,7 +61,7 @@ export default function MemoryScreen() {
 
   async function save() {
     if (!form.title.trim() || !form.content.trim()) {
-      Alert.alert('أكملي البيانات', 'اكتبي عنوان المعلومة وتفاصيلها.');
+      alertCompat('أكملي البيانات', 'اكتبي عنوان المعلومة وتفاصيلها.');
       return;
     }
     try {
@@ -60,7 +69,7 @@ export default function MemoryScreen() {
       else await createMemory(form);
       setVisible(false);
     } catch {
-      Alert.alert('لم يتم حفظ المعلومة', 'حاولي مرة أخرى.');
+      alertCompat('لم يتم حفظ المعلومة', 'حاولي مرة أخرى.');
     }
   }
 
@@ -95,7 +104,7 @@ export default function MemoryScreen() {
             accessibilityRole="button"
             onPress={() =>
               void setMemoryActive(memory.id, !memory.active).catch(() =>
-                Alert.alert('تعذّر حفظ التغيير', 'حاولي مرة أخرى.'),
+                alertCompat('تعذّر حفظ التغيير', 'حاولي مرة أخرى.'),
               )
             }
             style={styles.smallAction}
@@ -131,6 +140,7 @@ export default function MemoryScreen() {
           </Pressable>
         }
       >
+        <ScreenTopBar active="memory" />
         <Surface style={styles.infoCard}>
           <Feather name="shield" size={18} color={colors.primary} />
           <Text style={[styles.infoText, { color: colors.foreground }]}>
@@ -162,6 +172,69 @@ export default function MemoryScreen() {
             {archivedMemories.map(renderMemory)}
           </View>
         ) : null}
+
+        {/* Automatic knowledge base — built in the background from your
+            discussions; listed here for full privacy and control. */}
+        <View style={styles.section}>
+          <SectionTitle title={`مستودع المعلومات التلقائي (${knowledge.length})`} />
+          <Surface style={styles.infoCard}>
+            <Feather name="database" size={18} color={colors.primary} />
+            <Text style={[styles.infoText, { color: colors.foreground }]}>
+              يُبنى تلقائيًا من محادثاتك (جهازك، تفضيلاتك، مشاريعك) في الخلفية، ويُسترجَع ضمن الردود المناسبة فقط — لا يظهر في الشات.
+            </Text>
+          </Surface>
+          {knowledge.length ? (
+            <>
+              {knowledge.slice(0, 40).map((entry: KnowledgeEntry) => (
+                <Surface key={entry.id} style={styles.memoryCard}>
+                  <View style={styles.memoryHeader}>
+                    <View style={[styles.memoryIcon, { backgroundColor: colors.accent }]}>
+                      <Feather name="database" size={14} color={colors.primary} />
+                    </View>
+                    <Text style={[styles.memoryTitle, { color: colors.foreground }]} numberOfLines={2}>
+                      {entry.text}
+                    </Text>
+                    <StatusPill
+                      label={
+                        entry.kind === 'device'
+                          ? 'جهاز'
+                          : entry.kind === 'preference'
+                            ? 'تفضيل'
+                            : entry.kind === 'identity'
+                              ? 'عن المستخدم'
+                              : entry.kind === 'project'
+                                ? 'مشروع'
+                                : 'سياق'
+                      }
+                      tone="neutral"
+                    />
+                  </View>
+                </Surface>
+              ))}
+              <ActionButton
+                label="مسح مستودع المعلومات"
+                icon="trash-2"
+                variant="secondary"
+                onPress={() =>
+                  alertCompat(
+                    'مسح مستودع المعلومات؟',
+                    'سيتم حذف كل المعلومات المستخرجة تلقائيًا من محادثاتك. لا يمكن استعادتها.',
+                    [
+                      { text: 'إلغاء', style: 'cancel' },
+                      { text: 'مسح', style: 'destructive', onPress: () => void clearKnowledge() },
+                    ],
+                  )
+                }
+              />
+            </>
+          ) : (
+            <EmptyState
+              icon="database"
+              title="المستودع فاضي"
+              message="مع استمرار المحادثة، سيُسجّل تلقائيًا معلومات قابلة لإعادة الاستخدام عن جهازك وتفضيلاتك."
+            />
+          )}
+        </View>
       </AppScreen>
 
       <Modal

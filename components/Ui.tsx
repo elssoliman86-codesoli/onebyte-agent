@@ -14,6 +14,7 @@ import {
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { Feather } from '@expo/vector-icons';
 import { useColors } from '@/hooks/useColors';
+import { spacing, radius, typography, shadows } from '@/src/design-tokens';
 
 export function AppScreen({
   title,
@@ -78,19 +79,40 @@ export function AppScreen({
 export function Surface({
   children,
   style,
+  elevated = false,
+  glass = false,
 }: {
   children: React.ReactNode;
   style?: StyleProp<ViewStyle>;
+  elevated?: boolean;
+  glass?: boolean;
 }) {
   const colors = useColors();
+
+  let backgroundColor = colors.card;
+  let borderColor = colors.border;
+  let boxShadow: ViewStyle = shadows.md;
+
+  if (elevated) {
+    backgroundColor = colors.surfaceElevated;
+    borderColor = colors.borderHighlighted;
+    boxShadow = shadows.lg;
+  }
+
+  if (glass) {
+    backgroundColor = colors.surfaceGlass;
+    borderColor = colors.borderSubtle;
+    boxShadow = shadows.glow;
+  }
+
   return (
     <View
       style={[
         styles.surface,
         {
-          backgroundColor: colors.card,
-          borderColor: colors.border,
-          borderRadius: colors.radius,
+          backgroundColor,
+          borderColor,
+          ...boxShadow,
         },
         style,
       ]}
@@ -208,21 +230,23 @@ export function StatusPill({
           : tone === 'accent'
             ? colors.accentForeground
             : colors.mutedForeground;
+  const background =
+    tone === 'success'
+      ? `${colors.success}18`
+      : tone === 'warning'
+        ? `${colors.warning}18`
+        : tone === 'danger'
+          ? `${colors.destructive}18`
+          : tone === 'accent'
+            ? colors.accent
+            : colors.muted;
+
   return (
     <View
       style={[
         styles.pill,
         {
-          backgroundColor:
-            tone === 'success'
-              ? `${colors.success}18`
-              : tone === 'warning'
-                ? `${colors.warning}18`
-                : tone === 'danger'
-                  ? `${colors.destructive}18`
-                  : tone === 'accent'
-                    ? colors.accent
-                    : colors.muted,
+          backgroundColor: background,
         },
       ]}
     >
@@ -386,81 +410,82 @@ export function ErrorBanner({
 
 const styles = StyleSheet.create({
   safe: { flex: 1 },
-  scrollContent: { flexGrow: 1, paddingBottom: 28 },
-  page: { paddingHorizontal: 20, paddingTop: 12, gap: 22 },
+  scrollContent: { flexGrow: 1, paddingBottom: spacing.xxl },
+  page: { paddingHorizontal: spacing.lg, paddingTop: spacing.md, gap: spacing.xl },
   header: {
     flexDirection: 'row',
     alignItems: 'flex-start',
     justifyContent: 'space-between',
-    gap: 12,
+    gap: spacing.md,
   },
-  headingCopy: { flex: 1, gap: 5 },
-  eyebrow: { fontSize: 11, fontWeight: '700', letterSpacing: 1.5 },
-  title: { fontSize: 29, lineHeight: 35, fontWeight: '700', letterSpacing: -0.7 },
-  subtitle: { fontSize: 14, lineHeight: 20, maxWidth: 340 },
+  headingCopy: { flex: 1, gap: spacing.xs },
+  eyebrow: { fontSize: typography.xs, fontWeight: typography.weightBold, letterSpacing: 1.5 },
+  title: { fontSize: typography.xxl, lineHeight: 35, fontWeight: typography.weightBold, letterSpacing: -0.7 },
+  subtitle: { fontSize: typography.sm, lineHeight: 20, maxWidth: 340 },
   surface: {
     borderWidth: 1,
-    padding: 16,
-    gap: 13,
+    padding: spacing.md,
+    gap: spacing.md,
+    borderRadius: radius.lg,
   },
   sectionHeader: {
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'space-between',
-    gap: 12,
+    gap: spacing.md,
   },
-  sectionTitle: { fontSize: 18, fontWeight: '700', letterSpacing: -0.2 },
+  sectionTitle: { fontSize: typography.lg, fontWeight: typography.weightBold, letterSpacing: -0.2 },
   button: {
     minHeight: 46,
-    paddingHorizontal: 15,
-    borderRadius: 14,
+    paddingHorizontal: spacing.md,
+    borderRadius: radius.lg,
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'center',
-    gap: 8,
+    gap: spacing.sm,
   },
-  buttonText: { fontSize: 14, fontWeight: '700' },
+  buttonText: { fontSize: typography.md, fontWeight: typography.weightBold },
   iconButton: { width: 42, height: 42, alignItems: 'center', justifyContent: 'center' },
   pill: {
-    paddingVertical: 6,
-    paddingHorizontal: 10,
-    borderRadius: 99,
+    paddingVertical: spacing.xs,
+    paddingHorizontal: spacing.sm,
+    borderRadius: radius.full,
     alignSelf: 'flex-start',
   },
-  pillText: { fontSize: 11, fontWeight: '700', letterSpacing: 0.15 },
-  empty: { alignItems: 'flex-start', paddingVertical: 22 },
+  pillText: { fontSize: typography.xs, fontWeight: typography.weightBold, letterSpacing: 0.15 },
+  empty: { alignItems: 'flex-start', paddingVertical: spacing.xl },
   emptyIcon: {
     width: 44,
     height: 44,
-    borderRadius: 15,
+    borderRadius: radius.lg,
     alignItems: 'center',
     justifyContent: 'center',
-    marginBottom: 2,
+    marginBottom: spacing.xs,
   },
-  emptyTitle: { fontSize: 16, fontWeight: '700' },
-  emptyMessage: { fontSize: 13, lineHeight: 19 },
-  fieldWrap: { gap: 8 },
-  fieldLabel: { fontSize: 13, fontWeight: '700' },
+  emptyTitle: { fontSize: typography.lg, fontWeight: typography.weightBold },
+  emptyMessage: { fontSize: typography.sm, lineHeight: 19 },
+  fieldWrap: { gap: spacing.sm },
+  fieldLabel: { fontSize: typography.sm, fontWeight: typography.weightBold },
   input: {
     borderWidth: 1,
-    borderRadius: 13,
-    paddingHorizontal: 14,
-    paddingVertical: 13,
-    fontSize: 15,
+    borderRadius: radius.md,
+    paddingHorizontal: spacing.md,
+    paddingVertical: spacing.md,
+    fontSize: typography.md,
   },
-  fieldHint: { fontSize: 12, lineHeight: 17 },
-  choiceWrap: { flexDirection: 'row', flexWrap: 'wrap', gap: 8 },
+  fieldHint: { fontSize: typography.xs, lineHeight: 17 },
+  choiceWrap: { flexDirection: 'row', flexWrap: 'wrap', gap: spacing.sm },
   choice: {
     minHeight: 38,
     borderWidth: 1,
-    borderRadius: 99,
-    paddingHorizontal: 13,
+    borderRadius: radius.full,
+    paddingHorizontal: spacing.md,
     alignItems: 'center',
     justifyContent: 'center',
   },
-  choiceText: { fontSize: 12, fontWeight: '700' },
-  loading: { flex: 1, alignItems: 'center', justifyContent: 'center', gap: 12 },
-  errorBanner: { gap: 12 },
-  errorCopy: { flexDirection: 'row', alignItems: 'flex-start', gap: 8 },
-  errorText: { flex: 1, fontSize: 13, lineHeight: 19 },
+  choiceText: { fontSize: typography.xs, fontWeight: typography.weightBold },
+  loading: { flex: 1, alignItems: 'center', justifyContent: 'center', gap: spacing.md },
+  errorBanner: { gap: spacing.md },
+  errorCopy: { flexDirection: 'row', alignItems: 'flex-start', gap: spacing.sm },
+  errorText: { flex: 1, fontSize: typography.sm, lineHeight: 19 },
 });

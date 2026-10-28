@@ -1,7 +1,8 @@
-import React, { useState } from 'react';
-import { Alert, StyleSheet, Text, View } from 'react-native';
+﻿import React, { useState } from 'react';
+import { StyleSheet, Text, View } from 'react-native';
 import { Feather } from '@expo/vector-icons';
 import { useColors } from '@/hooks/useColors';
+import { alertCompat } from '@/src/web-alert';
 import { useWorkspace } from '@/src/workspace';
 import {
   ActionButton,
@@ -33,7 +34,7 @@ export default function ApprovalsScreen() {
   const history = approvals.filter((approval) => approval.status !== 'pending');
 
   const decide = (id: string, status: 'approved' | 'rejected') => {
-    Alert.alert(
+    alertCompat(
       `${status === 'approved' ? 'Approve' : 'Reject'} this record?`,
       `This records your decision for the exact action shown. It does not execute the action or grant ongoing permission.`,
       [
@@ -43,7 +44,7 @@ export default function ApprovalsScreen() {
           style: status === 'rejected' ? 'destructive' : 'default',
           onPress: () => {
             void decideApproval(id, status).catch((error: unknown) => {
-              Alert.alert('Could not save decision', String(error));
+              alertCompat('Could not save decision', String(error));
             });
           },
         },

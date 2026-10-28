@@ -1,8 +1,9 @@
-import React, { useMemo, useState } from 'react';
+﻿import React, { useMemo, useState } from 'react';
 import { Alert, Pressable, StyleSheet, Text, View } from 'react-native';
 import { Feather } from '@expo/vector-icons';
 import { useColors } from '@/hooks/useColors';
 import { useWorkspace, type Finding, type FindingSeverity } from '@/src/workspace';
+import { alertCompat } from '@/src/web-alert';
 import {
   ActionButton,
   AppScreen,
@@ -122,7 +123,7 @@ export default function FindingsScreen() {
   );
 
   const confirmDelete = (finding: Finding) => {
-    Alert.alert(
+    alertCompat(
       'Delete finding?',
       `“${finding.title}” will be removed from this device.`,
       [
@@ -132,7 +133,7 @@ export default function FindingsScreen() {
           style: 'destructive',
           onPress: () => {
             void deleteFinding(finding.id).catch((error: unknown) =>
-              Alert.alert('Could not delete finding', String(error)),
+              alertCompat('Could not delete finding', String(error)),
             );
           },
         },
@@ -185,7 +186,7 @@ export default function FindingsScreen() {
                     onStatus={(status) =>
                       void updateFindingStatus(finding.id, status).catch(
                         (error: unknown) =>
-                          Alert.alert('Could not update finding', String(error)),
+                          alertCompat('Could not update finding', String(error)),
                       )
                     }
                     onDelete={() => confirmDelete(finding)}

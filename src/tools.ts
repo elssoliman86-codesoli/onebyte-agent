@@ -1,5 +1,5 @@
 import { Linking, Platform } from 'react-native';
-import { fetch } from 'expo/fetch';
+import { fetchWithRetry } from './fetch-with-retry';
 import * as Device from './device';
 import type {
   AssistantMemory,
@@ -290,7 +290,12 @@ async function webSearch(query: string): Promise<string> {
   let lastError = '';
   for (const endpoint of endpoints) {
     try {
-      const response = await fetch(endpoint, { headers: BROWSER_HEADERS });
+      const response = await fetchWithRetry(endpoint, { headers: BROWSER_HEADERS }, {
+        timeout: 20_000,
+        maxRetries: 2,
+        baseDelay: 500,
+        retryStatusCodes: [429, 500, 502, 503, 504],
+      });
       if (!response.ok) {
         lastError = `HTTP ${response.status}`;
         continue;
@@ -313,7 +318,12 @@ async function webSearch(query: string): Promise<string> {
 async function webFetch(rawUrl: string): Promise<string> {
   const url = safeUrl(rawUrl);
   try {
-    const response = await fetch(url, { headers: BROWSER_HEADERS });
+    const response = await fetchWithRetry(url, { headers: BROWSER_HEADERS }, {
+      timeout: 30_000,
+      maxRetries: 2,
+      baseDelay: 1_000,
+      retryStatusCodes: [429, 500, 502, 503, 504],
+    });
     if (!response.ok) return `تعذّر جلب الصفحة (HTTP ${response.status}).`;
     const html = await response.text();
     const text = htmlToText(html);

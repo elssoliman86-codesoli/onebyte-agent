@@ -1,7 +1,6 @@
 import React from 'react';
 import {
-  Alert,
-  Pressable,
+    Pressable,
   ScrollView,
   StyleSheet,
   Text,
@@ -12,6 +11,7 @@ import { router, useLocalSearchParams } from 'expo-router';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useColors } from '@/hooks/useColors';
 import { useWorkspace } from '@/src/workspace';
+import { alertCompat } from '@/src/web-alert';
 import {
   ActionButton,
   ErrorBanner,
@@ -47,7 +47,7 @@ export default function AssessmentDetailScreen() {
 
   const remove = () => {
     if (!assessment) return;
-    Alert.alert(
+    alertCompat(
       'Delete this assessment?',
       'This also removes its approval and finding records from this device.',
       [
@@ -59,7 +59,7 @@ export default function AssessmentDetailScreen() {
             void deleteAssessment(assessment.id)
               .then(() => router.back())
               .catch((error: unknown) =>
-                Alert.alert('Could not delete assessment', String(error)),
+                alertCompat('Could not delete assessment', String(error)),
               );
           },
         },
@@ -71,7 +71,7 @@ export default function AssessmentDetailScreen() {
     if (!assessment) return;
     const next = assessment.status === 'planned' ? 'active' : 'completed';
     const label = next === 'active' ? 'Mark as in progress?' : 'Complete assessment?';
-    Alert.alert(
+    alertCompat(
       label,
       next === 'completed'
         ? 'This closes the assessment record. It does not perform any security test.'
@@ -83,7 +83,7 @@ export default function AssessmentDetailScreen() {
           onPress: () => {
             void updateAssessmentStatus(assessment.id, next).catch(
               (error: unknown) =>
-                Alert.alert('Could not update assessment', String(error)),
+                alertCompat('Could not update assessment', String(error)),
             );
           },
         },

@@ -1,7 +1,6 @@
-import React, { useEffect, useRef, useState } from 'react';
+﻿import React, { useEffect, useRef, useState } from 'react';
 import {
-  Alert,
-  Platform,
+    Platform,
   Pressable,
   Share,
   StyleSheet,
@@ -12,6 +11,7 @@ import {
 import { Feather } from '@expo/vector-icons';
 import { router } from 'expo-router';
 import { useColors } from '@/hooks/useColors';
+import { alertCompat } from '@/src/web-alert';
 import {
   getStoredModelApiKey,
   useAssistant,
@@ -24,6 +24,9 @@ import type { ApprovalDecision } from '@/src/agent';
 import type { ToolSpec } from '@/src/tools';
 import { formatContext, formatPrice, type ModelInfo } from '@/src/model-catalog';
 import * as Device from '@/src/device';
+import { ACCENTS, type AccentKey } from '@/constants/colors';
+import { LANGUAGES } from '@/src/i18n';
+import { RESPONSE_STYLE_LABELS, type ResponseStyle } from '@/src/response-style';
 import {
   configurePcServer,
   setPcApprovalHandler,
@@ -53,6 +56,7 @@ export default function SettingsScreen() {
     tasks,
     agent,
     appearance,
+    knowledge,
     activeSession,
     appendMessage,
     createSession,
@@ -114,6 +118,7 @@ export default function SettingsScreen() {
         tasks,
         agent,
         appearance,
+        knowledge,
       }),
       appendMessage,
       createSession,
@@ -158,7 +163,7 @@ export default function SettingsScreen() {
         setPcAccess({ url: '', pin: '' });
       }
     } catch (error) {
-      Alert.alert(
+      alertCompat(
         'خادم الكمبيوتر',
         error instanceof Error ? error.message : 'حاولي مرة أخرى.',
       );
@@ -169,11 +174,11 @@ export default function SettingsScreen() {
 
   async function openPicker() {
     if (!baseUrl.trim()) {
-      Alert.alert('أضف الرابط أولًا', 'اكتب Base URL ثم افتح قائمة الموديلات.');
+      alertCompat('أضف الرابط أولًا', 'اكتب Base URL ثم افتح قائمة الموديلات.');
       return;
     }
     if (!apiKey.trim() && !apiKeyConfigured) {
-      Alert.alert('أضف المفتاح أولًا', 'الصق مفتاح API ثم افتح قائمة الموديلات.');
+      alertCompat('أضف المفتاح أولًا', 'الصق مفتاح API ثم افتح قائمة الموديلات.');
       return;
     }
     setPickerVisible(true);
@@ -189,7 +194,7 @@ export default function SettingsScreen() {
     try {
       await saveAgentSettings({ deviceControlEnabled: next });
     } catch {
-      Alert.alert('تعذّر الحفظ', 'حاول مرة أخرى.');
+      alertCompat('تعذّر الحفظ', 'حاول مرة أخرى.');
     }
   }
 
@@ -271,7 +276,7 @@ export default function SettingsScreen() {
     setWorkingTokensText(String(clamped));
     if (clamped !== agent.maxWorkingTokens) {
       void saveAgentSettings({ maxWorkingTokens: clamped }).catch(() =>
-        Alert.alert('تعذّر الحفظ', 'حاولي مرة أخرى.'),
+        alertCompat('تعذّر الحفظ', 'حاولي مرة أخرى.'),
       );
     }
   }
@@ -286,18 +291,18 @@ export default function SettingsScreen() {
     setMaxStepsText(String(clamped));
     if (clamped !== agent.maxSteps) {
       void saveAgentSettings({ maxSteps: clamped }).catch(() =>
-        Alert.alert('تعذّر الحفظ', 'حاولي مرة أخرى.'),
+        alertCompat('تعذّر الحفظ', 'حاولي مرة أخرى.'),
       );
     }
   }
 
   async function saveSettings() {
     if (!baseUrl.trim() || !model.trim()) {
-      Alert.alert('أكملي إعدادات الموديل', 'أضيفي Base URL واسم الموديل.');
+      alertCompat('أكملي إعدادات الموديل', 'أضيفي Base URL واسم الموديل.');
       return;
     }
     if (!apiKey.trim() && !apiKeyConfigured) {
-      Alert.alert('مفتاح API مطلوب', 'أضيفي مفتاح الموديل في الحقل الآمن.');
+      alertCompat('مفتاح API مطلوب', 'أضيفي مفتاح الموديل في الحقل الآمن.');
       return;
     }
     setSaving(true);
@@ -318,9 +323,9 @@ export default function SettingsScreen() {
         apiKey,
       );
       setApiKey('');
-      Alert.alert('تم الحفظ', 'الإعدادات محفوظة على هذا الجهاز فقط.');
+      alertCompat('تم الحفظ', 'الإعدادات محفوظة على هذا الجهاز فقط.');
     } catch (error) {
-      Alert.alert(
+      alertCompat(
         'تعذّر الحفظ',
         error instanceof Error ? error.message : 'حاولي مرة أخرى.',
       );
@@ -331,7 +336,7 @@ export default function SettingsScreen() {
 
   async function testConnection() {
     if (!baseUrl.trim() || !model.trim()) {
-      Alert.alert('أكملي إعدادات الموديل', 'أضيفي Base URL واسم الموديل أولًا.');
+      alertCompat('أكملي إعدادات الموديل', 'أضيفي Base URL واسم الموديل أولًا.');
       return;
     }
     setTesting(true);
@@ -354,9 +359,9 @@ export default function SettingsScreen() {
         },
       });
       if (!reply.trim()) throw new Error('وصل الاتصال لكن الرد كان فارغًا.');
-      Alert.alert('الاتصال ناجح', 'استقبلنا ردًا من الموديل.');
+      alertCompat('الاتصال ناجح', 'استقبلنا ردًا من الموديل.');
     } catch (error) {
-      Alert.alert(
+      alertCompat(
         'تعذّر الاتصال',
         error instanceof Error
           ? error.message
@@ -368,7 +373,7 @@ export default function SettingsScreen() {
   }
 
   function confirmRemoveKey() {
-    Alert.alert(
+    alertCompat(
       'حذف مفتاح الموديل؟',
       'سيتم حذفه من خزنة هذا الجهاز. سيظل اسم الموديل ورابط الخدمة محفوظين.',
       [
@@ -378,7 +383,7 @@ export default function SettingsScreen() {
           style: 'destructive',
           onPress: () => {
             void removeApiKey().catch(() =>
-              Alert.alert('تعذّر حذف المفتاح', 'حاولي مرة أخرى.'),
+              alertCompat('تعذّر حذف المفتاح', 'حاولي مرة أخرى.'),
             );
           },
         },
@@ -387,7 +392,7 @@ export default function SettingsScreen() {
   }
 
   function confirmExport() {
-    Alert.alert(
+    alertCompat(
       'تصدير نسخة محلية؟',
       'النسخة تحتوي على محادثاتك ومهاراتك وذاكرتك ومهامك، لكنها لا تحتوي على مفتاح API.',
       [
@@ -398,7 +403,7 @@ export default function SettingsScreen() {
             void Share.share({
               title: 'نسخة بيانات OneByte Agent',
               message: exportLocalData(),
-            }).catch(() => Alert.alert('تعذّر التصدير', 'حاولي من قائمة المشاركة.'));
+            }).catch(() => alertCompat('تعذّر التصدير', 'حاولي من قائمة المشاركة.'));
           },
         },
       ],
@@ -411,6 +416,43 @@ export default function SettingsScreen() {
       eyebrow="تحكم كامل من جهازك"
       subtitle="اختاري مزود النموذج واحفظي مفتاحه محليًا."
     >
+      {/* Plan card — honest summary of the real provider state; no fake commerce.
+          The only real "upgrade" is choosing a paid model from your provider. */}
+      <Surface style={styles.proCard}>
+        <View style={styles.proHead}>
+          <View style={[styles.proIcon, { backgroundColor: colors.accent }]}>
+            <Feather name="award" size={19} color={colors.warning} />
+          </View>
+          <View style={styles.proCopy}>
+            <Text style={[styles.cardTitle, { color: colors.foreground }]}>
+              تريد ميزات أكثر؟
+            </Text>
+            <Text style={[styles.body, { color: colors.mutedForeground }]}>
+              كل ميزات التطبيق تعمل بالكامل على الخطة المجانية. الفرق الوحيد هو الموديل نفسه: الموديلات المدفوعة من مزودك تعطي جودة أعلى وسياقًا أكبر — تختارها من قائمة الموديلات عند إضافة مفتاح مزودك.
+            </Text>
+          </View>
+        </View>
+        <View style={[styles.planStatus, { backgroundColor: colors.accent }]}>
+          <Feather
+            name={provider.free ? 'zap' : 'trending-up'}
+            size={13}
+            color={colors.primary}
+          />
+          <Text style={[styles.planStatusText, { color: colors.primary }]} numberOfLines={1}>
+            خطتك الحالية:{' '}
+            {provider.model
+              ? `${provider.free ? 'مجانية' : 'مدفوعة'} · ${provider.providerName} · ${provider.model}`
+              : 'لم يتم اختيار موديل بعد'}
+          </Text>
+        </View>
+        <ActionButton
+          label="اختيار موديل من القائمة (مجاني أو مدفوع)"
+          icon="list"
+          variant="secondary"
+          onPress={() => void openPicker()}
+        />
+      </Surface>
+
       <Surface style={styles.localCard}>
         <View style={styles.localHeading}>
           <View style={[styles.localIcon, { backgroundColor: colors.accent }]}>
@@ -650,7 +692,7 @@ export default function SettingsScreen() {
                   label="فتح صفحة التطبيق في إعدادات النظام (المسار الأسرع)"
                   icon="shield"
                   onPress={() =>
-                    Alert.alert(
+                    alertCompat(
                       'تفعيل إمكانية الوصول — 3 خطوات',
                       '1) من صفحة التطبيق اللي هتفتح: اضغطي "إمكانية الوصول" (أو من إعدادات النظام ← إمكانية الوصول) ← دوّري على "OneByte Agent" وشغّلي مفتاحه.\n\n' +
                         '2) لو المفتاح رمادي ومش بيتحرك (أندرويد 13+): من نفس صفحة التطبيقات ← اضغطي ⋮ (تلات نقط فوق) ← "السماح بالإعدادات المقيدة" ← فعّليها، ثم ارجعي للمفتاح.\n\n' +
@@ -678,7 +720,7 @@ export default function SettingsScreen() {
                         onPress={() =>
                           void saveAgentSettings({
                             autoApprovedTools: agent.autoApprovedTools.filter((k) => k !== key),
-                          }).catch(() => Alert.alert('تعذّر الحفظ', 'حاولي مرة أخرى.'))
+                          }).catch(() => alertCompat('تعذّر الحفظ', 'حاولي مرة أخرى.'))
                         }
                         style={[styles.presetChip, { borderColor: colors.success, minWidth: '45%' }]}
                       >
@@ -769,7 +811,7 @@ export default function SettingsScreen() {
                   accessibilityLabel={`ثيم ${label}`}
                   onPress={() =>
                     void saveAppearanceSettings({ theme: value }).catch(() =>
-                      Alert.alert('تعذّر الحفظ', 'حاولي مرة أخرى.'),
+                      alertCompat('تعذّر الحفظ', 'حاولي مرة أخرى.'),
                     )
                   }
                   style={[
@@ -795,6 +837,153 @@ export default function SettingsScreen() {
               );
             })}
           </View>
+          {/* Accent colors — every screen follows the pick; text on the
+              accent stays contrast-safe in light and dark themes. */}
+          <Text style={[styles.fieldLabel, { color: colors.foreground, marginTop: 14 }]}>
+            لون الثيم
+          </Text>
+          <View style={styles.presetWrap}>
+            {(Object.keys(ACCENTS) as AccentKey[]).map((key) => {
+              const swatch = ACCENTS[key];
+              const active = appearance.accent === key;
+              return (
+                <Pressable
+                  key={key}
+                  accessibilityRole="button"
+                  accessibilityLabel={`لون ${key}`}
+                  onPress={() =>
+                    void saveAppearanceSettings({ accent: key }).catch(() =>
+                      alertCompat('تعذّر الحفظ', 'حاولي مرة أخرى.'),
+                    )
+                  }
+                  style={[
+                    styles.accentSwatch,
+                    { borderColor: active ? colors.foreground : 'transparent' },
+                  ]}
+                >
+                  <View
+                    style={[styles.accentDot, { backgroundColor: swatch.primary }]}
+                  >
+                    {active ? (
+                      <Feather name="check" size={14} color={swatch.primaryForeground} />
+                    ) : null}
+                  </View>
+                </Pressable>
+              );
+            })}
+          </View>
+        </Surface>
+      </View>
+
+      <View style={styles.section}>
+        <SectionTitle title="اللغة" />
+        <Surface style={styles.formCard}>
+          <View style={styles.presetWrap}>
+            {LANGUAGES.map((lang) => {
+              const active = appearance.language === lang.code;
+              return (
+                <Pressable
+                  key={lang.code}
+                  accessibilityRole="button"
+                  accessibilityLabel={`اللغة ${lang.native}`}
+                  onPress={() =>
+                    void saveAppearanceSettings({ language: lang.code }).catch(() =>
+                      alertCompat('تعذّر الحفظ', 'حاولي مرة أخرى.'),
+                    )
+                  }
+                  style={[
+                    styles.presetChip,
+                    {
+                      borderColor: active ? colors.primary : colors.border,
+                      backgroundColor: active
+                        ? colors.primary + '22'
+                        : colors.background,
+                    },
+                  ]}
+                >
+                  <Text
+                    style={[
+                      styles.presetChipText,
+                      { color: active ? colors.primary : colors.foreground },
+                    ]}
+                  >
+                    {lang.native}
+                  </Text>
+                </Pressable>
+              );
+            })}
+          </View>
+          <Text style={[styles.body, { color: colors.mutedForeground, marginTop: 8 }]}>
+            تغيّر لغة ردود الموديل فورًا، وباقي الشاشات تترجم تدريجيًا (الشات مترجم بالكامل).
+          </Text>
+        </Surface>
+      </View>
+
+      <View style={styles.section}>
+        <SectionTitle title="أسلوب الرد (باك إند)" />
+        <Surface style={styles.formCard}>
+          <Text style={[styles.body, { color: colors.mutedForeground }]}>
+            ضوابط تعمل في الخلفية: كل رد يمرّ عليها قبل وصوله إليك — بلا خطوة إضافية ولا تأخير.
+          </Text>
+          {(Object.keys(RESPONSE_STYLE_LABELS) as (keyof ResponseStyle)[]).map((field) => {
+            const options = RESPONSE_STYLE_LABELS[field];
+            const current = agent.responseStyle?.[field];
+            return (
+              <View key={field} style={{ marginTop: 12 }}>
+                <Text style={[styles.fieldLabel, { color: colors.foreground }]}>
+                  {field === 'title'
+                    ? 'العنوان'
+                    : field === 'links'
+                      ? 'الروابط'
+                      : field === 'diagram'
+                        ? 'الدياجرام (flowchart)'
+                        : field === 'markdown'
+                          ? 'الماركداون'
+                          : field === 'length'
+                            ? 'الطول'
+                            : 'النبرة'}
+                </Text>
+                <View style={styles.presetWrap}>
+                  {(Object.keys(options) as string[]).map((opt) => {
+                    const active = current === opt;
+                    return (
+                      <Pressable
+                        key={opt}
+                        accessibilityRole="button"
+                        accessibilityLabel={`${field}: ${options[opt]}`}
+                        onPress={() =>
+                          void saveAgentSettings({
+                            responseStyle: {
+                              ...(agent.responseStyle ?? {}),
+                              [field]: opt,
+                            } as ResponseStyle,
+                          }).catch(() => alertCompat('تعذّر الحفظ', 'حاولي مرة أخرى.'))
+                        }
+                        style={[
+                          styles.presetChip,
+                          {
+                            borderColor: active ? colors.primary : colors.border,
+                            backgroundColor: active
+                              ? colors.primary + '22'
+                              : colors.background,
+                          },
+                        ]}
+                      >
+                        <Text
+                          style={[
+                            styles.presetChipText,
+                            { color: active ? colors.primary : colors.foreground },
+                          ]}
+                        >
+                          {options[opt]}
+                        </Text>
+                      </Pressable>
+                    );
+                  })}
+                </View>
+              </View>
+            );
+          })}
         </Surface>
       </View>
 
@@ -883,6 +1072,7 @@ export default function SettingsScreen() {
         visible={pickerVisible}
         baseUrl={baseUrl}
         getApiKey={async () => apiKey.trim() || (await getStoredModelApiKey())}
+        currentModel={provider.model}
         onClose={() => setPickerVisible(false)}
         onPick={onPickModel}
       />
@@ -902,6 +1092,19 @@ function Count({ label, value }: { label: string; value: number }) {
 
 const styles = StyleSheet.create({
   localCard: { gap: 14 },
+  proCard: { gap: 12 },
+  proHead: { flexDirection: 'row-reverse', alignItems: 'flex-start', gap: 10 },
+  proIcon: { width: 38, height: 38, borderRadius: 13, alignItems: 'center', justifyContent: 'center' },
+  proCopy: { flex: 1, alignItems: 'flex-end', gap: 5 },
+  planStatus: {
+    flexDirection: 'row-reverse',
+    alignItems: 'center',
+    gap: 7,
+    borderRadius: 12,
+    paddingHorizontal: 12,
+    paddingVertical: 9,
+  },
+  planStatusText: { flex: 1, fontSize: 11.5, fontWeight: '800', textAlign: 'right' },
   localHeading: { flexDirection: 'row-reverse', alignItems: 'flex-start', gap: 10 },
   localIcon: { width: 38, height: 38, borderRadius: 13, alignItems: 'center', justifyContent: 'center' },
   localCopy: { flex: 1, alignItems: 'flex-end', gap: 5 },
@@ -924,6 +1127,19 @@ const styles = StyleSheet.create({
   },
   presetChipText: { fontSize: 12, fontWeight: '700', textAlign: 'center' },
   presetChipNote: { fontSize: 9, marginTop: 2, textAlign: 'center' },
+  accentSwatch: {
+    borderWidth: 2,
+    borderRadius: 999,
+    padding: 2,
+  },
+  accentDot: {
+    width: 34,
+    height: 34,
+    borderRadius: 999,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  fieldLabel: { fontSize: 13, fontWeight: '700', marginBottom: 6 },
   pcApproval: { borderWidth: 1, borderRadius: 14, padding: 12, gap: 10 },
   priceRow: { gap: 4, alignItems: 'flex-end' },
   probeRow: { alignItems: 'flex-end' },

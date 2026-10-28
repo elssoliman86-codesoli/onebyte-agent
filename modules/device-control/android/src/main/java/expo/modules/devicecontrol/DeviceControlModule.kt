@@ -68,5 +68,23 @@ class DeviceControlModule : Module() {
     AsyncFunction("typeText") { index: Int, text: String -> service().typeText(index, text) }
     AsyncFunction("scroll") { down: Boolean -> service().scroll(down) }
     AsyncFunction("press") { key: String -> service().press(key) }
+
+    /**
+     * Health check for the accessibility service.
+     * Returns true if the service is connected, responsive, and can get a root window.
+     */
+    AsyncFunction("checkServiceHealth") {
+      try {
+        val svc = DeviceControlService.instance
+        if (svc == null) return@AsyncFunction mapOf("healthy" to false, "reason" to "service_not_connected")
+        val root = svc.rootInActiveWindow
+        if (root == null) return@AsyncFunction mapOf("healthy" to false, "reason" to "no_active_window")
+        // Try to get a node count to verify the service is actually responsive
+        val nodeCount = svc.nodes.size
+        mapOf("healthy" to true, "nodeCount" to nodeCount)
+      } catch (e: Exception) {
+        mapOf("healthy" to false, "reason" to e.message ?: "unknown_error")
+      }
+    }
   }
 }

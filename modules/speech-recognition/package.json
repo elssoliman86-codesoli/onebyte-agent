@@ -1,0 +1,9 @@
+{
+  "name": "speech-recognition",
+  "version": "1.0.0",
+  "main": "index.js",
+  "expo": {
+    "name": "speech-recognition",
+    "platforms": ["android"]
+  }
+}

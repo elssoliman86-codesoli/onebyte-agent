@@ -1,7 +1,6 @@
-import React, { useState } from 'react';
+﻿import React, { useState } from 'react';
 import {
-  Alert,
-  Modal,
+    Modal,
   Platform,
   Pressable,
   ScrollView,
@@ -14,6 +13,8 @@ import * as Notifications from 'expo-notifications';
 import { Feather } from '@expo/vector-icons';
 import { router } from 'expo-router';
 import { useColors } from '@/hooks/useColors';
+import { alertCompat } from '@/src/web-alert';
+import { ScreenTopBar } from '@/components/PhoneDrawer';
 import { useAssistant, type DailyTask } from '@/src/assistant';
 import {
   ActionButton,
@@ -70,11 +71,11 @@ export default function TasksScreen() {
 
   async function addTask() {
     if (!form.title.trim() || !form.prompt.trim()) {
-      Alert.alert('أكملي بيانات المهمة', 'اكتبي اسم المهمة والطلب الذي تريدي فتحه في الشات.');
+      alertCompat('أكملي بيانات المهمة', 'اكتبي اسم المهمة والطلب الذي تريدي فتحه في الشات.');
       return;
     }
     if (!parseTime(form.time)) {
-      Alert.alert('الوقت غير صحيح', 'استخدمي صيغة 24 ساعة، مثل 09:30 أو 18:00.');
+      alertCompat('الوقت غير صحيح', 'استخدمي صيغة 24 ساعة، مثل 09:30 أو 18:00.');
       return;
     }
     try {
@@ -92,13 +93,13 @@ export default function TasksScreen() {
         await setTaskActive(taskId, true, notificationId);
       } catch (error) {
         await setTaskActive(taskId, false);
-        Alert.alert(
+        alertCompat(
           'تم حفظ المهمة دون تذكير',
           error instanceof Error ? error.message : 'راجعي إعدادات التنبيهات.',
         );
       }
     } catch {
-      Alert.alert('لم يتم حفظ المهمة', 'حاولي مرة أخرى.');
+      alertCompat('لم يتم حفظ المهمة', 'حاولي مرة أخرى.');
     }
   }
 
@@ -114,7 +115,7 @@ export default function TasksScreen() {
       const notificationId = await scheduleReminder(task);
       await setTaskActive(task.id, true, notificationId);
     } catch (error) {
-      Alert.alert(
+      alertCompat(
         'لم يتم تفعيل التذكير',
         error instanceof Error ? error.message : 'راجعي إعدادات التنبيهات.',
       );
@@ -122,7 +123,7 @@ export default function TasksScreen() {
   }
 
   function removeTask(task: DailyTask) {
-    Alert.alert(
+    alertCompat(
       'حذف المهمة؟',
       'سيتم حذف التذكير المحلي، ولن تُرسل المهمة إلى أي خادم.',
       [
@@ -138,7 +139,7 @@ export default function TasksScreen() {
                 );
               }
               await deleteTask(task.id);
-            })().catch(() => Alert.alert('تعذّر حذف المهمة', 'حاولي مرة أخرى.'));
+            })().catch(() => alertCompat('تعذّر حذف المهمة', 'حاولي مرة أخرى.'));
           },
         },
       ],
@@ -226,6 +227,7 @@ export default function TasksScreen() {
           </Pressable>
         }
       >
+        <ScreenTopBar active="tasks" />
         <Surface style={styles.localOnlyCard}>
           <View style={[styles.localIcon, { backgroundColor: colors.accent }]}>
             <Feather name="smartphone" size={17} color={colors.primary} />

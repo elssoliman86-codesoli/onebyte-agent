@@ -17,6 +17,7 @@ import {
 import { KeyboardAvoidingView } from 'react-native-keyboard-controller';
 import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
 import { Feather } from '@expo/vector-icons';
+import * as Clipboard from 'expo-clipboard';
 import { router } from 'expo-router';
 import * as Notifications from 'expo-notifications';
 import * as ImagePicker from 'expo-image-picker';
@@ -49,6 +50,18 @@ import { ApprovalSheet, type PendingApproval } from '@/components/ApprovalSheet'
 import { CodeBlock } from '@/components/CodeBlock';
 import { MermaidBlock } from '@/components/MermaidBlock';
 import { HtmlPreview } from '@/components/HtmlPreview';
+import { HomeScreen } from '@/components/HomeScreen';
+import { speechService } from '@/src/speech-service';
+import { alertCompat } from '@/src/web-alert';
+import { spacing, radius, typography, shadows } from '@/src/design-tokens';
+import { ScreenTopBar } from '@/components/PhoneDrawer';
+import { useT } from '@/src/i18n';
+import {
+  extractFacts,
+  knowledgeContextBlock,
+  retrieveKnowledge,
+} from '@/src/knowledge';
+import type { StudioMode } from '@/src/modes';
 
 let localMessageCounter = 0;
 function messageId() {
@@ -227,8 +240,11 @@ function MarkdownText({ text, user }: { text: string; user?: boolean }) {
                   style={{
                     fontFamily: 'monospace',
                     fontSize: 12.5,
-                    backgroundColor: 'rgba(128,128,128,0.16)',
+                    backgroundColor: colors.surfaceGlass,
                     color: baseColor,
+                    borderRadius: 4,
+                    paddingHorizontal: 4,
+                    paddingVertical: 2,
                   }}
                 >
                   {part.slice(1, -1)}
@@ -274,8 +290,29 @@ function MessageBubble({
   onPreview?: (html: string) => void;
 }) {
   const colors = useColors();
+  const t = useT();
   const user = message.role === 'user';
   const [showThinking, setShowThinking] = useState(false);
+  const [speaking, setSpeaking] = useState(false);
+  const [copied, setCopied] = useState(false);
+  // Code blocks are not meant to be read aloud; keep prose only.
+  const speakableText = message.content.replace(/```[\s\S]*?(?:```|$)/g, ' ').replace(/\s+/g, ' ').trim();
+
+  async function toggleSpeak() {
+    if (speaking) {
+      await speechService.stopSpeaking().catch(() => undefined);
+      setSpeaking(false);
+      return;
+    }
+    setSpeaking(true);
+    try {
+      await speechService.speak(speakableText || message.content);
+    } catch {
+      // speech synthesis unavailable — nothing to do
+    } finally {
+      setSpeaking(false);
+    }
+  }
   return (
     <View style={[styles.messageRow, user && styles.userMessageRow]}>
       {!user ? (
@@ -289,6 +326,10 @@ function MessageBubble({
           {
             backgroundColor: user ? colors.primary : colors.card,
             borderColor: user ? colors.primary : colors.border,
+            borderWidth: 1,
+            borderRadius: 20,
+            paddingVertical: 12,
+            paddingHorizontal: 16,
           },
         ]}
       >
@@ -312,24 +353,36 @@ function MessageBubble({
             ))}
           </View>
         ) : null}
-        {user && message.imageUri ? (
+        {user && message.imageUri && !message.images?.length ? (
           <RNImage
             source={{ uri: message.imageUri }}
             style={styles.bubbleImage}
             resizeMode="cover"
           />
         ) : null}
+        {user && message.images?.length ? (
+          <View style={styles.bubbleImagesWrap}>
+            {message.images.map((uri, i) => (
+              <RNImage
+                key={`${i}-${uri.slice(24, 40)}`}
+                source={{ uri }}
+                style={styles.bubbleImage}
+                resizeMode="cover"
+              />
+            ))}
+          </View>
+        ) : null}
         {message.steps?.length ? <StepList steps={message.steps} /> : null}
         {message.thinking ? (
           <Pressable
             accessibilityRole="button"
-            accessibilityLabel="عرض التفكير"
+            accessibilityLabel={t('showThinking')}
             onPress={() => setShowThinking(!showThinking)}
             style={[styles.thinkingToggle, { borderTopColor: colors.border }]}
           >
             <Feather name="cpu" size={12} color={colors.mutedForeground} />
             <Text style={[styles.thinkingToggleText, { color: colors.mutedForeground }]}>
-              {showThinking ? 'إخفاء التفكير' : 'عرض التفكير'}
+              {showThinking ? t('hideThinking') : t('showThinking')}
             </Text>
           </Pressable>
         ) : null}
@@ -341,35 +394,80 @@ function MessageBubble({
           </View>
         ) : null}
         <MessageBody content={message.content} user={user} onPreview={onPreview} />
-        {user && onEditMessage ? (
-          <Pressable
-            accessibilityRole="button"
-            accessibilityLabel="تعديل وإعادة إرسال"
-            onPress={() => onEditMessage(message.content)}
-            style={[styles.userActions, { borderTopColor: 'rgba(255,255,255,0.25)' }]}
-          >
-            <Feather name="edit-2" size={12} color={colors.primaryForeground} />
-            <Text style={[styles.userActionText, { color: colors.primaryForeground }]}>
-              تعديل وإعادة إرسال
-            </Text>
-          </Pressable>
+        {user && (onEditMessage || message.content) ? (
+          <View style={[styles.userActions, { borderTopColor: 'rgba(255,255,255,0.25)' }]}>
+            {onEditMessage ? (
+              <Pressable
+                accessibilityRole="button"
+                accessibilityLabel={t('editResend')}
+                onPress={() => onEditMessage(message.content)}
+                style={styles.iconAction}
+                hitSlop={6}
+              >
+                <Feather name="edit-2" size={13} color={colors.primaryForeground} />
+              </Pressable>
+            ) : null}
+            <Pressable
+              accessibilityRole="button"
+              accessibilityLabel={t('copy')}
+              onPress={() => {
+                void Clipboard.setStringAsync(message.content).then(() => {
+                  setCopied(true);
+                  setTimeout(() => setCopied(false), 1400);
+                });
+              }}
+              style={styles.iconAction}
+              hitSlop={6}
+            >
+              <Feather name={copied ? 'check' : 'copy'} size={13} color={colors.primaryForeground} />
+            </Pressable>
+          </View>
         ) : null}
         {!user ? (
-          <Pressable
-            accessibilityRole="button"
-            onPress={() =>
-              void Share.share({
-                title: 'مسودة من OneByte Agent',
-                message: message.content,
-              })
-            }
-            style={[styles.shareDraft, { borderTopColor: colors.border }]}
-          >
-            <Feather name="share-2" size={13} color={colors.primary} />
-            <Text style={[styles.shareDraftText, { color: colors.primary }]}>
-              مشاركة المسودة
-            </Text>
-          </Pressable>
+          <View style={styles.assistantActions}>
+            <Pressable
+              accessibilityRole="button"
+              accessibilityLabel={speaking ? t('stopListen') : t('listen')}
+              onPress={() => void toggleSpeak()}
+              style={[styles.shareDraft, { borderTopColor: colors.border }]}
+            >
+              <Feather name={speaking ? 'volume-x' : 'volume-2'} size={13} color={colors.primary} />
+              <Text style={[styles.shareDraftText, { color: colors.primary }]}>
+                {speaking ? t('stopListen') : t('listen')}
+              </Text>
+            </Pressable>
+            <Pressable
+              accessibilityRole="button"
+              accessibilityLabel={t('copy')}
+              onPress={() => {
+                void Clipboard.setStringAsync(message.content).then(() => {
+                  setCopied(true);
+                  setTimeout(() => setCopied(false), 1400);
+                });
+              }}
+              style={[styles.shareDraft, styles.shareDraftStart, { borderTopColor: colors.border }]}
+            >
+              <Feather name={copied ? 'check' : 'copy'} size={13} color={colors.primary} />
+              <Text style={[styles.shareDraftText, { color: colors.primary }]}>
+                {copied ? t('copied') : t('copy')}
+              </Text>
+            </Pressable>
+            <Pressable
+              accessibilityRole="button"
+              onPress={() =>
+                void Share.share({
+                  title: 'مسودة من OneByte Agent',
+                  message: message.content,
+                })
+              }
+              style={[styles.shareDraft, styles.shareDraftStart, { borderTopColor: colors.border }]}
+            >
+              <Feather name="share-2" size={13} color={colors.primary} />
+              <Text style={[styles.shareDraftText, { color: colors.primary }]}>
+                {t('shareDraft')}
+              </Text>
+            </Pressable>
+          </View>
         ) : null}
       </View>
     </View>
@@ -399,7 +497,11 @@ export default function ChatScreen() {
     consumePendingPrompt,
     saveAgentSettings,
     storageError,
+    knowledge,
+    appearance,
+    addKnowledge,
   } = useAssistant();
+  const t = useT();
   const [messages, setMessages] = useState<ChatMessage[]>([]);
   const [draft, setDraft] = useState('');
   const [sending, setSending] = useState(false);
@@ -416,9 +518,13 @@ export default function ChatScreen() {
   const [runPlan, setRunPlan] = useState<string | null>(null);
   const [planDone, setPlanDone] = useState<null | 'ok' | 'fail'>(null);
   const [contextInfo, setContextInfo] = useState('');
-  const [attachUri, setAttachUri] = useState<string | null>(null);
+  const [attachImages, setAttachImages] = useState<string[]>([]);
   const [attachFiles, setAttachFiles] = useState<{ name: string; content: string }[]>([]);
+  const [attachMenuVisible, setAttachMenuVisible] = useState(false);
+  const [thinkingOpen, setThinkingOpen] = useState(false);
   const [previewHtml, setPreviewHtml] = useState<string | null>(null);
+  const [listening, setListening] = useState(false);
+  const recognitionRef = useRef<{ stop: () => void } | null>(null);
   const abortRef = useRef<AbortController | null>(null);
   const inputRef = useRef<TextInput>(null);
   const queueRunningRef = useRef(false);
@@ -575,57 +681,101 @@ export default function ChatScreen() {
     }
   }
 
-  /** Pick an image, compress it to a data URL, attach to the next message. */
+  /**
+   * Pick images (unlimited per message). Web: downscale via canvas so the
+   * 5MB localStorage quota survives; native: picker-quality compression.
+   */
   async function attachImage() {
     try {
       const result = await ImagePicker.launchImageLibraryAsync({
         mediaTypes: ['images'],
-        quality: 0.5,
-        allowsMultipleSelection: false,
+        quality: 0.7,
+        allowsMultipleSelection: true,
         base64: true,
       });
       if (result.canceled || !result.assets?.length) return;
-      const asset = result.assets[0];
-      let dataUrl = asset.base64
-        ? `data:${asset.mimeType ?? 'image/jpeg'};base64,${asset.base64}`
-        : asset.uri;
-      // Web picker returns a blob/file URI — convert to a data URL for the wire.
-      if (!dataUrl.startsWith('data:') && Platform.OS === 'web') {
-        const blob = await (await fetch(asset.uri)).blob();
-        dataUrl = await new Promise<string>((resolve, reject) => {
-          const reader = new FileReader();
-          reader.onload = () => resolve(String(reader.result));
-          reader.onerror = () => reject(new Error('تعذّر قراءة الصورة.'));
-          reader.readAsDataURL(blob);
-        });
+      const loaded: string[] = [];
+      for (const asset of result.assets) {
+        let dataUrl = asset.base64
+          ? `data:${asset.mimeType ?? 'image/jpeg'};base64,${asset.base64}`
+          : asset.uri;
+        // Web picker returns a blob/file URI — convert + downscale for the wire.
+        if (Platform.OS === 'web' && !dataUrl.startsWith('data:')) {
+          dataUrl = await downscaleImageWeb(asset.uri);
+        }
+        if (!dataUrl.startsWith('data:')) continue; // native non-data URI without base64 — skip honestly
+        loaded.push(dataUrl);
       }
-      if (dataUrl.length > 2_600_000) {
-        Alert.alert('الصورة كبيرة', 'اختاري صورة أصغر — الحد حوالي 2MB.');
-        return;
-      }
-      setAttachUri(dataUrl);
+      if (loaded.length) setAttachImages((cur) => [...cur, ...loaded]);
     } catch (error) {
-      Alert.alert('تعذّر إرفاق الصورة', error instanceof Error ? error.message : 'حاولي مرة أخرى.');
+      alertCompat('تعذّر إرفاق الصورة', error instanceof Error ? error.message : 'حاولي مرة أخرى.');
     }
   }
 
-  /** Attach text-based files (.md/.txt/code/csv/json) whose content is embedded in the prompt. */
-  async function attachFilesPicker() {
+  /** Web-only: decode an image URI and re-encode ≤640px wide, JPEG q≈0.72. */
+  async function downscaleImageWeb(uri: string): Promise<string> {
+    try {
+      const blob = await (await fetch(uri)).blob();
+      const dataUrl = await new Promise<string>((resolve, reject) => {
+        const reader = new FileReader();
+        reader.onload = () => resolve(String(reader.result));
+        reader.onerror = () => reject(new Error('تعذّر قراءة الصورة.'));
+        reader.readAsDataURL(blob);
+      });
+      const img = new Image();
+      const loaded = await new Promise<HTMLImageElement>((resolve, reject) => {
+        img.onload = () => resolve(img);
+        img.onerror = () => reject(new Error('صورة غير قابلة للمعالجة.'));
+        img.src = dataUrl;
+      });
+      const maxW = 640;
+      if (loaded.width <= maxW && dataUrl.length <= 400_000) return dataUrl;
+      const scale = Math.min(1, maxW / Math.max(loaded.width, 1));
+      const canvas = document.createElement('canvas');
+      canvas.width = Math.max(1, Math.round(loaded.width * scale));
+      canvas.height = Math.max(1, Math.round(loaded.height * scale));
+      const ctx = canvas.getContext('2d');
+      if (!ctx) return dataUrl;
+      ctx.drawImage(loaded, 0, 0, canvas.width, canvas.height);
+      return canvas.toDataURL('image/jpeg', 0.72);
+    } catch {
+      return '';
+    }
+  }
+
+  /**
+   * Attach text-based files (.md/.txt/code/csv/json) whose content is embedded
+   * in the prompt, plus ZIP archives (name+size only — the archive stays
+   * binary and is never unpacked; the model is told that honestly).
+   * Unlimited files per message.
+   */
+  async function attachFilesPicker(options?: { zipsOnly?: boolean }) {
     try {
       const result = await DocumentPicker.getDocumentAsync({
-        type: [
-          'text/*', 'text/markdown', 'text/plain', 'text/csv',
-          'application/json', 'application/xml', 'application/javascript',
-          'application/x-yaml', 'application/octet-stream',
-        ],
+        type: options?.zipsOnly
+          ? ['application/zip', 'application/x-zip-compressed', 'application/octet-stream']
+          : [
+              'text/*', 'text/markdown', 'text/plain', 'text/csv',
+              'application/json', 'application/xml', 'application/javascript',
+              'application/x-yaml', 'application/octet-stream',
+              'application/zip', 'application/x-zip-compressed',
+            ],
         copyToCacheDirectory: true,
         multiple: true,
       });
       if (result.canceled || !result.assets?.length) return;
       const loaded: { name: string; content: string }[] = [];
       for (const file of result.assets) {
+        const isZip = /\.zip$/i.test(file.name) || /zip/i.test(file.mimeType ?? '');
+        if (isZip) {
+          loaded.push({
+            name: file.name,
+            content: `[أرشيف ZIP: ${file.name} — الحجم ${Math.round((file.size ?? 0) / 1024)}KB. الأرشيف ثنائي ولم يُفكّ؛ اطلب من المستخدم فكّه وإرفاق الملفات المطلوبة نصيًا.]`,
+          });
+          continue;
+        }
         if ((file.size ?? 0) > 400_000) {
-          Alert.alert('ملف كبير', `"${file.name}" أكبر من 400KB — تم تجاهله.`);
+          alertCompat('ملف كبير', `"${file.name}" أكبر من 400KB — تم تجاهله.`);
           continue;
         }
         const response = await fetch(file.uri);
@@ -635,17 +785,88 @@ export default function ChatScreen() {
         }
         loaded.push({ name: file.name, content });
       }
-      if (loaded.length) setAttachFiles((cur) => [...cur, ...loaded].slice(0, 5));
+      if (loaded.length) setAttachFiles((cur) => [...cur, ...loaded]);
     } catch (error) {
-      Alert.alert('تعذّر إرفاق الملفات', error instanceof Error ? error.message : 'حاولي مرة أخرى.');
+      alertCompat('تعذّر إرفاق الملفات', error instanceof Error ? error.message : 'حاولي مرة أخرى.');
+    }
+  }
+
+  /** Voice input: Web Speech API on web, native speech module on Android. */
+  async function toggleVoice() {
+    if (listening) {
+      if (Platform.OS === 'web') recognitionRef.current?.stop();
+      else await speechService.stopListening().catch(() => undefined);
+      setListening(false);
+      return;
+    }
+    if (Platform.OS === 'web') {
+      const w = window as unknown as Record<string, unknown>;
+      const SR = (w.SpeechRecognition ?? w.webkitSpeechRecognition) as
+        | (new () => {
+            lang: string;
+            interimResults: boolean;
+            continuous: boolean;
+            onresult: (event: { resultIndex: number; results: { isFinal: boolean; 0?: { transcript?: string } }[] }) => void;
+            onend: () => void;
+            onerror: () => void;
+            start: () => void;
+            stop: () => void;
+          })
+        | undefined;
+      if (!SR) {
+        alertCompat(
+          'الإدخال الصوتي',
+          'هذا المتصفح لا يدعم الإدخال الصوتي. يعمل على Chrome/Edge، أو من نسخة Android المثبتة.',
+        );
+        return;
+      }
+      const rec = new SR();
+      rec.lang = 'ar-SA';
+      rec.interimResults = true;
+      rec.continuous = false;
+      let finalText = '';
+      rec.onresult = (event) => {
+        let interim = '';
+        for (let i = event.resultIndex; i < event.results.length; i += 1) {
+          const chunk = event.results[i]?.[0]?.transcript ?? '';
+          if (event.results[i]?.isFinal) finalText += chunk;
+          else interim += chunk;
+        }
+        const combined = (finalText + interim).trim();
+        if (combined) setDraft(combined);
+      };
+      rec.onend = () => setListening(false);
+      rec.onerror = () => setListening(false);
+      recognitionRef.current = rec;
+      setListening(true);
+      try {
+        rec.start();
+      } catch {
+        setListening(false);
+        alertCompat('الإدخال الصوتي', 'تعذّر بدء الميكروفون — تحقق من إذن الميكروفون للمتصفح.');
+      }
+      return;
+    }
+    // Native (Android dev build): single-shot recognition via the speech module.
+    setListening(true);
+    try {
+      const results = await speechService.startListening({ language: 'ar-SA' });
+      const text = (results ?? []).join(' ').trim();
+      if (text) setDraft((cur) => (cur ? `${cur} ${text}` : text));
+    } catch {
+      alertCompat(
+        'الإدخال الصوتي',
+        'خدمة التعرف على الصوت غير متاحة هنا — يحتاج الإذن من النظام أو نسخة APK مثبتة.',
+      );
+    } finally {
+      setListening(false);
     }
   }
 
   function requestApproval(
     spec: ToolSpec,
     args: Record<string, unknown>,
-  ): Promise<ApprovalDecision> {
-    const key = approvalKey(spec, args);
+  ): Promise<ApprovalDecision> {    const key = approvalKey(spec, args);
     // Saved "دائمًا" approvals skip the sheet entirely.
     if (agent.autoApprovedTools.includes(key)) return Promise.resolve('once');
     return new Promise((resolve) => {
@@ -814,6 +1035,13 @@ export default function ChatScreen() {
     let enrichedSkill: string | null = null;
     const displayText = text;
     let wireText = text;
+    // Automatic knowledge base: retrieve durable user facts relevant to THIS
+    // message (local, instant, invisible in the UI).
+    const remembered = retrieveKnowledge(knowledge ?? [], text);
+    const knowBlock = knowledgeContextBlock(remembered);
+    if (knowBlock) {
+      wireText += `\n\n${knowBlock}`;
+    }
     // Attached files: their content rides along to the model.
     for (const f of attachFiles) {
       wireText += `\n\n[ملف مرفق: ${f.name}]\n${f.content}`;
@@ -831,7 +1059,7 @@ export default function ChatScreen() {
       }
     }
     if (!provider.model.trim() || (!apiKeyConfigured && !provider.keyless)) {
-      Alert.alert(
+      alertCompat(
         'جهّزي الموديل أولًا',
         'أضيفي رابط الخدمة واسم الموديل ومفتاح API من الإعدادات.',
         [
@@ -852,10 +1080,11 @@ export default function ChatScreen() {
       content: displayText,
       createdAt: new Date().toISOString(),
       skill: enrichedSkill ?? undefined,
-      imageUri: attachUri ?? undefined,
+      imageUri: attachImages[0],
+      images: attachImages.length ? attachImages : undefined,
       files: attachFiles.length ? attachFiles.map((f) => f.name) : undefined,
     };
-    setAttachUri(null);
+    setAttachImages([]);
     setAttachFiles([]);
     const wireUserMessage: ChatMessage = { ...userMessage, content: wireText };
     const nextMessages = [...messages, userMessage];
@@ -905,11 +1134,15 @@ export default function ChatScreen() {
       const apiKey = provider.keyless ? '' : await getStoredModelApiKey();
 
       const deviceOn = agent.deviceControlEnabled;
-      const system = buildAssistantSystemPrompt(skills, memories, {
+      const promptOptions = {
         deviceControl: deviceOn,
         deviceAvailable: Device.isAvailable(),
         summary: activeSession?.summary,
-      });
+        responseStyle: agent.responseStyle,
+        replyLanguage: appearance?.language,
+        mode: (activeSession?.mode as StudioMode | undefined) ?? undefined,
+      };
+      const system = buildAssistantSystemPrompt(skills, memories, promptOptions);
 
       // Auto-compaction: the chat never "fills up". Old turns are folded into a summary.
       const budget = workingBudget(provider, agent.maxWorkingTokens);
@@ -937,8 +1170,7 @@ export default function ChatScreen() {
       setStatus('');
       const systemWithSummary = plan.toSummarise.length
         ? buildAssistantSystemPrompt(skills, memories, {
-            deviceControl: deviceOn,
-            deviceAvailable: Device.isAvailable(),
+            ...promptOptions,
             summary,
           })
         : system;
@@ -975,6 +1207,8 @@ export default function ChatScreen() {
           publish();
         },
         signal: controller.signal,
+        sessionId,
+        originalUserMessage: wireUserMessage.content,
       });
       fullResponse = result.text;
       steps = result.steps;
@@ -1028,6 +1262,10 @@ export default function ChatScreen() {
       setLiveSteps([]);
       setStatus('');
       setPending(null);
+      setThinkingOpen(false);
+      // Knowledge base update runs in the background: durable first-person
+      // facts from THIS user message join the store silently.
+      void addKnowledge(extractFacts(displayText), sessionId).catch(() => undefined);
       // Drain the queue: any message sent while a run was active fires now.
       setQueue((current) => {
         const [next, ...rest] = current;
@@ -1055,6 +1293,7 @@ export default function ChatScreen() {
         behavior={Platform.OS === 'ios' ? 'padding' : undefined}
         keyboardVerticalOffset={Platform.OS === 'ios' ? 0 : 0}
       >
+        <ScreenTopBar active="index" />
         <View style={styles.header}>
           <View style={styles.headerCopy}>
             <Text style={[styles.eyebrow, { color: colors.primary }]}>
@@ -1109,7 +1348,7 @@ export default function ChatScreen() {
           </View>
         ) : null}
 
-        {!apiKeyConfigured || !provider.model ? (
+        {(!apiKeyConfigured && !provider.keyless) || !provider.model ? (
           <Pressable
             accessibilityRole="button"
             onPress={() => router.push('/(tabs)/settings')}
@@ -1134,34 +1373,21 @@ export default function ChatScreen() {
         ) : null}
 
         {messages.length === 0 ? (
-          <View style={styles.emptyWrap}>
-            <View style={[styles.heroIcon, { backgroundColor: colors.accent }]}>
-              <Feather name="star" size={26} color={colors.primary} />
-            </View>
-            <Text style={[styles.heroTitle, { color: colors.foreground }]}>
-              أبدأ أساعدك في إيه؟
-            </Text>
-            <Text style={[styles.heroBody, { color: colors.mutedForeground }]}>
-              اكتبي فكرتك بطريقتك. أقدر أساعدك تخططي، تكتبي، تتعلمي، وتنظمي شغلك.
-            </Text>
-            <View style={styles.suggestions}>
-              {[
-                'ساعدني أرتب مهامي النهارده',
-                'اكتب مسودة إعلان لمنتجي',
-                'علّمني مهارة جديدة خطوة بخطوة',
-              ].map((suggestion) => (
-                <Pressable
-                  key={suggestion}
-                  onPress={() => setDraft(suggestion)}
-                  style={[styles.suggestion, { borderColor: colors.border }]}
-                >
-                  <Text style={[styles.suggestionText, { color: colors.foreground }]}>
-                    {suggestion}
-                  </Text>
-                </Pressable>
-              ))}
-            </View>
-          </View>
+          <HomeScreen
+            onNewChat={startNewChat}
+            onOpenSettings={() => router.push('/(tabs)/settings')}
+            onOpenSkills={() => router.push('/(tabs)/skills')}
+            onOpenTasks={() => router.push('/(tabs)/tasks')}
+            onOpenMemory={() => router.push('/(tabs)/memory')}
+            onOpenProviderSelector={() => router.push('/(tabs)/settings')}
+            onSuggest={(text) => {
+              setDraft(text);
+              setShowSlash(false);
+              setShowSkillMenu(false);
+              requestAnimationFrame(() => inputRef.current?.focus());
+            }}
+            onUseSkill={(name) => void pickSkill(name)}
+          />
         ) : (
           <FlatList
             style={styles.messages}
@@ -1286,10 +1512,59 @@ export default function ChatScreen() {
 
         {thinkingPreview && sending ? (
           <View style={[styles.thinkingBar, { borderColor: colors.border }]}>
-            <Feather name="cpu" size={13} color={colors.primary} />
-            <Text style={[styles.thinkingBarText, { color: colors.mutedForeground }]} numberOfLines={1}>
-              {thinkingPreview.slice(-140)}
-            </Text>
+            <Pressable
+              accessibilityRole="button"
+              accessibilityLabel={thinkingOpen ? t('hideThinking') : t('showThinking')}
+              onPress={() => setThinkingOpen((o) => !o)}
+              style={styles.thinkingBarHead}
+            >
+              <Feather name="cpu" size={13} color={colors.primary} />
+              <Text style={[styles.thinkingBarText, { color: colors.mutedForeground }]}>
+                {t('thinking')}
+              </Text>
+              <Feather
+                name={thinkingOpen ? 'chevron-down' : 'chevron-up'}
+                size={13}
+                color={colors.mutedForeground}
+              />
+            </Pressable>
+            {thinkingOpen ? (
+              <ScrollView
+                style={styles.thinkingLiveBox}
+                nestedScrollEnabled
+                showsVerticalScrollIndicator
+              >
+                <Text style={[styles.thinkingLiveText, { color: colors.mutedForeground }]} selectable>
+                  {thinkingPreview}
+                </Text>
+              </ScrollView>
+            ) : (
+              <Text style={[styles.thinkingBarTail, { color: colors.mutedForeground }]} numberOfLines={2}>
+                {thinkingPreview.slice(-170)}
+              </Text>
+            )}
+          </View>
+        ) : null}
+
+        {queue.length ? (
+          <View style={[styles.queueList, { borderColor: colors.border }]}>
+            {queue.map((item, i) => (
+              <View key={`${i}-${item.slice(0, 10)}`} style={styles.queueRow}>
+                <Feather name="clock" size={12} color={colors.warning} />
+                <Text style={[styles.queueText, { color: colors.mutedForeground }]} numberOfLines={1}>
+                  {item}
+                </Text>
+                <Pressable
+                  accessibilityRole="button"
+                  accessibilityLabel={`${t('remove')} ${i + 1}`}
+                  onPress={() => setQueue((cur) => cur.filter((_, idx) => idx !== i))}
+                  style={styles.queueRemove}
+                  hitSlop={6}
+                >
+                  <Feather name="x" size={13} color={colors.mutedForeground} />
+                </Pressable>
+              </View>
+            ))}
           </View>
         ) : null}
 
@@ -1299,32 +1574,107 @@ export default function ChatScreen() {
             {
               backgroundColor: colors.background,
               borderTopColor: colors.border,
-              paddingBottom: Math.max(insets.bottom, 8) + 68,
+              paddingBottom: Math.max(insets.bottom, 8) + 6,
             },
           ]}
         >
+          {/* The model actually in use — visible at all times, tap to change it. */}
+          {provider.model ? (
+            <Pressable
+              accessibilityRole="button"
+              accessibilityLabel={t('modelInUse')}
+              onPress={() => router.push('/(tabs)/settings')}
+              style={[styles.modelChip, { backgroundColor: colors.card, borderColor: colors.border }]}
+            >
+              <Feather name="cpu" size={12} color={colors.primary} />
+              <Text style={[styles.modelChipText, { color: colors.mutedForeground }]} numberOfLines={1}>
+                {t('modelInUse')}: {provider.model}
+                {provider.free ? ' · مجاني' : provider.promptPrice !== null ? ' · مدفوع' : ''}
+              </Text>
+              <Feather name="chevron-left" size={13} color={colors.mutedForeground} />
+            </Pressable>
+          ) : null}
           <View
             style={[
               styles.composer,
               { backgroundColor: colors.card, borderColor: colors.border },
             ]}
           >
+            {/* Attach menu overlay: opens above the "+" button */}
+            {attachMenuVisible ? (
+              <View style={[styles.attachMenu, { backgroundColor: colors.card, borderColor: colors.border }]}>
+                <Pressable
+                  accessibilityRole="button"
+                  accessibilityLabel={t('attachImage')}
+                  onPress={() => {
+                    setAttachMenuVisible(false);
+                    void attachImage();
+                  }}
+                  style={styles.attachMenuItem}
+                >
+                  <Feather name="image" size={16} color={colors.primary} />
+                  <Text style={[styles.attachMenuItemText, { color: colors.foreground }]}>
+                    {t('attachImage')}
+                  </Text>
+                </Pressable>
+                <Pressable
+                  accessibilityRole="button"
+                  accessibilityLabel={t('attachFiles')}
+                  onPress={() => {
+                    setAttachMenuVisible(false);
+                    void attachFilesPicker();
+                  }}
+                  style={styles.attachMenuItem}
+                >
+                  <Feather name="paperclip" size={16} color={colors.primary} />
+                  <Text style={[styles.attachMenuItemText, { color: colors.foreground }]}>
+                    {t('attachFiles')}
+                  </Text>
+                </Pressable>
+                <Pressable
+                  accessibilityRole="button"
+                  accessibilityLabel={t('attachZip')}
+                  onPress={() => {
+                    setAttachMenuVisible(false);
+                    void attachFilesPicker({ zipsOnly: true });
+                  }}
+                  style={styles.attachMenuItem}
+                >
+                  <Feather name="archive" size={16} color={colors.primary} />
+                  <Text style={[styles.attachMenuItemText, { color: colors.foreground }]}>
+                    {t('attachZip')}
+                  </Text>
+                </Pressable>
+              </View>
+            ) : null}
             <View style={styles.composerButtons}>
               <Pressable
                 accessibilityRole="button"
-                accessibilityLabel="إرفاق صورة"
-                onPress={() => void attachImage()}
-                style={[styles.attachBtn, { borderColor: colors.border }]}
+                accessibilityLabel={t('attach')}
+                onPress={() => setAttachMenuVisible((v) => !v)}
+                style={[
+                  styles.attachBtn,
+                  {
+                    borderColor: attachMenuVisible ? colors.primary : colors.border,
+                    backgroundColor: attachMenuVisible ? colors.accent : 'transparent',
+                  },
+                ]}
               >
-                <Feather name="image" size={18} color={colors.primary} />
+                <Feather name="plus" size={19} color={colors.primary} />
               </Pressable>
               <Pressable
                 accessibilityRole="button"
-                accessibilityLabel="إرفاق ملفات"
-                onPress={() => void attachFilesPicker()}
-                style={[styles.attachBtn, { borderColor: colors.border }]}
+                accessibilityLabel={listening ? 'إيقاف الإدخال الصوتي' : 'إدخال صوتي'}
+                onPress={() => void toggleVoice()}
+                style={[
+                  styles.voiceBtn,
+                  {
+                    borderColor: listening ? colors.destructive : colors.border,
+                    backgroundColor: listening ? `${colors.destructive}22` : 'transparent',
+                  },
+                ]}
               >
-                <Feather name="paperclip" size={18} color={colors.primary} />
+                <Feather name="mic" size={18} color={listening ? colors.destructive : colors.primary} />
               </Pressable>
             </View>
             <TextInput
@@ -1361,17 +1711,21 @@ export default function ChatScreen() {
                 ))}
               </View>
             ) : null}
-            {attachUri ? (
+            {attachImages.length ? (
               <View style={styles.attachPreviewWrap}>
-                <RNImage source={{ uri: attachUri }} style={styles.attachPreview} />
-                <Pressable
-                  accessibilityRole="button"
-                  accessibilityLabel="إزالة الصورة"
-                  onPress={() => setAttachUri(null)}
-                  style={styles.attachRemove}
-                >
-                  <Feather name="x-circle" size={17} color={colors.destructive} />
-                </Pressable>
+                {attachImages.map((uri, i) => (
+                  <View key={`${i}-${uri.slice(24, 40)}`} style={styles.attachPreviewItem}>
+                    <RNImage source={{ uri }} style={styles.attachPreview} />
+                    <Pressable
+                      accessibilityRole="button"
+                      accessibilityLabel={`${t('remove')} ${i + 1}`}
+                      onPress={() => setAttachImages((cur) => cur.filter((_, idx) => idx !== i))}
+                      style={styles.attachRemove}
+                    >
+                      <Feather name="x-circle" size={16} color={colors.destructive} />
+                    </Pressable>
+                  </View>
+                ))}
               </View>
             ) : null}
             {sending && draft.trim() ? (
@@ -1391,7 +1745,7 @@ export default function ChatScreen() {
             ) : null}
             <Pressable
               accessibilityRole="button"
-              accessibilityLabel={sending ? 'إيقاف المهمة' : 'إرسال الرسالة'}
+              accessibilityLabel={sending ? t('stop') : t('send')}
               disabled={!sending && !draft.trim()}
               onPress={() => (sending ? stopRun() : void sendMessage())}
               style={[
@@ -1483,7 +1837,7 @@ export default function ChatScreen() {
                     accessibilityRole="button"
                     accessibilityLabel="حذف المحادثة"
                     onPress={() =>
-                      Alert.alert('حذف المحادثة؟', 'لا يمكن استعادتها بعد الحذف.', [
+                      alertCompat('حذف المحادثة؟', 'لا يمكن استعادتها بعد الحذف.', [
                         { text: 'إلغاء', style: 'cancel' },
                         {
                           text: 'حذف',
@@ -1511,211 +1865,270 @@ const styles = StyleSheet.create({
   keyboard: { flex: 1 },
   header: {
     minHeight: 78,
-    paddingHorizontal: 18,
-    paddingTop: 8,
-    paddingBottom: 12,
+    paddingHorizontal: spacing.md,
+    paddingTop: spacing.sm,
+    paddingBottom: spacing.sm + spacing.xs,
     flexDirection: 'row-reverse',
     alignItems: 'center',
     justifyContent: 'space-between',
-    gap: 12,
+    gap: spacing.md,
   },
   headerCopy: { flex: 1, alignItems: 'flex-end' },
-  eyebrow: { fontSize: 10, fontWeight: '700', letterSpacing: 1 },
-  title: { fontSize: 20, fontWeight: '700', marginTop: 3, textAlign: 'right' },
-  subtitle: { fontSize: 11, marginTop: 3, textAlign: 'right' },
-  headerActions: { flexDirection: 'row', gap: 7 },
+  eyebrow: { fontSize: typography.xs, fontWeight: typography.weightBold, letterSpacing: 1 },
+  title: { fontSize: typography.xl, fontWeight: typography.weightBold, marginTop: spacing.xs, textAlign: 'right' },
+  subtitle: { fontSize: typography.xs + 1, marginTop: spacing.xs, textAlign: 'right' },
+  headerActions: { flexDirection: 'row', gap: spacing.xs },
   headerButton: {
     width: 40,
     height: 40,
     alignItems: 'center',
     justifyContent: 'center',
     borderWidth: 1,
-    borderRadius: 14,
+    borderRadius: radius.md,
   },
   setupBanner: {
-    marginHorizontal: 16,
-    marginBottom: 10,
-    padding: 11,
-    borderRadius: 16,
+    marginHorizontal: spacing.md,
+    marginBottom: spacing.sm + spacing.xs,
+    padding: spacing.sm + spacing.xs,
+    borderRadius: radius.lg,
     borderWidth: 1,
     flexDirection: 'row-reverse',
     alignItems: 'center',
-    gap: 10,
+    gap: spacing.sm + spacing.xs,
   },
-  bannerIcon: { width: 35, height: 35, borderRadius: 12, alignItems: 'center', justifyContent: 'center' },
+  bannerIcon: { width: 35, height: 35, borderRadius: radius.md, alignItems: 'center', justifyContent: 'center' },
   bannerCopy: { flex: 1, alignItems: 'flex-end' },
-  bannerTitle: { fontSize: 13, fontWeight: '700', textAlign: 'right' },
-  bannerBody: { fontSize: 11, marginTop: 2, textAlign: 'right' },
+  bannerTitle: { fontSize: typography.sm + 1, fontWeight: typography.weightBold, textAlign: 'right' },
+  bannerBody: { fontSize: typography.xs + 1, marginTop: spacing.xs, textAlign: 'right' },
   emptyWrap: {
     flex: 1,
     justifyContent: 'center',
     alignItems: 'center',
-    paddingHorizontal: 24,
-    paddingBottom: 20,
+    paddingHorizontal: spacing.lg,
+    paddingBottom: spacing.md,
   },
   heroIcon: {
     width: 58,
     height: 58,
-    borderRadius: 20,
+    borderRadius: radius.xl,
     alignItems: 'center',
     justifyContent: 'center',
-    marginBottom: 17,
+    marginBottom: spacing.md,
   },
-  heroTitle: { fontSize: 23, fontWeight: '700', textAlign: 'center' },
-  heroBody: { fontSize: 13, lineHeight: 21, textAlign: 'center', marginTop: 8, maxWidth: 330 },
-  suggestions: { width: '100%', gap: 8, marginTop: 21 },
+  heroTitle: { fontSize: typography.xxl + 1, fontWeight: typography.weightBold, textAlign: 'center' },
+  heroBody: { fontSize: typography.sm + 1, lineHeight: 21, textAlign: 'center', marginTop: spacing.sm, maxWidth: 330 },
+  suggestions: { width: '100%', gap: spacing.sm, marginTop: spacing.md },
   suggestion: {
     minHeight: 42,
     borderWidth: 1,
-    borderRadius: 14,
-    paddingHorizontal: 14,
+    borderRadius: radius.md,
+    paddingHorizontal: spacing.md,
     justifyContent: 'center',
     backgroundColor: 'transparent',
   },
-  suggestionText: { fontSize: 12, textAlign: 'right' },
+  suggestionText: { fontSize: typography.sm, textAlign: 'right' },
   messages: { flex: 1 },
-  messageList: { paddingHorizontal: 15, paddingTop: 12, gap: 13 },
-  messageRow: { flexDirection: 'row-reverse', alignItems: 'flex-end', gap: 8, marginBottom: 12 },
-  userMessageRow: { justifyContent: 'flex-start' },
-  avatar: { width: 28, height: 28, borderRadius: 10, alignItems: 'center', justifyContent: 'center' },
+  messageList: { paddingHorizontal: spacing.md - 1, paddingTop: spacing.sm + spacing.xs, gap: spacing.md - 3 },
+  // Alignment is explicit and LTR-row based: assistant hugs the LEFT edge
+  // (avatar first), user hugs the RIGHT edge — deterministic in RTL and LTR.
+  messageRow: { flexDirection: 'row', alignItems: 'flex-end', justifyContent: 'flex-start', gap: spacing.sm, marginBottom: spacing.md - spacing.xs },
+  userMessageRow: { flexDirection: 'row', justifyContent: 'flex-end' },
+  avatar: { width: 28, height: 28, borderRadius: radius.sm, alignItems: 'center', justifyContent: 'center' },
   bubble: {
     maxWidth: '85%',
     borderWidth: 1,
-    paddingVertical: 10,
-    paddingHorizontal: 13,
-    borderRadius: 17,
+    paddingVertical: spacing.sm + spacing.xs,
+    paddingHorizontal: spacing.sm + spacing.xs + 1,
+    borderRadius: radius.lg - 1,
   },
-  messageText: { fontSize: 14, lineHeight: 22, textAlign: 'auto' },
+  messageText: { fontSize: typography.md, lineHeight: 22, textAlign: 'auto' },
   diffLine: { fontFamily: 'monospace', fontSize: 12.5, lineHeight: 19, textAlign: 'left', writingDirection: 'ltr' },
-  thinkingToggle: { flexDirection: 'row-reverse', alignItems: 'center', gap: 6, borderTopWidth: 1, paddingTop: 8, marginTop: 8 },
-  thinkingToggleText: { fontSize: 11, fontWeight: '700' },
-  thinkingBox: { borderWidth: 1, borderRadius: 12, padding: 10, marginTop: 8, marginBottom: 8, maxHeight: 220, overflow: 'hidden' },
-  thinkingText: { fontSize: 12, lineHeight: 19, textAlign: 'right' },
+  thinkingToggle: { flexDirection: 'row-reverse', alignItems: 'center', gap: spacing.xs + 2, borderTopWidth: 1, paddingTop: spacing.sm, marginTop: spacing.sm },
+  thinkingToggleText: { fontSize: typography.xs + 1, fontWeight: typography.weightBold },
+  thinkingBox: { borderWidth: 1, borderRadius: radius.md - 2, padding: spacing.sm + spacing.xs, marginTop: spacing.sm, marginBottom: spacing.sm, maxHeight: 220, overflow: 'hidden' },
+  thinkingText: { fontSize: typography.sm, lineHeight: 19, textAlign: 'right' },
   thinkingBar: {
-    flexDirection: 'row-reverse',
-    alignItems: 'center',
-    gap: 8,
     borderWidth: 1,
-    borderRadius: 12,
-    paddingHorizontal: 12,
-    paddingVertical: 8,
-    marginHorizontal: 14,
-    marginBottom: 6,
+    borderRadius: radius.md - 2,
+    paddingHorizontal: spacing.sm + spacing.xs,
+    paddingVertical: spacing.sm,
+    marginHorizontal: spacing.md - 2,
+    marginBottom: spacing.xs + 2,
   },
-  thinkingBarText: { flex: 1, fontSize: 11 },
-  userActions: { flexDirection: 'row-reverse', alignItems: 'center', gap: 5, borderTopWidth: 1, marginTop: 8, paddingTop: 7 },
-  userActionText: { fontSize: 11, fontWeight: '700' },
-  contextChip: { fontSize: 10, fontWeight: '700', marginTop: 3, textAlign: 'right' },
-  planBar: { borderWidth: 1, borderRadius: 14, marginHorizontal: 14, marginBottom: 8, padding: 12, gap: 7 },
-  planHead: { flexDirection: 'row-reverse', alignItems: 'center', justifyContent: 'space-between', gap: 8 },
-  planTitle: { flex: 1, fontSize: 12, fontWeight: '700', textAlign: 'right' },
-  planRow: { flexDirection: 'row-reverse', alignItems: 'flex-start', gap: 7 },
-  planText: { flex: 1, fontSize: 12, lineHeight: 18, textAlign: 'right' },
+  thinkingBarHead: { flexDirection: 'row-reverse', alignItems: 'center', gap: spacing.xs + 2 },
+  thinkingBarText: { flex: 1, fontSize: typography.xs + 1, fontWeight: typography.weightBold },
+  thinkingBarTail: { fontSize: typography.xs, lineHeight: 17, marginTop: spacing.xs, textAlign: 'right' },
+  thinkingLiveBox: { maxHeight: 190, marginTop: spacing.xs, borderWidth: 1, borderColor: 'rgba(255,255,255,0.06)', borderRadius: radius.sm, padding: spacing.sm, backgroundColor: 'rgba(0,0,0,0.25)' },
+  thinkingLiveText: { fontSize: typography.xs, lineHeight: 18, textAlign: 'right' },
+  queueList: {
+    borderWidth: 1,
+    borderRadius: radius.md - 2,
+    marginHorizontal: spacing.md - 2,
+    marginBottom: spacing.xs + 2,
+    paddingVertical: spacing.xs,
+  },
+  queueRow: { flexDirection: 'row-reverse', alignItems: 'center', gap: spacing.xs + 2, paddingHorizontal: spacing.sm + 2, paddingVertical: 5 },
+  queueText: { flex: 1, fontSize: typography.xs + 1 },
+  queueRemove: { padding: 3 },
+  attachMenu: {
+    position: 'absolute',
+    bottom: 58,
+    left: spacing.sm + 2,
+    minWidth: 168,
+    borderWidth: 1,
+    borderRadius: radius.md,
+    paddingVertical: spacing.xs,
+    zIndex: 60,
+    elevation: 60,
+  },
+  attachMenuItem: { flexDirection: 'row-reverse', alignItems: 'center', gap: spacing.sm, paddingVertical: 9, paddingHorizontal: spacing.sm + 4 },
+  attachMenuItemText: { fontSize: typography.sm, fontWeight: typography.weightBold },
+  bubbleImagesWrap: { flexDirection: 'row', flexWrap: 'wrap', gap: spacing.xs, marginBottom: spacing.xs },
+  attachPreviewItem: { position: 'relative' },
+  iconAction: {
+    width: 30,
+    height: 26,
+    alignItems: 'center',
+    justifyContent: 'center',
+    borderRadius: radius.sm,
+    backgroundColor: 'rgba(255,255,255,0.14)',
+  },
+  userActions: { flexDirection: 'row-reverse', alignItems: 'center', gap: spacing.xs + 1, borderTopWidth: 1, marginTop: spacing.sm, paddingTop: spacing.xs + 3 },
+  userActionText: { fontSize: typography.xs + 1, fontWeight: typography.weightBold },
+  contextChip: { fontSize: typography.xs, fontWeight: typography.weightBold, marginTop: spacing.xs, textAlign: 'right' },
+  planBar: { borderWidth: 1, borderRadius: radius.md, marginHorizontal: spacing.md - 2, marginBottom: spacing.sm, padding: spacing.sm + spacing.xs, gap: spacing.xs + 3 },
+  planHead: { flexDirection: 'row-reverse', alignItems: 'center', justifyContent: 'space-between', gap: spacing.sm },
+  planTitle: { flex: 1, fontSize: typography.sm, fontWeight: typography.weightBold, textAlign: 'right' },
+  planRow: { flexDirection: 'row-reverse', alignItems: 'flex-start', gap: spacing.xs + 3 },
+  planText: { flex: 1, fontSize: typography.sm, lineHeight: spacing.md + 2, textAlign: 'right' },
   slashMenu: {
     position: 'absolute',
     bottom: '78%',
-    right: 14,
-    left: 14,
+    right: spacing.md - 2,
+    left: spacing.md - 2,
     borderWidth: 1,
-    borderRadius: 14,
+    borderRadius: radius.md,
     maxHeight: 300,
     zIndex: 50,
     elevation: 50,
   },
-  skillMenu: { maxHeight: 300, paddingVertical: 6, paddingHorizontal: 4 },
-  slashHeader: { fontSize: 11, fontWeight: '700', padding: 8, textAlign: 'right' },
-  slashItem: { borderBottomWidth: 1, paddingHorizontal: 12, paddingVertical: 10 },
-  slashText: { fontSize: 13, fontWeight: '600', textAlign: 'right' },
+  skillMenu: { maxHeight: 300, paddingVertical: spacing.xs + 2, paddingHorizontal: spacing.xs },
+  slashHeader: { fontSize: typography.xs + 1, fontWeight: typography.weightBold, padding: spacing.sm, textAlign: 'right' },
+  slashItem: { borderBottomWidth: 1, paddingHorizontal: spacing.sm + spacing.xs, paddingVertical: spacing.sm + spacing.xs },
+  slashText: { fontSize: typography.sm + 1, fontWeight: typography.weightSemiBold, textAlign: 'right' },
   attachBtn: {
     width: 38,
     height: 38,
-    borderRadius: 12,
+    borderRadius: radius.md - 2,
     borderWidth: 1,
     alignItems: 'center',
     justifyContent: 'center',
   },
-  attachPreviewWrap: { position: 'relative' },
-  composerButtons: { flexDirection: 'row-reverse', alignItems: 'flex-end', gap: 6 },
-  fileChipsRow: { flexDirection: 'row-reverse', flexWrap: 'wrap', gap: 6, marginTop: 8 },
+  voiceBtn: {
+    width: 38,
+    height: 38,
+    borderRadius: radius.md - 2,
+    borderWidth: 1,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  modelChip: {
+    flexDirection: 'row-reverse',
+    alignItems: 'center',
+    alignSelf: 'flex-start',
+    gap: 6,
+    borderWidth: 1,
+    borderRadius: radius.full,
+    paddingHorizontal: spacing.sm + spacing.xs,
+    paddingVertical: spacing.xs + 1,
+    marginBottom: spacing.sm,
+    maxWidth: '100%',
+  },
+  modelChipText: { fontSize: typography.xs + 1, fontWeight: typography.weightSemiBold, flexShrink: 1 },
+  assistantActions: { flexDirection: 'row-reverse', alignItems: 'center', gap: spacing.md, borderTopWidth: 1, marginTop: spacing.xs + 5, paddingTop: spacing.sm },
+  shareDraftStart: { borderTopWidth: 0, marginTop: 0, paddingTop: 0 },
+  attachPreviewWrap: { flexDirection: 'row', flexWrap: 'wrap', gap: spacing.xs, paddingHorizontal: spacing.sm + 2, paddingTop: spacing.xs },
+  composerButtons: { flexDirection: 'row-reverse', alignItems: 'flex-end', gap: spacing.xs + 2 },
+  fileChipsRow: { flexDirection: 'row-reverse', flexWrap: 'wrap', gap: spacing.xs + 2, marginTop: spacing.sm },
   fileChip: {
     flexDirection: 'row-reverse',
     alignItems: 'center',
-    gap: 5,
-    borderRadius: 10,
-    paddingHorizontal: 8,
-    paddingVertical: 4,
+    gap: spacing.xs + 1,
+    borderRadius: radius.sm,
+    paddingHorizontal: spacing.sm,
+    paddingVertical: spacing.xs,
     maxWidth: 180,
   },
-  fileChipText: { fontSize: 10, fontWeight: '700', flexShrink: 1 },
-  attachPreview: { width: 52, height: 52, borderRadius: 12 },
-  attachRemove: { position: 'absolute', top: -6, left: -6 },
-  bubbleImage: { width: 200, height: 200, borderRadius: 12, marginBottom: 8 },
+  fileChipText: { fontSize: typography.xs, fontWeight: typography.weightBold, flexShrink: 1 },
+  attachPreview: { width: 52, height: 52, borderRadius: radius.md - 2 },
+  attachRemove: { position: 'absolute', top: -spacing.xs - 2, left: -spacing.xs - 2 },
+  bubbleImage: { width: 200, height: 200, borderRadius: radius.md - 2, marginBottom: spacing.sm },
   skillChip: {
     flexDirection: 'row-reverse',
     alignItems: 'center',
-    gap: 5,
-    borderRadius: 10,
-    paddingHorizontal: 8,
-    paddingVertical: 4,
+    gap: spacing.xs + 1,
+    borderRadius: radius.sm,
+    paddingHorizontal: spacing.sm,
+    paddingVertical: spacing.xs,
     alignSelf: 'flex-start',
-    marginBottom: 7,
+    marginBottom: spacing.xs + 3,
   },
-  skillChipText: { fontSize: 10, fontWeight: '700' },
-  bulletRow: { flexDirection: 'row-reverse', alignItems: 'flex-start', gap: 7 },
+  skillChipText: { fontSize: typography.xs, fontWeight: typography.weightBold },
+  bulletRow: { flexDirection: 'row-reverse', alignItems: 'flex-start', gap: spacing.xs + 3 },
   bulletDot: { width: 6, height: 6, borderRadius: 3, marginTop: 9 },
-  listNumber: { fontSize: 13, fontWeight: '700', marginTop: 1 },
-  slashSub: { fontSize: 10, marginTop: 2, textAlign: 'right' },
-  shareDraft: { flexDirection: 'row-reverse', alignItems: 'center', justifyContent: 'flex-start', gap: 6, borderTopWidth: 1, marginTop: 9, paddingTop: 8 },
-  shareDraftText: { fontSize: 11, fontWeight: '700' },
-  steps: { gap: 5, marginBottom: 8 },
-  stepRow: { flexDirection: 'row-reverse', alignItems: 'center', gap: 6 },
-  stepText: { fontSize: 11, flexShrink: 1, textAlign: 'right' },
-  typingRow: { flexDirection: 'row-reverse', alignItems: 'center', gap: 8, padding: 12 },
-  typingText: { fontSize: 12 },
+  listNumber: { fontSize: typography.sm + 1, fontWeight: typography.weightBold, marginTop: 1 },
+  slashSub: { fontSize: typography.xs, marginTop: spacing.xs, textAlign: 'right' },
+  shareDraft: { flexDirection: 'row-reverse', alignItems: 'center', justifyContent: 'flex-start', gap: spacing.xs + 2, borderTopWidth: 1, marginTop: spacing.xs + 5, paddingTop: spacing.sm },
+  shareDraftText: { fontSize: typography.xs + 1, fontWeight: typography.weightBold },
+  steps: { gap: spacing.xs + 1, marginBottom: spacing.sm },
+  stepRow: { flexDirection: 'row-reverse', alignItems: 'center', gap: spacing.xs + 2 },
+  stepText: { fontSize: typography.xs + 1, flexShrink: 1, textAlign: 'right' },
+  typingRow: { flexDirection: 'row-reverse', alignItems: 'center', gap: spacing.sm, padding: spacing.sm + spacing.xs },
+  typingText: { fontSize: typography.sm },
   errorBox: {
     flexDirection: 'row-reverse',
     alignItems: 'flex-start',
-    gap: 8,
+    gap: spacing.sm,
     borderWidth: 1,
-    borderRadius: 13,
-    padding: 11,
-    marginHorizontal: 14,
-    marginBottom: 8,
+    borderRadius: radius.md - 1,
+    padding: spacing.sm + spacing.xs,
+    marginHorizontal: spacing.md - 2,
+    marginBottom: spacing.sm,
   },
-  errorText: { flex: 1, fontSize: 12, lineHeight: 18, textAlign: 'right' },
-  notice: { marginHorizontal: 14, marginBottom: 8, borderRadius: 12, padding: 10 },
-  noticeText: { fontSize: 12, lineHeight: 18, textAlign: 'right' },
-  composerWrap: { borderTopWidth: 1, paddingHorizontal: 13, paddingTop: 10 },
+  errorText: { flex: 1, fontSize: typography.sm, lineHeight: spacing.md + 2, textAlign: 'right' },
+  notice: { marginHorizontal: spacing.md - 2, marginBottom: spacing.sm, borderRadius: radius.md - 2, padding: spacing.sm + spacing.xs },
+  noticeText: { fontSize: typography.sm, lineHeight: spacing.md + 2, textAlign: 'right' },
+  composerWrap: { borderTopWidth: 1, paddingHorizontal: spacing.sm + spacing.xs, paddingTop: spacing.sm + spacing.xs },
   composer: {
     flexDirection: 'row-reverse',
     alignItems: 'flex-end',
-    gap: 8,
+    gap: spacing.sm,
     borderWidth: 1,
-    borderRadius: 20,
-    paddingLeft: 7,
-    paddingRight: 13,
-    paddingVertical: 7,
+    borderRadius: radius.lg + 2,
+    paddingLeft: spacing.xs + 3,
+    paddingRight: spacing.sm + spacing.xs + 1,
+    paddingVertical: spacing.xs + 3,
   },
   input: {
     flex: 1,
     minHeight: 40,
     maxHeight: 120,
-    paddingVertical: 9,
-    fontSize: 14,
+    paddingVertical: spacing.sm + 1,
+    fontSize: typography.md,
     textAlign: 'right',
   },
-  sendButton: { width: 38, height: 38, borderRadius: 14, alignItems: 'center', justifyContent: 'center' },
-  privacyNote: { fontSize: 9, lineHeight: 13, textAlign: 'center', marginTop: 7 },
-  modalBackdrop: { flex: 1, backgroundColor: 'rgba(4, 13, 10, 0.45)', justifyContent: 'flex-end' },
-  historySheet: { maxHeight: '78%', minHeight: '44%', borderTopLeftRadius: 24, borderTopRightRadius: 24, paddingHorizontal: 19, paddingTop: 18, paddingBottom: 24 },
-  sheetHeader: { flexDirection: 'row-reverse', alignItems: 'center', justifyContent: 'space-between', marginBottom: 16 },
-  sheetTitle: { fontSize: 20, fontWeight: '700' },
-  newChatRow: { flexDirection: 'row-reverse', alignItems: 'center', gap: 9, padding: 13, borderRadius: 14, marginBottom: 8 },
-  newChatText: { fontSize: 13, fontWeight: '700' },
-  historyRow: { flexDirection: 'row-reverse', alignItems: 'center', borderBottomWidth: 1, paddingVertical: 12 },
-  historySelect: { flex: 1, alignItems: 'flex-end', gap: 4 },
-  historyTitle: { fontSize: 14, fontWeight: '600', maxWidth: '100%' },
-  historyDate: { fontSize: 10 },
+  sendButton: { width: 38, height: 38, borderRadius: radius.md, alignItems: 'center', justifyContent: 'center' },
+  privacyNote: { fontSize: 9, lineHeight: 13, textAlign: 'center', marginTop: spacing.xs + 3 },
+  modalBackdrop: { flex: 1, backgroundColor: 'rgba(4,13,10,0.45)', justifyContent: 'flex-end' },
+  historySheet: { maxHeight: '78%', minHeight: '44%', borderTopLeftRadius: radius.xl, borderTopRightRadius: radius.xl, paddingHorizontal: spacing.md + 3, paddingTop: spacing.md + 2, paddingBottom: spacing.lg },
+  sheetHeader: { flexDirection: 'row-reverse', alignItems: 'center', justifyContent: 'space-between', marginBottom: spacing.md },
+  sheetTitle: { fontSize: typography.xl, fontWeight: typography.weightBold },
+  newChatRow: { flexDirection: 'row-reverse', alignItems: 'center', gap: spacing.sm + 1, padding: spacing.sm + spacing.xs, borderRadius: radius.md, marginBottom: spacing.sm },
+  newChatText: { fontSize: typography.sm + 1, fontWeight: typography.weightBold },
+  historyRow: { flexDirection: 'row-reverse', alignItems: 'center', borderBottomWidth: 1, paddingVertical: spacing.md - spacing.xs },
+  historySelect: { flex: 1, alignItems: 'flex-end', gap: spacing.xs },
+  historyTitle: { fontSize: typography.md, fontWeight: typography.weightSemiBold, maxWidth: '100%' },
+  historyDate: { fontSize: typography.xs },
   deleteButton: { width: 38, height: 38, alignItems: 'center', justifyContent: 'center' },
-  emptyHistory: { textAlign: 'center', paddingVertical: 24, fontSize: 13 },
+  emptyHistory: { textAlign: 'center', paddingVertical: spacing.md, fontSize: typography.sm + 1 },
 });

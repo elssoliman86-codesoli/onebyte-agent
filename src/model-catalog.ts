@@ -1,4 +1,4 @@
-import { fetch } from 'expo/fetch';
+import { fetchWithRetry } from './fetch-with-retry';
 
 export interface ModelInfo {
   id: string;
@@ -129,10 +129,16 @@ export async function fetchModels(
 ): Promise<ModelInfo[]> {
   const headers: Record<string, string> = {};
   if (apiKey) headers.Authorization = `Bearer ${apiKey}`;
-  const response = await fetch(modelsEndpoint(baseUrl), {
-    headers,
-    signal,
-  });
+  const response = await fetchWithRetry(
+    modelsEndpoint(baseUrl),
+    { headers },
+    {
+      timeout: 30_000,
+      maxRetries: 2,
+      baseDelay: 1_000,
+      signal,
+    },
+  );
   if (response.status === 401 || response.status === 403) {
     throw new Error('المزود رفض المفتاح. راجع المفتاح والصلاحيات.');
   }

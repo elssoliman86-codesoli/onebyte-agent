@@ -8,13 +8,6 @@ export interface ProviderPreset {
   baseUrl: string;
   /** Short Arabic hint shown under the chips row when selected. */
   note?: string;
-}
-
-export interface ProviderPreset {
-  name: string;
-  baseUrl: string;
-  /** Short Arabic hint shown under the chips row when selected. */
-  note?: string;
   /** Keyless providers work with zero setup — no API key required. */
   keyless?: boolean;
 }

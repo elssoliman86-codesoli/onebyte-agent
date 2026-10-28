@@ -10,7 +10,7 @@ import {
   TextInput,
   View,
 } from 'react-native';
-import { Feather } from '@expo/vector-icons';
+import { Feather, MaterialCommunityIcons } from '@expo/vector-icons';
 import { useColors } from '@/hooks/useColors';
 import {
   fetchModels,
@@ -24,12 +24,15 @@ export function ModelPicker({
   visible,
   baseUrl,
   getApiKey,
+  currentModel,
   onClose,
   onPick,
 }: {
   visible: boolean;
   baseUrl: string;
   getApiKey: () => Promise<string>;
+  /** The model currently in use — shown as "المستخدم الآن" so the user always sees it. */
+  currentModel?: string;
   onClose: () => void;
   onPick: (model: ModelInfo) => void;
 }) {
@@ -118,8 +121,17 @@ export function ModelPicker({
           <Pressable accessibilityRole="button" accessibilityLabel="إغلاق" onPress={onClose}>
             <Feather name="x" size={22} color={colors.foreground} />
           </Pressable>
-          <Text style={[styles.title, { color: colors.foreground }]}>اختيار الموديل</Text>
+          <Text style={[styles.title, { color: colors.foreground }]}>اختيار الموديل والأدوات</Text>
         </View>
+
+        {currentModel ? (
+          <View style={[styles.currentBar, { backgroundColor: `${colors.success}14`, borderColor: colors.border }]}>
+            <Feather name="cpu" size={13} color={colors.success} />
+            <Text style={[styles.currentBarText, { color: colors.success }]} numberOfLines={1}>
+              الموديل المستخدم الآن: {currentModel}
+            </Text>
+          </View>
+        ) : null}
 
         <TextInput
           value={query}
@@ -185,47 +197,62 @@ export function ModelPicker({
           <FlatList
             data={shown}
             keyExtractor={(m) => m.id}
+            numColumns={2}
+            columnWrapperStyle={styles.gridRow}
             keyboardShouldPersistTaps="handled"
+            contentContainerStyle={styles.gridContent}
             ListEmptyComponent={
               <Text style={[styles.empty, { color: colors.mutedForeground }]}>لا نتائج.</Text>
             }
-            renderItem={({ item }) => (
-              <Pressable
-                onPress={() => onPick(item)}
-                style={[styles.row, { borderBottomColor: colors.border }]}
-              >
-                <View style={styles.rowTop}>
-                  <Text
-                    style={[
-                      styles.badge,
-                      {
-                        color: item.free ? colors.success : colors.mutedForeground,
-                        borderColor: item.free ? colors.success : colors.border,
-                      },
-                    ]}
-                  >
-                    {item.free ? 'مجاني' : item.promptPrice === null ? 'غير معلن' : 'مدفوع'}
-                  </Text>
-                  <Text numberOfLines={1} style={[styles.name, { color: colors.foreground }]}>
+            renderItem={({ item }) => {
+              const isCurrent = Boolean(currentModel) && item.id === currentModel?.trim();
+              const probe = probeResults[item.id];
+              return (
+                <Pressable
+                  accessibilityRole="button"
+                  onPress={() => onPick(item)}
+                  style={[
+                    styles.card,
+                    {
+                      backgroundColor: colors.card,
+                      borderColor: isCurrent ? colors.primary : colors.border,
+                    },
+                  ]}
+                >
+                  <View style={styles.cardTop}>
+                    {item.free ? (
+                      <View style={[styles.freeBadge, { backgroundColor: `${colors.success}18` }]}>
+                        <Text style={[styles.badgeText, { color: colors.success }]}>مجاني</Text>
+                      </View>
+                    ) : (
+                      <View style={[styles.crownBadge, { backgroundColor: `${colors.warning}18` }]}>
+                        <MaterialCommunityIcons name="crown" size={12} color={colors.warning} />
+                        <Text style={[styles.badgeText, { color: colors.warning }]}>
+                          {item.promptPrice === null ? 'غير معلن' : 'مدفوع'}
+                        </Text>
+                      </View>
+                    )}
+                    {isCurrent ? <Feather name="check-circle" size={15} color={colors.success} /> : null}
+                  </View>
+                  <Text numberOfLines={2} style={[styles.cardName, { color: colors.foreground }]}>
                     {item.name}
                   </Text>
-                </View>
-                {item.name !== item.id ? (
-                  <Text numberOfLines={1} style={[styles.meta, styles.ltr, { color: colors.mutedForeground }]}>
-                    {item.id}
+                  {item.name !== item.id ? (
+                    <Text numberOfLines={1} style={[styles.cardId, styles.ltr, { color: colors.mutedForeground }]}>
+                      {item.id}
+                    </Text>
+                  ) : null}
+                  <Text style={[styles.cardMeta, { color: colors.mutedForeground }]} numberOfLines={2}>
+                    {formatPrice(item)} · {formatContext(item.contextLength)}
+                    {item.supportsTools === false ? ' · بدون أدوات' : ''}
+                    {probe === 200 ? ' · 200 ✓' : probe && probe > 0 ? ` · ${probe} ✗` : ''}
                   </Text>
-                ) : null}
-                <Text style={[styles.meta, { color: colors.mutedForeground }]}>
-                  {formatPrice(item)} · {formatContext(item.contextLength)}
-                  {item.supportsTools === false ? ' · بدون أدوات' : ''}
-                  {probeResults[item.id] === 200
-                    ? ' · 200 ✓'
-                    : probeResults[item.id] && probeResults[item.id] > 0
-                      ? ` · ${probeResults[item.id]} ✗`
-                      : ''}
-                </Text>
-              </Pressable>
-            )}
+                  {isCurrent ? (
+                    <Text style={[styles.currentTag, { color: colors.success }]}>مستخدم الآن</Text>
+                  ) : null}
+                </Pressable>
+              );
+            }}
           />
         )}
       </View>
@@ -235,8 +262,19 @@ export function ModelPicker({
 
 const styles = StyleSheet.create({
   root: { flex: 1, paddingTop: 52, paddingHorizontal: 16 },
-  header: { flexDirection: 'row-reverse', alignItems: 'center', justifyContent: 'space-between', marginBottom: 14 },
+  header: { flexDirection: 'row-reverse', alignItems: 'center', justifyContent: 'space-between', marginBottom: 12 },
   title: { fontSize: 20, fontWeight: '700' },
+  currentBar: {
+    flexDirection: 'row-reverse',
+    alignItems: 'center',
+    gap: 8,
+    borderWidth: 1,
+    borderRadius: 12,
+    paddingHorizontal: 12,
+    paddingVertical: 9,
+    marginBottom: 10,
+  },
+  currentBarText: { flex: 1, fontSize: 12, fontWeight: '800', textAlign: 'right' },
   search: { borderWidth: 1, borderRadius: 14, paddingHorizontal: 14, height: 44, fontSize: 14, textAlign: 'right' },
   filterRow: { flexDirection: 'row-reverse', alignItems: 'center', gap: 10, marginVertical: 8, flexWrap: 'wrap' },
   filterText: { fontSize: 13 },
@@ -245,10 +283,38 @@ const styles = StyleSheet.create({
   loader: { marginTop: 40 },
   error: { textAlign: 'center', marginTop: 40, fontSize: 13, lineHeight: 20 },
   empty: { textAlign: 'center', marginTop: 40, fontSize: 13 },
-  row: { paddingVertical: 12, borderBottomWidth: 1, gap: 4, alignItems: 'flex-end' },
-  rowTop: { flexDirection: 'row-reverse', alignItems: 'center', gap: 8, maxWidth: '100%' },
-  name: { fontSize: 14, fontWeight: '700', flexShrink: 1 },
-  badge: { fontSize: 10, fontWeight: '700', borderWidth: 1, borderRadius: 8, paddingHorizontal: 7, paddingVertical: 2 },
-  meta: { fontSize: 11, textAlign: 'right' },
+  gridContent: { gap: 10, paddingBottom: 24 },
+  gridRow: { gap: 10 },
+  card: {
+    flex: 1,
+    borderWidth: 1,
+    borderRadius: 16,
+    padding: 12,
+    gap: 6,
+    alignItems: 'flex-end',
+    minHeight: 108,
+  },
+  cardTop: { flexDirection: 'row-reverse', alignItems: 'center', gap: 6, width: '100%' },
+  freeBadge: {
+    flexDirection: 'row-reverse',
+    alignItems: 'center',
+    gap: 4,
+    borderRadius: 8,
+    paddingHorizontal: 7,
+    paddingVertical: 2,
+  },
+  crownBadge: {
+    flexDirection: 'row-reverse',
+    alignItems: 'center',
+    gap: 4,
+    borderRadius: 8,
+    paddingHorizontal: 7,
+    paddingVertical: 2,
+  },
+  badgeText: { fontSize: 10, fontWeight: '800' },
+  cardName: { fontSize: 13.5, fontWeight: '700', textAlign: 'right', width: '100%' },
+  cardId: { fontSize: 10.5, textAlign: 'right', width: '100%' },
+  cardMeta: { fontSize: 10.5, lineHeight: 15, textAlign: 'right', width: '100%' },
+  currentTag: { fontSize: 10.5, fontWeight: '800', textAlign: 'right' },
   ltr: { writingDirection: 'ltr' },
 });

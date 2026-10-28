@@ -1,5 +1,6 @@
-import React, { useState } from 'react';
+import React, { useEffect, useState } from 'react';
 import { Platform, Pressable, StyleSheet, Text, View } from 'react-native';
+import { WebView } from 'react-native-webview';
 import * as Clipboard from 'expo-clipboard';
 import * as FileSystem from 'expo-file-system/legacy';
 import * as Sharing from 'expo-sharing';
@@ -27,12 +28,24 @@ export function CodeBlock({
 }: {
   code: string;
   language?: string;
-  /** Set for HTML blocks — shows the live-preview button. */
+  /** Set for HTML blocks — shows the live-preview button + inline preview. */
   onPreview?: (html: string) => void;
 }) {
   const colors = useColors();
   const [copied, setCopied] = useState(false);
   const [saved, setSaved] = useState(false);
+  const isHtml = Boolean(onPreview);
+  // Inline live preview: works right inside the block, debounced while the
+  // model is still streaming the code so the frame doesn't reload per token.
+  const [previewSrc, setPreviewSrc] = useState('');
+  const [previewExpanded, setPreviewExpanded] = useState(false);
+  const [previewVisible, setPreviewVisible] = useState(true);
+
+  useEffect(() => {
+    if (!onPreview) return;
+    const timer = setTimeout(() => setPreviewSrc(code), 400);
+    return () => clearTimeout(timer);
+  }, [code, onPreview]);
 
   async function copy() {
     await Clipboard.setStringAsync(code);
@@ -80,6 +93,17 @@ export function CodeBlock({
           {language || 'code'}
         </Text>
         <View style={styles.headerActions}>
+          {onPreview && !previewVisible ? (
+            <Pressable
+              accessibilityRole="button"
+              accessibilityLabel="إظهار المعاينة المضمنة"
+              onPress={() => setPreviewVisible(true)}
+              style={styles.copyBtn}
+            >
+              <Feather name="eye" size={13} color={colors.success} />
+              <Text style={[styles.copyText, { color: colors.success }]}>معاينة</Text>
+            </Pressable>
+          ) : null}
           {onPreview ? (
             <Pressable
               accessibilityRole="button"
@@ -126,6 +150,64 @@ export function CodeBlock({
       <Text style={[styles.code, { color: colors.foreground }]} selectable>
         {code}
       </Text>
+      {onPreview && previewVisible && previewSrc ? (
+        <>
+          <View style={[styles.previewBox, { height: previewExpanded ? 520 : 240, borderColor: colors.border }]}>
+            {Platform.OS === 'web' ? (
+              // Sandbox without allow-same-origin: the snippet runs in an
+              // opaque origin and cannot touch app storage or cookies.
+              <iframe
+                srcDoc={previewSrc}
+                title="معاينة HTML"
+                sandbox="allow-scripts allow-popups allow-modals"
+                style={{ width: '100%', height: '100%', border: 'none', backgroundColor: '#FFFFFF' }}
+              />
+            ) : (
+              <WebView
+                source={{ html: previewSrc }}
+                style={styles.previewFrame}
+                originWhitelist={['*']}
+                javaScriptEnabled
+              />
+            )}
+          </View>
+          <View style={[styles.previewActions, { borderTopColor: colors.border }]}>
+            <Pressable
+              accessibilityRole="button"
+              accessibilityLabel="معاينة حية بملء الشاشة"
+              onPress={() => onPreview(code)}
+              style={styles.copyBtn}
+            >
+              <Feather name="maximize" size={13} color={colors.success} />
+              <Text style={[styles.copyText, { color: colors.success }]}>ملء الشاشة</Text>
+            </Pressable>
+            <Pressable
+              accessibilityRole="button"
+              accessibilityLabel={previewExpanded ? 'تصغير المعاينة' : 'توسيع المعاينة'}
+              onPress={() => setPreviewExpanded((v) => !v)}
+              style={styles.copyBtn}
+            >
+              <Feather
+                name={previewExpanded ? 'minimize-2' : 'maximize-2'}
+                size={13}
+                color={colors.primary}
+              />
+              <Text style={[styles.copyText, { color: colors.primary }]}>
+                {previewExpanded ? 'تصغير' : 'توسيع'}
+              </Text>
+            </Pressable>
+            <Pressable
+              accessibilityRole="button"
+              accessibilityLabel="إخفاء المعاينة المضمنة"
+              onPress={() => setPreviewVisible(false)}
+              style={styles.copyBtn}
+            >
+              <Feather name="eye-off" size={13} color={colors.mutedForeground} />
+              <Text style={[styles.copyText, { color: colors.mutedForeground }]}>إخفاء</Text>
+            </Pressable>
+          </View>
+        </>
+      ) : null}
     </View>
   );
 }
@@ -160,5 +242,20 @@ const styles = StyleSheet.create({
     padding: 12,
     textAlign: 'left',
     writingDirection: 'ltr',
+  },
+  previewBox: {
+    borderTopWidth: 1,
+    overflow: 'hidden',
+    backgroundColor: '#FFFFFF',
+  },
+  previewFrame: { flex: 1, backgroundColor: '#FFFFFF' },
+  previewActions: {
+    flexDirection: 'row-reverse',
+    alignItems: 'center',
+    gap: 12,
+    paddingHorizontal: 12,
+    paddingVertical: 6,
+    borderTopWidth: 1,
+    borderTopColor: 'rgba(128,128,128,0.22)',
   },
 });

@@ -18,6 +18,7 @@ interface DeviceControlNative {
   typeText(index: number, text: string): Promise<string>;
   scroll(down: boolean): Promise<string>;
   press(key: string): Promise<string>;
+  checkServiceHealth(): Promise<{ healthy: boolean; reason?: string; nodeCount?: number }>;
 }
 
 const native: DeviceControlNative | null =
@@ -136,3 +137,4 @@ export const tap = (index: number) => need().tap(index);
 export const typeText = (index: number, text: string) => need().typeText(index, text);
 export const scroll = (direction: 'up' | 'down') => need().scroll(direction === 'down');
 export const press = (key: 'back' | 'home' | 'recents' | 'notifications') => need().press(key);
+export const checkServiceHealth = () => need().checkServiceHealth();
