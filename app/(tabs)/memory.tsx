@@ -139,8 +139,8 @@ export default function MemoryScreen() {
             <Feather name="plus" size={19} color={colors.primaryForeground} />
           </Pressable>
         }
+        topBar={<ScreenTopBar active="memory" />}
       >
-        <ScreenTopBar active="memory" />
         <Surface style={styles.infoCard}>
           <Feather name="shield" size={18} color={colors.primary} />
           <Text style={[styles.infoText, { color: colors.foreground }]}>
