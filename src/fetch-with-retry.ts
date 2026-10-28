@@ -4,7 +4,11 @@ import { fetch } from 'expo/fetch';
  * Configuration for fetch-with-retry behavior.
  */
 export interface FetchRetryOptions {
-  /** Maximum time to wait for a single request attempt (ms). Default: 60_000. */
+  /** Maximum time to wait for a single request attempt (ms). Default: 60_000.
+   * Pass 0 to wait indefinitely — no per-attempt abort timer is scheduled and
+   * the request waits as long as the provider needs (large-context models can
+   * spend minutes before the first byte arrives). The caller's AbortSignal is
+   * still honored, so a manual cancel remains possible. */
   timeout?: number;
   /** Maximum number of retry attempts for transient failures. Default: 3. */
   maxRetries?: number;
@@ -86,9 +90,13 @@ export async function fetchWithRetry(
       throw new DOMException('Aborted', 'AbortError');
     }
 
-    // Create a controller for this attempt's timeout
+    // Per-attempt timer only when a positive timeout was requested. When the
+    // caller disables it (0 / undefined) the request has no time cap.
     const controller = new AbortController();
-    const timeoutId = setTimeout(() => controller.abort(), opts.timeout);
+    let timeoutId: ReturnType<typeof setTimeout> | undefined;
+    if (opts.timeout) {
+      timeoutId = setTimeout(() => controller.abort(), opts.timeout);
+    }
 
     // Combine the attempt controller with the external signal
     const combinedSignal = AbortSignal.any?.([controller.signal, opts.signal].filter(Boolean) as AbortSignal[]) ?? controller.signal;
@@ -100,7 +108,7 @@ export async function fetchWithRetry(
 
     try {
       const response = await fetch(url, attemptInit);
-      clearTimeout(timeoutId);
+      if (timeoutId) clearTimeout(timeoutId);
 
       // If response is ok or non-retryable status, return it
       if (response.ok || !opts.retryStatusCodes.includes(response.status)) {
@@ -110,7 +118,7 @@ export async function fetchWithRetry(
       // Status is retryable - throw to trigger retry logic
       throw new ResponseError(response.status, `HTTP ${response.status}`);
     } catch (error) {
-      clearTimeout(timeoutId);
+      if (timeoutId) clearTimeout(timeoutId);
       lastError = error;
 
       // If aborted intentionally, don't retry

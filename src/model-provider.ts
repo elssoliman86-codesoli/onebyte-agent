@@ -31,13 +31,6 @@ export function endpointFor(baseUrl: string): string {
   return `${base}/v1/chat/completions`;
 }
 
-/** Larger-context models often spend longer preparing a response before sending headers. */
-export function modelRequestTimeout(settings: Pick<ProviderSettings, 'contextLength' | 'model'>): number {
-  const isLargeContext =
-    (settings.contextLength ?? 0) >= 200_000 || /(?:^|[^\d])200\s*k(?:$|[^\w])/i.test(settings.model);
-  return isLargeContext ? 300_000 : 120_000;
-}
-
 export interface PromptOptions {
   deviceControl: boolean;
   deviceAvailable: boolean;
@@ -186,7 +179,9 @@ export async function streamModelChat({
       }),
     },
     {
-      timeout: modelRequestTimeout(settings),
+      // No per-attempt timeout: slow/large-context models may take minutes
+      // before streaming the first byte. Cancelling stays possible via signal.
+      timeout: 0,
       maxRetries: 2,
       baseDelay: 1_000,
       signal,
@@ -322,7 +317,10 @@ export async function probeModel({
         }),
       },
       {
-        timeout: 30_000,
+        // No per-attempt timeout: some providers need a long time to answer
+        // the minimal "ping". The probe waits as long as they take and keeps
+        // respecting the caller's AbortSignal (user tests/cancel buttons).
+        timeout: 0,
         maxRetries: 2,
         baseDelay: 1_000,
         signal,

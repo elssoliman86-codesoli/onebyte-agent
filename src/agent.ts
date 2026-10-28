@@ -2,7 +2,7 @@ import { fetchWithRetry } from './fetch-with-retry';
 import { storage } from './storage';
 import { checkServiceHealth } from './device';
 import type { ProviderSettings, ToolStep } from './assistant';
-import { endpointFor, modelRequestTimeout, type ProviderChatMessage } from './model-provider';
+import { endpointFor, type ProviderChatMessage } from './model-provider';
 import {
   needsApproval,
   toOpenAITools,
@@ -96,7 +96,9 @@ export async function streamCompletion({
       body: JSON.stringify(body),
     },
     {
-      timeout: modelRequestTimeout(settings),
+      // No per-attempt timeout: the model answers whenever it finishes
+      // (tool loops and long-context requests can exceed minutes).
+      timeout: 0,
       maxRetries: 2,
       baseDelay: 1_000,
       signal,
