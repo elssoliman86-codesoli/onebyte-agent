@@ -289,6 +289,7 @@ export async function summariseBacklog({
   messages,
   chunkTokens,
   signal,
+  preserveVerbatim = true,
 }: {
   settings: ProviderSettings;
   apiKey: string;
@@ -296,6 +297,8 @@ export async function summariseBacklog({
   messages: ChatMessage[];
   chunkTokens: number;
   signal?: AbortSignal;
+  /** Keep the verbatim appendix for durable history compaction. */
+  preserveVerbatim?: boolean;
 }): Promise<string> {
   let summary = previousSummary;
   let chunk: ChatMessage[] = [];
@@ -305,8 +308,9 @@ export async function summariseBacklog({
 
   const flush = async () => {
     if (!chunk.length) return;
-    // Extract critical content from this chunk before summarising
-    allCriticalContent.push(...extractCriticalContent(chunk));
+    // Extract critical content before summarising. Large one-off prompts can
+    // skip the final verbatim appendix to keep the model input compact.
+    if (preserveVerbatim) allCriticalContent.push(...extractCriticalContent(chunk));
     summary = await summarise({ settings, apiKey, previousSummary: summary, messages: chunk, signal });
     chunk = [];
     size = 0;
@@ -352,7 +356,7 @@ export async function summariseBacklog({
   await flush();
   
   // If we accumulated significant critical content, append it to the final summary
-  if (allCriticalContent.length > 0) {
+  if (preserveVerbatim && allCriticalContent.length > 0) {
     const uniqueCritical = [...new Set(allCriticalContent)];
     const criticalSection = `\n\n--- محتوى حرفي محفوظ من المحادثة الكاملة ---\n${uniqueCritical.join('\n')}\n--- نهاية المحتوى الحرفي ---\n`;
     summary = summary.trim() + criticalSection;
