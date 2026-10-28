@@ -1,4 +1,7 @@
 import { Linking, Platform } from 'react-native';
+import { router } from 'expo-router';
+import { waitForEmbeddedBrowser } from './embedded-browser';
+import { isAuthorized, loadTargets } from './hunter';
 import { fetchWithRetry } from './fetch-with-retry';
 import * as Device from './device';
 import type {
@@ -9,7 +12,7 @@ import type {
 
 /** 'memory' tools run on-device and are always offered, even when device control is off. */
 /** 'net' tools are read-only public web requests, used only when the user asks. */
-export type ToolGroup = 'local' | 'memory' | 'net' | 'device_read' | 'device_act';
+export type ToolGroup = 'local' | 'memory' | 'net' | 'browser' | 'device_read' | 'device_act';
 
 export interface ToolSpec {
   name: string;
@@ -143,6 +146,60 @@ export const TOOL_SPECS: ToolSpec[] = [
     description:
       'Search the public web (DuckDuckGo) and return the top results with titles, URLs and snippets. Use for current information.',
     parameters: obj({ query: { type: 'string' } }, ['query']),
+  },
+  {
+    name: 'browser_navigate',
+    group: 'browser',
+    label: 'فتح المتصفح المدمج',
+    description: 'Open the URL in OneByte embedded WebView for an authorized, in-scope security test. Requires a target saved in Cybersecurity Lab. Never use an arbitrary host or leave the saved scope.',
+    parameters: obj({ url: { type: 'string' } }, ['url']),
+  },
+  {
+    name: 'browser_read_page',
+    group: 'browser',
+    label: 'قراءة صفحة المتصفح',
+    description: 'Read the current embedded browser page: title, visible text and indexed interactive elements. Call after navigation and after every click or scroll.',
+    parameters: obj({}),
+  },
+  {
+    name: 'browser_click',
+    group: 'browser',
+    label: 'التفاعل مع صفحة المتصفح',
+    description: 'Click a numbered element from the latest browser_read_page result. Never submit destructive actions, payments, account changes, or forms that change real data.',
+    parameters: obj({ index: { type: 'integer' } }, ['index']),
+  },
+  {
+    name: 'browser_type_text',
+    group: 'browser',
+    label: 'الكتابة في صفحة المتصفح',
+    description: 'Enter a test string into a numbered field from the latest browser_read_page result. Password fields are blocked. Do not enter real credentials or secrets.',
+    parameters: obj({ index: { type: 'integer' }, text: { type: 'string' } }, ['index', 'text']),
+  },
+  {
+    name: 'browser_scroll',
+    group: 'browser',
+    label: 'تمرير صفحة المتصفح',
+    description: 'Scroll the current embedded browser page up or down, then read it again.',
+    parameters: obj({ direction: { type: 'string', enum: ['up', 'down'] } }, ['direction']),
+  },
+  {
+    name: 'browser_wait',
+    group: 'browser',
+    label: 'انتظار تحميل الصفحة',
+    description: 'Wait a short time (up to 5 seconds) for the current page to settle, then read it again.',
+    parameters: obj({ ms: { type: 'integer' } }),
+  },
+  {
+    name: 'browser_send_request',
+    group: 'browser',
+    label: 'إرسال طلب اختبار من المتصفح',
+    description: 'Send an HTTP request from the current embedded page context and return status, headers, elapsed time and response body. Destination must remain in the saved authorized scope; same-origin/CORS and browser security rules apply. Use only non-destructive, authorized tests.',
+    parameters: obj({
+      url: { type: 'string' },
+      method: { type: 'string', enum: ['GET', 'POST', 'PUT', 'PATCH', 'DELETE', 'HEAD', 'OPTIONS'] },
+      headers: { type: 'object', additionalProperties: { type: 'string' } },
+      body: { type: 'string' },
+    }, ['url', 'method']),
   },
   {
     name: 'web_fetch',
@@ -407,6 +464,55 @@ export async function executeTool(
       }
       await Linking.openURL(url);
       return `فُتح الرابط في المتصفح الافتراضي: ${url}`;
+    }
+    case 'browser_navigate': {
+      const raw = str(args, 'url');
+      let parsed: URL;
+      try { parsed = new URL(raw); } catch { throw new Error('رابط الاختبار غير صالح.'); }
+      if (!['http:', 'https:'].includes(parsed.protocol) || parsed.username || parsed.password) throw new Error('يسمح فقط بروابط HTTP/HTTPS دون بيانات اعتماد مضمّنة.');
+      const scope = isAuthorized(parsed.toString(), await loadTargets());
+      if (!scope.ok) throw new Error(scope.reason);
+      router.push({ pathname: '/browser', params: { url: parsed.toString() } });
+      const browser = await waitForEmbeddedBrowser(15_000);
+      const page = await browser.navigate(parsed.toString(), parsed.hostname);
+      return JSON.stringify({ message: 'تم فتح الهدف في المتصفح المدمج ضمن النطاق المصرح.', url: page.url, title: page.title, text: page.text, elements: page.elements });
+    }
+    case 'browser_read_page': {
+      const browser = await waitForEmbeddedBrowser();
+      return JSON.stringify(await browser.readPage());
+    }
+    case 'browser_click': {
+      const browser = await waitForEmbeddedBrowser();
+      const result = await browser.click(int(args, 'index'));
+      return result + '\n' + JSON.stringify(await browser.readPage());
+    }
+    case 'browser_type_text': {
+      const browser = await waitForEmbeddedBrowser();
+      const result = await browser.typeText(int(args, 'index'), str(args, 'text'));
+      return result + '\n' + JSON.stringify(await browser.readPage());
+    }
+    case 'browser_scroll': {
+      const browser = await waitForEmbeddedBrowser();
+      const direction = args.direction === 'up' ? 'up' : 'down';
+      await browser.scroll(direction);
+      return JSON.stringify(await browser.readPage());
+    }
+    case 'browser_wait': {
+      const browser = await waitForEmbeddedBrowser();
+      return await browser.wait(args.ms === undefined ? 1000 : Math.min(5000, Math.max(0, int(args, 'ms'))));
+    }
+    case 'browser_send_request': {
+      const browser = await waitForEmbeddedBrowser();
+      const raw = str(args, 'url');
+      let parsed: URL;
+      try { parsed = new URL(raw, browser.currentUrl()); } catch { throw new Error('رابط الطلب غير صالح.'); }
+      if (!['http:', 'https:'].includes(parsed.protocol) || parsed.username || parsed.password) throw new Error('يسمح فقط بروابط HTTP/HTTPS دون بيانات اعتماد مضمّنة.');
+      const method = typeof args.method === 'string' ? args.method.toUpperCase() : 'GET';
+      if (!['GET', 'POST', 'PUT', 'PATCH', 'DELETE', 'HEAD', 'OPTIONS'].includes(method)) throw new Error('طريقة HTTP غير مسموحة.');
+      const headersRaw = args.headers && typeof args.headers === 'object' && !Array.isArray(args.headers) ? args.headers as Record<string, unknown> : {};
+      const headers = Object.fromEntries(Object.entries(headersRaw).map(([key, value]) => [key, String(value)]));
+      const result = await browser.sendRequest({ url: parsed.toString(), method, headers, body: typeof args.body === 'string' ? args.body : '' });
+      return JSON.stringify(result);
     }
     case 'web_search':
       return await webSearch(str(args, 'query'));
