@@ -313,12 +313,41 @@ export async function summariseBacklog({
   };
   
   for (const message of messages) {
-    // A single giant message is truncated rather than blocking the chat forever.
-    const content = message.content.length > chunkTokens * 3 ? message.content.slice(0, chunkTokens * 3) + '…' : message.content;
-    const t = estimateTokens(content);
-    if (size + t > chunkTokens) await flush();
-    chunk.push({ ...message, content });
-    size += t;
+    // Never truncate a large message during compaction: split it into ordered,
+    // explicitly labelled pieces so every original character reaches the summary.
+    const maxChars = Math.max(1_200, chunkTokens * 3);
+    const parts: string[] = [];
+    let offset = 0;
+    while (offset < message.content.length) {
+      let end = Math.min(offset + maxChars, message.content.length);
+      if (end < message.content.length) {
+        const boundary = Math.max(
+          message.content.lastIndexOf("\n", end),
+          message.content.lastIndexOf(" ", end),
+        );
+        if (boundary > offset + Math.floor(maxChars * 0.65)) end = boundary;
+      }
+      parts.push(message.content.slice(offset, end));
+      offset = end;
+    }
+    if (!parts.length) parts.push(message.content);
+
+    for (let index = 0; index < parts.length; index += 1) {
+      const content = parts.length > 1
+        ? `[رسالة واحدة طويلة — الجزء ${index + 1} من ${parts.length}; تابع الأجزاء بالترتيب دون إسقاط التفاصيل.]\n${parts[index]}`
+        : parts[index];
+      const t = estimateTokens(content);
+      if (size + t > chunkTokens) await flush();
+      chunk.push({
+        ...message,
+        id: parts.length > 1 ? `${message.id}-part-${index + 1}` : message.id,
+        content,
+        // Keep any non-text payload only on the first summary piece.
+        imageUri: index === 0 ? message.imageUri : undefined,
+        images: index === 0 ? message.images : undefined,
+      });
+      size += t;
+    }
   }
   await flush();
   
