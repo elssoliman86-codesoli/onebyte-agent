@@ -355,163 +355,188 @@ function MessageBubble({
   }
   return (
     <View style={[styles.messageRow, user && styles.userMessageRow]}>
-      <View
-        style={
-          user
-            ? [styles.bubbleUser, { backgroundColor: colors.primary, borderColor: colors.primary }]
-            : styles.bubbleAssistant
-        }
-      >
-        {message.skill ? (
-          <View style={[styles.skillChip, { backgroundColor: colors.accentSubtle }]}>
-            <Feather name="zap" size={11} color={colors.primary} />
-            <Text style={[styles.skillChipText, { color: colors.primary }]}>
-              استخدمت المهارة: {message.skill}
-            </Text>
-          </View>
-        ) : null}
-        {user && message.files?.length ? (
-          <View style={styles.fileChipsRow}>
-            {message.files.map((name, i) => (
-              <View key={i} style={[styles.fileChip, { backgroundColor: 'rgba(255,255,255,0.18)' }]}>
-                <Feather name="file-text" size={11} color={colors.primaryForeground} />
-                <Text style={[styles.fileChipText, { color: colors.primaryForeground }]} numberOfLines={1}>
-                  {name}
+      {user ? (
+        <View style={styles.userStack}>
+          <View
+            style={[
+              styles.bubbleUser,
+              { backgroundColor: colors.primary, borderColor: colors.primary },
+            ]}
+          >
+            {message.skill ? (
+              <View style={[styles.skillChip, { backgroundColor: colors.accentSubtle }]}>
+                <Feather name="zap" size={11} color={colors.primary} />
+                <Text style={[styles.skillChipText, { color: colors.primary }]}>
+                  استخدمت المهارة: {message.skill}
                 </Text>
               </View>
-            ))}
-          </View>
-        ) : null}
-        {user && message.imageUri && !message.images?.length ? (
-          <RNImage
-            source={{ uri: message.imageUri }}
-            style={styles.bubbleImage}
-            resizeMode="cover"
-          />
-        ) : null}
-        {user && message.images?.length ? (
-          <View style={styles.bubbleImagesWrap}>
-            {message.images.map((uri, i) => (
+            ) : null}
+            {user && message.files?.length ? (
+              <View style={styles.fileChipsRow}>
+                {message.files.map((name, i) => (
+                  <View key={i} style={[styles.fileChip, { backgroundColor: 'rgba(255,255,255,0.18)' }]}>
+                    <Feather name="file-text" size={11} color={colors.primaryForeground} />
+                    <Text style={[styles.fileChipText, { color: colors.primaryForeground }]} numberOfLines={1}>
+                      {name}
+                    </Text>
+                  </View>
+                ))}
+              </View>
+            ) : null}
+            {user && message.imageUri && !message.images?.length ? (
               <RNImage
-                key={`${i}-${uri.slice(24, 40)}`}
-                source={{ uri }}
+                source={{ uri: message.imageUri }}
                 style={styles.bubbleImage}
                 resizeMode="cover"
               />
-            ))}
+            ) : null}
+            {user && message.images?.length ? (
+              <View style={styles.bubbleImagesWrap}>
+                {message.images.map((uri, i) => (
+                  <RNImage
+                    key={`${i}-${uri.slice(24, 40)}`}
+                    source={{ uri }}
+                    style={styles.bubbleImage}
+                    resizeMode="cover"
+                  />
+                ))}
+              </View>
+            ) : null}
+            {message.steps?.length ? <StepList steps={message.steps} /> : null}
+            <MessageBody
+              content={message.content}
+              user={user}
+              onPreview={onPreview}
+              editableCode={editableCode}
+            />
           </View>
-        ) : null}
-        {message.steps?.length ? <StepList steps={message.steps} /> : null}
-        <MessageBody
-          content={message.content}
-          user={user}
-          onPreview={onPreview}
-          editableCode={editableCode}
-        />
-        {user && (onEditMessage || message.content) ? (
-          <View style={[styles.userActions, { borderTopColor: 'rgba(255,255,255,0.25)' }]}>
-            {onEditMessage ? (
+          {user && (onEditMessage || message.content) ? (
+            <View style={styles.userActions}>
+              {onEditMessage ? (
+                <Pressable
+                  accessibilityRole="button"
+                  accessibilityLabel="تعديل الرسالة"
+                  onPress={() => onEditMessage(message.id, message.content)}
+                  style={styles.iconAction}
+                  hitSlop={6}
+                >
+                  <Feather name="edit-2" size={14} color={colors.mutedForeground} />
+                </Pressable>
+              ) : null}
               <Pressable
                 accessibilityRole="button"
-                accessibilityLabel="تعديل الرسالة"
-                onPress={() => onEditMessage(message.id, message.content)}
+                accessibilityLabel={t('copy')}
+                onPress={() => {
+                  void Clipboard.setStringAsync(message.content).then(() => {
+                    setCopied(true);
+                    setTimeout(() => setCopied(false), 1400);
+                  });
+                }}
                 style={styles.iconAction}
                 hitSlop={6}
               >
-                <Feather name="edit-2" size={13} color={colors.primaryForeground} />
+                <Feather
+                  name={copied ? 'check' : 'copy'}
+                  size={14}
+                  color={copied ? colors.primary : colors.mutedForeground}
+                />
               </Pressable>
-            ) : null}
-            <Pressable
-              accessibilityRole="button"
-              accessibilityLabel={t('copy')}
-              onPress={() => {
-                void Clipboard.setStringAsync(message.content).then(() => {
-                  setCopied(true);
-                  setTimeout(() => setCopied(false), 1400);
-                });
-              }}
-              style={styles.iconAction}
-              hitSlop={6}
-            >
-              <Feather name={copied ? 'check' : 'copy'} size={13} color={colors.primaryForeground} />
-            </Pressable>
-          </View>
-        ) : null}
-        {!user ? (
-          <View style={styles.assistantActions}>
-            <Pressable
-              accessibilityRole="button"
-              accessibilityLabel={t('copy')}
-              onPress={() => {
-                void Clipboard.setStringAsync(message.content).then(() => {
-                  setCopied(true);
-                  setTimeout(() => setCopied(false), 1400);
-                });
-              }}
-              hitSlop={6}
-              style={styles.assistantActionIcon}
-            >
-              <Feather
-                name={copied ? 'check' : 'copy'}
-                size={16}
-                color={copied ? colors.primary : colors.mutedForeground}
-              />
-            </Pressable>
-            <Pressable
-              accessibilityRole="button"
-              accessibilityLabel="تقييم: رد مفيد"
-              onPress={() => setRating((r) => (r === 'up' ? null : 'up'))}
-              hitSlop={6}
-              style={styles.assistantActionIcon}
-            >
-              <Feather
-                name="thumbs-up"
-                size={16}
-                color={rating === 'up' ? colors.primary : colors.mutedForeground}
-              />
-            </Pressable>
-            <Pressable
-              accessibilityRole="button"
-              accessibilityLabel="تقييم: رد غير مفيد"
-              onPress={() => setRating((r) => (r === 'down' ? null : 'down'))}
-              hitSlop={6}
-              style={styles.assistantActionIcon}
-            >
-              <Feather
-                name="thumbs-down"
-                size={16}
-                color={rating === 'down' ? colors.primary : colors.mutedForeground}
-              />
-            </Pressable>
-            <Pressable
-              accessibilityRole="button"
-              accessibilityLabel={speaking ? t('stopListen') : t('listen')}
-              onPress={() => void toggleSpeak()}
-              hitSlop={6}
-              style={styles.assistantActionIcon}
-            >
-              <Feather
-                name={speaking ? 'volume-x' : 'volume-2'}
-                size={16}
-                color={speaking ? colors.primary : colors.mutedForeground}
-              />
-            </Pressable>
-            <Pressable
-              accessibilityRole="button"
-              onPress={() =>
-                void Share.share({
-                  title: 'رد من OneByte Agent',
-                  message: message.content,
-                })
-              }
-              hitSlop={6}
-              style={styles.assistantActionIcon}
-            >
-              <Feather name="share-2" size={16} color={colors.mutedForeground} />
-            </Pressable>
-          </View>
-        ) : null}
-      </View>
+            </View>
+          ) : null}
+        </View>
+      ) : (
+        <View style={styles.bubbleAssistant}>
+          {message.skill ? (
+            <View style={[styles.skillChip, { backgroundColor: colors.accentSubtle }]}>
+              <Feather name="zap" size={11} color={colors.primary} />
+              <Text style={[styles.skillChipText, { color: colors.primary }]}>
+                استخدمت المهارة: {message.skill}
+              </Text>
+            </View>
+          ) : null}
+          {message.steps?.length ? <StepList steps={message.steps} /> : null}
+          <MessageBody
+            content={message.content}
+            user={user}
+            onPreview={onPreview}
+            editableCode={editableCode}
+          />
+          {!user ? (
+            <View style={styles.assistantActions}>
+              <Pressable
+                accessibilityRole="button"
+                accessibilityLabel={t('copy')}
+                onPress={() => {
+                  void Clipboard.setStringAsync(message.content).then(() => {
+                    setCopied(true);
+                    setTimeout(() => setCopied(false), 1400);
+                  });
+                }}
+                hitSlop={6}
+                style={styles.assistantActionIcon}
+              >
+                <Feather
+                  name={copied ? 'check' : 'copy'}
+                  size={16}
+                  color={copied ? colors.primary : colors.mutedForeground}
+                />
+              </Pressable>
+              <Pressable
+                accessibilityRole="button"
+                accessibilityLabel="تقييم: رد مفيد"
+                onPress={() => setRating((r) => (r === 'up' ? null : 'up'))}
+                hitSlop={6}
+                style={styles.assistantActionIcon}
+              >
+                <Feather
+                  name="thumbs-up"
+                  size={16}
+                  color={rating === 'up' ? colors.primary : colors.mutedForeground}
+                />
+              </Pressable>
+              <Pressable
+                accessibilityRole="button"
+                accessibilityLabel="تقييم: رد غير مفيد"
+                onPress={() => setRating((r) => (r === 'down' ? null : 'down'))}
+                hitSlop={6}
+                style={styles.assistantActionIcon}
+              >
+                <Feather
+                  name="thumbs-down"
+                  size={16}
+                  color={rating === 'down' ? colors.primary : colors.mutedForeground}
+                />
+              </Pressable>
+              <Pressable
+                accessibilityRole="button"
+                accessibilityLabel={speaking ? t('stopListen') : t('listen')}
+                onPress={() => void toggleSpeak()}
+                hitSlop={6}
+                style={styles.assistantActionIcon}
+              >
+                <Feather
+                  name={speaking ? 'volume-x' : 'volume-2'}
+                  size={16}
+                  color={speaking ? colors.primary : colors.mutedForeground}
+                />
+              </Pressable>
+              <Pressable
+                accessibilityRole="button"
+                onPress={() =>
+                  void Share.share({
+                    title: 'رد من OneByte Agent',
+                    message: message.content,
+                  })
+                }
+                hitSlop={6}
+                style={styles.assistantActionIcon}
+              >
+                <Feather name="share-2" size={16} color={colors.mutedForeground} />
+              </Pressable>
+            </View>
+          ) : null}
+        </View>
+      )}
     </View>
   );
 }
@@ -2018,9 +2043,8 @@ const styles = StyleSheet.create({
     borderRadius: radius.lg - 1,
   },
   bubbleUser: {
-    maxWidth: '85%',
-    paddingVertical: 12,
-    paddingHorizontal: 16,
+    paddingVertical: 10,
+    paddingHorizontal: 14,
     borderRadius: 20,
     borderWidth: 1,
   },
@@ -2077,15 +2101,14 @@ const styles = StyleSheet.create({
   attachMenuItemText: { fontSize: typography.sm, fontWeight: typography.weightBold },
   bubbleImagesWrap: { flexDirection: 'row', flexWrap: 'wrap', gap: spacing.xs, marginBottom: spacing.xs },
   attachPreviewItem: { position: 'relative' },
+  userStack: { maxWidth: '85%', alignItems: 'flex-end' },
   iconAction: {
-    width: 30,
-    height: 26,
+    width: 26,
+    height: 24,
     alignItems: 'center',
     justifyContent: 'center',
-    borderRadius: radius.sm,
-    backgroundColor: 'rgba(255,255,255,0.14)',
   },
-  userActions: { flexDirection: 'row-reverse', alignItems: 'center', gap: spacing.xs + 1, borderTopWidth: 1, marginTop: spacing.sm, paddingTop: spacing.xs + 3 },
+  userActions: { flexDirection: 'row-reverse', alignItems: 'center', gap: 4, marginTop: 6 },
   userActionText: { fontSize: typography.xs + 1, fontWeight: typography.weightBold },
   contextChip: { fontSize: typography.xs, fontWeight: typography.weightBold, marginTop: spacing.xs, textAlign: 'right' },
   planBar: { borderWidth: 1, borderRadius: radius.md, marginHorizontal: spacing.md - 2, marginBottom: spacing.sm, padding: spacing.sm + spacing.xs, gap: spacing.xs + 3 },
