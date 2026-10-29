@@ -124,14 +124,23 @@ export async function getRepoTree(
   fullName: string,
   branch: string,
 ): Promise<{ items: GhTreeItem[]; branch: string; truncated: boolean }> {
-  const url = API + '/repos/' + apiRepo(fullName) + '/git/trees/' +
-    encodeURIComponent(branch || 'HEAD') + '?recursive=1';
+  const repo = apiRepo(fullName);
+  let resolvedBranch = branch.trim();
+  if (!resolvedBranch || resolvedBranch.toUpperCase() === 'HEAD') {
+    const repoRes = await fetch(API + '/repos/' + repo, { headers: headers(token) });
+    if (!repoRes.ok) throw new Error(apiError(repoRes.status));
+    const repoData = (await repoRes.json()) as { default_branch?: string };
+    if (!repoData.default_branch) throw new Error('GitHub لم يرجع الفرع الافتراضي للمستودع.');
+    resolvedBranch = repoData.default_branch;
+  }
+  const url = API + '/repos/' + repo + '/git/trees/' +
+    encodeURIComponent(resolvedBranch) + '?recursive=1';
   const res = await fetch(url, { headers: headers(token) });
   if (!res.ok) throw new Error(apiError(res.status));
   const data = (await res.json()) as { tree?: GhTreeItem[]; truncated?: boolean };
   return {
     items: (data.tree ?? []).filter((item) => item.type === 'blob'),
-    branch: branch || 'HEAD',
+    branch: resolvedBranch,
     truncated: Boolean(data.truncated),
   };
 }
