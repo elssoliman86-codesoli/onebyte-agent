@@ -579,6 +579,8 @@ export default function ChatScreen() {
   const [editingMessageId, setEditingMessageId] = useState<string | null>(null);
   const [voiceChatVisible, setVoiceChatVisible] = useState(false);
   const [sending, setSending] = useState(false);
+  const sendingRef = useRef(sending);
+  sendingRef.current = sending;
   const [streamText, setStreamText] = useState('');
   const [error, setError] = useState('');
   const [historyVisible, setHistoryVisible] = useState(false);
@@ -1893,9 +1895,19 @@ export default function ChatScreen() {
       <VoiceConversationModal
         visible={voiceChatVisible}
         language={appearance?.language ?? 'ar'}
+        voicePersona={appearance?.voicePersona ?? 'friendly'}
+        voiceId={appearance?.voiceId ?? ''}
         modelLabel={provider.model}
         onClose={() => setVoiceChatVisible(false)}
-        onSend={sendMessage}
+        onSend={async (text) => {
+          // Wait for an active chat run; otherwise sendMessage queues it and returns an empty string.
+          const deadline = Date.now() + 120_000;
+          while (sendingRef.current && Date.now() < deadline) {
+            await new Promise((resolve) => setTimeout(resolve, 150));
+          }
+          if (sendingRef.current) throw new Error('الطلب السابق ما زال يعمل. انتظر قليلًا ثم تحدث مرة أخرى.');
+          return sendMessage(text);
+        }}
         onStop={stopRun}
         onUseKeyboard={(transcript) => {
           setVoiceChatVisible(false);
