@@ -35,6 +35,8 @@ export interface DeveloperProject {
   files: DeveloperProjectFile[];
   plan: DeveloperPlanStep[];
   reviews: CodeReviewRequest[];
+  /** Optional code-only model override; conversation model remains unchanged. */
+  codeModelId?: string;
   updatedAt: string;
 }
 const KEY = '@onebyte-agent/developer-projects-v1';
@@ -62,6 +64,10 @@ export function languageForPath(path: string): string {
   const ext = path.split('.').pop()?.toLowerCase() ?? '';
   const map: Record<string,string> = { ts:'TypeScript',tsx:'TSX',js:'JavaScript',jsx:'JSX',py:'Python',json:'JSON',md:'Markdown',html:'HTML',css:'CSS',sql:'SQL',sh:'Shell',rs:'Rust',go:'Go',java:'Java',cs:'C#',cpp:'C++',c:'C',swift:'Swift' };
   return map[ext] ?? 'Text';
+}
+export async function setDeveloperCodeModel(sessionId: string, modelId: string | undefined): Promise<void> {
+  const project = await getDeveloperProject(sessionId);
+  await putDeveloperProject({ ...project, codeModelId: modelId || undefined });
 }
 export async function saveProjectFile(sessionId: string, title: string, path: string, content: string): Promise<DeveloperProjectFile> {
   if (!path.trim() || path.startsWith('/') || path.includes(String.fromCharCode(92)) || /^[a-zA-Z]:/.test(path) || path.split('/').some(part => part === '..' || part === '.' || part.trim() === '')) {
