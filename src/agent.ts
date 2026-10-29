@@ -330,12 +330,13 @@ export async function runAgent({
       if (signal?.aborted) throw new Error('تم إيقاف المهمة.');
       let roundText = '';
       let result: { text: string; toolCalls: ToolCall[] };
+      const roundSpecs = round === maxSteps || forceFinalResponse ? [] : activeSpecs;
       try {
         result = await streamCompletion({
           settings,
           apiKey,
           messages: wire,
-          specs: round === maxSteps || forceFinalResponse ? [] : activeSpecs,
+          specs: roundSpecs,
           onText: (chunk) => {
             roundText += chunk;
             onText(finalText + roundText);
@@ -380,7 +381,7 @@ export async function runAgent({
 
     for (const call of result.toolCalls) {
       if (signal?.aborted) throw new Error('تم إيقاف المهمة.');
-      const spec = specs.find((s) => s.name === call.name);
+      const spec = roundSpecs.find((s) => s.name === call.name);
       const isWebReadTool = ['web_search', 'web_fetch', 'open_url', 'browser_navigate', 'browser_read_page'].includes(call.name);
       let webLoopMessage = '';
       if (forceFinalResponse) {
