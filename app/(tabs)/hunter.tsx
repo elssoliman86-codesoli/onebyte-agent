@@ -1,6 +1,7 @@
 import React, { useCallback, useEffect, useRef, useState } from 'react';
 import { ActivityIndicator, Pressable, ScrollView, StyleSheet, Text, TextInput, View } from 'react-native';
 import { Feather } from '@expo/vector-icons';
+import { useLocalSearchParams } from 'expo-router';
 import { useColors } from '@/hooks/useColors';
 import { ScreenTopBar } from '@/components/PhoneDrawer';
 import { AppScreen, Surface } from '@/components/Ui';
@@ -22,6 +23,7 @@ const METHODS = ['GET', 'POST', 'PUT', 'PATCH', 'DELETE', 'HEAD', 'OPTIONS'];
 
 export default function CyberSecurityScreen() {
   const colors = useColors();
+  const routeParams = useLocalSearchParams<{ capturedMethod?: string | string[]; capturedUrl?: string | string[]; capturedHeaders?: string | string[]; capturedBody?: string | string[]; capturedAt?: string | string[] }>();
   const [targets, setTargets] = useState<HunterTarget[]>([]);
   const [log, setLog] = useState<HunterLogEntry[]>([]);
   const [targetHost, setTargetHost] = useState('');
@@ -35,6 +37,12 @@ export default function CyberSecurityScreen() {
   const [error, setError] = useState('');
   const abortRef = useRef<AbortController | null>(null);
   const aliveRef = useRef(true);
+  const lastImportedCaptureRef = useRef('');
+  const capturedMethod = Array.isArray(routeParams.capturedMethod) ? routeParams.capturedMethod[0] : routeParams.capturedMethod;
+  const capturedUrl = Array.isArray(routeParams.capturedUrl) ? routeParams.capturedUrl[0] : routeParams.capturedUrl;
+  const capturedHeaders = Array.isArray(routeParams.capturedHeaders) ? routeParams.capturedHeaders[0] : routeParams.capturedHeaders;
+  const capturedBody = Array.isArray(routeParams.capturedBody) ? routeParams.capturedBody[0] : routeParams.capturedBody;
+  const capturedAt = Array.isArray(routeParams.capturedAt) ? routeParams.capturedAt[0] : routeParams.capturedAt;
 
   const refresh = useCallback(async () => {
     const [nextTargets, nextLog] = await Promise.all([loadTargets(), loadHunterLog()]);
@@ -52,6 +60,20 @@ export default function CyberSecurityScreen() {
       abortRef.current?.abort();
     };
   }, [refresh]);
+
+  useEffect(() => {
+    if (!capturedUrl) return;
+    const signature = [capturedAt || '', capturedMethod || '', capturedUrl, capturedHeaders || '', capturedBody || ''].join('|');
+    if (lastImportedCaptureRef.current === signature) return;
+    lastImportedCaptureRef.current = signature;
+    const upperMethod = (capturedMethod || 'GET').toUpperCase();
+    setMethod(METHODS.includes(upperMethod) ? upperMethod : 'GET');
+    setUrl(capturedUrl);
+    setHeadersText(capturedHeaders || '{"Accept":"*/*"}');
+    setBody(capturedBody || '');
+    setResult(null);
+    setError('تم استيراد الطلب الملتقط. راجع الرابط والهيدرز، وسيظل الإرسال ممنوعًا خارج النطاق المسجل. المفاتيح السرية حُجبت أثناء الالتقاط.');
+  }, [capturedAt, capturedMethod, capturedUrl, capturedHeaders, capturedBody]);
 
   async function addTarget() {
     const normalized = targetHost.trim().replace(/^https?:\/\//i, '').replace(/\/$/, '').toLowerCase();

@@ -613,15 +613,16 @@ header .s{font-size:11px;color:var(--mutedFg)}
 .pill.warn{color:var(--warning);border-color:var(--warning)}
 .banner{font-size:12px;color:var(--warning);padding:8px 12px;border:1px dashed var(--warning);border-radius:10px;margin:10px 16px;display:none}
 select{background:var(--muted);color:var(--fg);border:1px solid var(--border);border-radius:8px;padding:4px 8px;font-family:inherit}
+.themeControls{display:flex;gap:10px;flex-wrap:wrap;margin-top:12px}.themeControls label{display:flex;flex-direction:column;gap:5px;font-size:11px;color:var(--mutedFg)}.themeControls select{min-width:150px;padding:7px 9px}
 
 /* Dedicated desktop bridge layout, activated with ?desktop=1. */
 html.desktop-mode,html.desktop-mode body{height:100%;min-height:100%}
 html.desktop-mode body{
   overflow:hidden;
   background:
-    radial-gradient(ellipse at 72% 0%,rgba(16,185,129,.14),transparent 44%),
-    radial-gradient(ellipse at 0% 100%,rgba(52,211,153,.07),transparent 36%),
-    #050D0A;
+    radial-gradient(ellipse at 72% 0%,color-mix(in srgb,var(--primary) 14%,transparent),transparent 44%),
+    radial-gradient(ellipse at 0% 100%,color-mix(in srgb,var(--primary) 7%,transparent),transparent 36%),
+    var(--bg);
 }
 html.desktop-mode #app{
   width:100%;max-width:none;height:100vh;height:100dvh;min-height:0;margin:0;padding:16px;
@@ -633,7 +634,7 @@ html.desktop-mode #app{
 }
 html.desktop-mode header{
   grid-area:header;min-width:0;margin:0;padding:0 18px;direction:rtl;
-  background:rgba(10,26,19,.92);border:1px solid var(--border);border-radius:16px;
+  background:color-mix(in srgb,var(--card) 94%,transparent);border:1px solid var(--border);border-radius:16px;
   box-shadow:0 8px 28px rgba(0,0,0,.18),inset 0 1px rgba(255,255,255,.025);
 }
 html.desktop-mode header .t{font-size:16px;letter-spacing:.25px}
@@ -643,7 +644,7 @@ html.desktop-mode #chat,
 html.desktop-mode .panel{
   grid-area:content;min-width:0;min-height:0;width:auto;max-width:none;margin:0;padding:22px;
   border:1px solid var(--border);border-radius:18px;
-  background:linear-gradient(180deg,rgba(10,26,19,.97),rgba(5,13,10,.97));
+  background:linear-gradient(180deg,var(--card),var(--bg));
   box-shadow:0 14px 40px rgba(0,0,0,.2),inset 0 1px rgba(255,255,255,.018);
   direction:rtl;
 }
@@ -651,7 +652,7 @@ html.desktop-mode #chat{display:flex;overflow-y:auto}
 html.desktop-mode #chat:empty::before{
   content:"⚡  ONEBYTE AGENT\Aمساعدك جاهز للانطلاق";
   white-space:pre-line;align-self:center;margin:auto;text-align:center;
-  color:#86A99A;font-size:19px;line-height:2.1;letter-spacing:.3px;
+  color:var(--mutedFg);font-size:19px;line-height:2.1;letter-spacing:.3px;
 }
 html.desktop-mode .panel{overflow-y:auto}
 html.desktop-mode .msg{
@@ -665,33 +666,33 @@ html.desktop-mode #composer{
 }
 html.desktop-mode #composer textarea{
   min-width:0;min-height:50px;max-height:140px;padding:14px 16px;border-radius:14px;
-  border-color:#1F4A33;background:#0A1A13;line-height:1.6;
+  border-color:var(--border);background:var(--card);line-height:1.6;
 }
 html.desktop-mode #composer textarea:focus{
-  outline:none;border-color:#34D399;box-shadow:0 0 0 3px rgba(16,185,129,.12),0 0 22px rgba(16,185,129,.08);
+  outline:none;border-color:var(--primary);box-shadow:0 0 0 3px color-mix(in srgb,var(--primary) 12%,transparent),0 0 22px color-mix(in srgb,var(--primary) 8%,transparent);
 }
 html.desktop-mode #composer .btn{min-width:96px}
 html.desktop-mode #tabs{
   grid-area:sidebar;min-width:0;min-height:0;display:flex;flex-direction:column;align-items:stretch;
   gap:7px;padding:16px 12px;border:1px solid var(--border);border-radius:18px;
-  background:linear-gradient(180deg,#0A1A13 0%,#07110C 100%);
+  background:linear-gradient(180deg,var(--card) 0%,var(--bg) 100%);
   box-shadow:0 14px 40px rgba(0,0,0,.24),inset 0 1px rgba(255,255,255,.025);
   direction:rtl;
 }
 html.desktop-mode #tabs::before{
   content:"ONEBYTE";display:block;padding:5px 9px 13px;margin:0 2px 8px;
-  border-bottom:1px solid var(--border);color:#E9F6F0;font-size:17px;font-weight:800;
+  border-bottom:1px solid var(--border);color:var(--fg);font-size:17px;font-weight:800;
   letter-spacing:2px;text-shadow:0 0 20px rgba(52,211,153,.2);
 }
 html.desktop-mode #tabs::after{
   content:"ELECTRIC WORKSPACE  •  LOCAL-FIRST";
   display:block;margin-top:auto;padding:15px 8px 3px;border-top:1px solid var(--border);
-  color:#547B68;font-size:9px;line-height:1.8;letter-spacing:1px;text-align:center;
+  color:var(--mutedFg);font-size:9px;line-height:1.8;letter-spacing:1px;text-align:center;
 }
 html.desktop-mode #tabs button{
   flex:0 0 auto;display:flex;align-items:center;gap:10px;width:100%;min-height:44px;
   padding:11px 12px;text-align:right;border:1px solid transparent;border-radius:12px;
-  color:#86A99A;font-size:13px;transition:background .15s,border-color .15s,color .15s;
+  color:var(--mutedFg);font-size:13px;transition:background .15s,border-color .15s,color .15s;
 }
 html.desktop-mode #tabs button::before{
   display:inline-grid;place-items:center;flex:0 0 25px;width:25px;height:25px;
@@ -703,13 +704,13 @@ html.desktop-mode #tabs button[data-tab="skills"]::before{content:"ϟ"}
 html.desktop-mode #tabs button[data-tab="memory"]::before{content:"◇"}
 html.desktop-mode #tabs button[data-tab="settings"]::before{content:"⚙"}
 html.desktop-mode #tabs button:hover{
-  background:rgba(16,185,129,.08);border-color:rgba(52,211,153,.12);color:#D1FAE5;
+  background:color-mix(in srgb,var(--primary) 8%,transparent);border-color:color-mix(in srgb,var(--primary) 24%,transparent);color:var(--fg);
 }
 html.desktop-mode #tabs button.on{
-  color:#6EE7B7;background:linear-gradient(90deg,rgba(16,185,129,.16),rgba(16,185,129,.06));
-  border-color:rgba(52,211,153,.23);box-shadow:inset 3px 0 0 #10B981,0 0 20px rgba(16,185,129,.05);
+  color:var(--primary);background:linear-gradient(90deg,color-mix(in srgb,var(--primary) 16%,transparent),color-mix(in srgb,var(--primary) 6%,transparent));
+  border-color:color-mix(in srgb,var(--primary) 30%,transparent);box-shadow:inset 3px 0 0 var(--primary),0 0 20px color-mix(in srgb,var(--primary) 5%,transparent);
 }
-html.desktop-mode #tabs button.on::before{background:rgba(16,185,129,.17);box-shadow:0 0 16px rgba(16,185,129,.1)}
+html.desktop-mode #tabs button.on::before{background:color-mix(in srgb,var(--primary) 17%,transparent);box-shadow:0 0 16px color-mix(in srgb,var(--primary) 10%,transparent)}
 html.desktop-mode #login{
   position:fixed;z-index:100;left:50%;top:50%;transform:translate(-50%,-50%);
   width:min(420px,calc(100vw - 32px));max-width:420px;margin:0;
@@ -787,6 +788,31 @@ html.desktop-mode #login{
   };
   function t(k){ return (I18N[lang] || I18N.ar)[k]; }
 
+  function applyAppearance(pref){
+    pref=pref||{};
+    var themeOverride='',accentOverride='';
+    try{themeOverride=localStorage.getItem('ob_pc_theme')||'';accentOverride=localStorage.getItem('ob_pc_accent')||'';}catch(_){}
+    var theme=themeOverride||pref.theme||'system';
+    var dark=theme==='dark'||(theme==='system'&&window.matchMedia&&window.matchMedia('(prefers-color-scheme: dark)').matches);
+    var accents={
+      emerald:{primary:'#00D977',secondary:'#00B965',deep:'#064B30',fg:'#050806'},
+      blue:{primary:'#4DA3FF',secondary:'#2E86E8',deep:'#0A2547',fg:'#030B16'},
+      red:{primary:'#FF5F56',secondary:'#E8443B',deep:'#4A0E0A',fg:'#1B0402'},
+      purple:{primary:'#A78BFA',secondary:'#8B5CF6',deep:'#2A1650',fg:'#120826'},
+      amber:{primary:'#FFB224',secondary:'#E89B0C',deep:'#4A3200',fg:'#1D1200'}
+    };
+    var a=accents[accentOverride||pref.accent]||accents.emerald;
+    var p=dark?
+      {bg:'#050806',card:'#101713',fg:'#F3F7F4',muted:'#151E18',mutedFg:'#8A978F',border:'rgba(255,255,255,.10)',destructive:'#FF6868',success:'#35D98A',warning:'#F3B94F'}:
+      {bg:'#F3F7F4',card:'#FFFFFF',fg:'#0B100D',muted:'#E8F1EC',mutedFg:'#4A5550',border:'rgba(11,16,13,.18)',destructive:'#B42318',success:'#008A51',warning:'#996515'};
+    p.primary=a.primary;p.primaryFg=a.fg;p.accent=a.deep;
+    Object.keys(p).forEach(function(k){document.documentElement.style.setProperty('--'+k,p[k]);});
+    document.documentElement.dataset.theme=dark?'dark':'light';
+    var themeSelect=el('pcTheme'),accentSelect=el('pcAccent');
+    if(themeSelect)themeSelect.value=themeOverride||pref.theme||'system';
+    if(accentSelect)accentSelect.value=accentOverride||pref.accent||'emerald';
+  }
+
   var el = function(id){ return document.getElementById(id); };
 
   function esc(s){ var d=document.createElement('div'); d.textContent=s==null?'':String(s); return d.innerHTML; }
@@ -832,16 +858,31 @@ html.desktop-mode #login{
     mem.innerHTML='<div class="card"><h3>'+t('memory')+'</h3>'+
       (s.memories.length? s.memories.map(function(x){return '<div class="meta">🔖 '+esc(x.title)+' <span class="pill '+(x.active?'ok':'')+'">'+(x.active?t('active'):t('inactive'))+'</span></div>';}).join(''):'<div class="meta">'+t('none')+'</div>')+'</div>';
     var d=s.device;
+    var storedTheme='',storedAccent='';
+    try{storedTheme=localStorage.getItem('ob_pc_theme')||'';storedAccent=localStorage.getItem('ob_pc_accent')||'';}catch(_){}
+    var selectedTheme=storedTheme||((s.appearance&&s.appearance.theme)||'system');
+    var selectedAccent=storedAccent||((s.appearance&&s.appearance.accent)||'emerald');
     set.innerHTML='<div class="card"><h3>'+t('settings')+'</h3>'+
       '<div class="meta">'+t('model')+': '+esc(s.provider.name)+' — '+esc(s.provider.model||'—')+'</div>'+
       '<div class="meta">'+t('device')+': <span class="pill '+(s.agent.deviceControlEnabled&&d.available&&d.serviceOn?'ok':'warn')+'">'+
-      (s.agent.deviceControlEnabled ? (d.available ? (d.serviceOn?t('on'):t('off')) : 'Android only') : t('off'))+'</span></div></div>';
+      (s.agent.deviceControlEnabled ? (d.available ? (d.serviceOn?t('on'):t('off')) : 'Android only') : t('off'))+'</span></div>'+
+      '<div class="themeControls"><label>Theme<select id="pcTheme">'+
+      '<option value="system" '+(selectedTheme==='system'?'selected':'')+'>Sync with phone / system</option>'+
+      '<option value="dark" '+(selectedTheme==='dark'?'selected':'')+'>Dark</option>'+
+      '<option value="light" '+(selectedTheme==='light'?'selected':'')+'>Light</option></select></label>'+
+      '<label>Accent<select id="pcAccent">'+
+      '<option value="emerald" '+(selectedAccent==='emerald'?'selected':'')+'>Emerald</option>'+
+      '<option value="blue" '+(selectedAccent==='blue'?'selected':'')+'>Blue</option>'+
+      '<option value="red" '+(selectedAccent==='red'?'selected':'')+'>Red</option>'+
+      '<option value="purple" '+(selectedAccent==='purple'?'selected':'')+'>Purple</option>'+
+      '<option value="amber" '+(selectedAccent==='amber'?'selected':'')+'>Amber</option></select></label></div>'+
+      '<div class="meta">Theme changes on this PC page only. Use “Sync with phone / system” to follow saved settings.</div></div>';
   }
 
   function poll(){
     fetch('/api/state?token='+encodeURIComponent(token)).then(function(r){return r.json();}).then(function(s){
       if(!s.ok){ logout(); return; }
-      lastState=s; renderPanels(s);
+      lastState=s; applyAppearance(s.appearance||{}); renderPanels(s);
       el('subtitle').textContent = s.activeTitle + ' · ' + s.provider.name + ' · ' + (s.provider.model||'—');
       var chat=el('chat');
       var key = s.messages.length + ':' + (s.messages.length? s.messages[s.messages.length-1].content.length:0);
@@ -895,6 +936,11 @@ html.desktop-mode #login{
   el('stop').addEventListener('click',function(){ fetch('/api/stop',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({token:token})}).then(function(){poll();}); });
   el('newChat').addEventListener('click',function(){ fetch('/api/new',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({token:token})}).then(function(){lastCount=-1;poll();}); });
   el('lang').addEventListener('change',function(e){ lang=e.target.value; localStorage.setItem('ob_lang',lang); applyLang(); });
+  document.addEventListener('change',function(e){
+    if(!e.target||!e.target.id)return;
+    if(e.target.id==='pcTheme'){try{if(e.target.value==='system')localStorage.removeItem('ob_pc_theme');else localStorage.setItem('ob_pc_theme',e.target.value);}catch(_){}applyAppearance(lastState&&lastState.appearance);}
+    if(e.target.id==='pcAccent'){try{if(e.target.value==='emerald')localStorage.removeItem('ob_pc_accent');else localStorage.setItem('ob_pc_accent',e.target.value);}catch(_){}applyAppearance(lastState&&lastState.appearance);}
+  });
   document.addEventListener('click',function(e){
     if(e.target.classList && e.target.classList.contains('cp')){
       var span=document.getElementById(e.target.getAttribute('data-code'));

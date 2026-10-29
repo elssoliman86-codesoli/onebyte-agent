@@ -1,6 +1,7 @@
 import React, { useCallback, useEffect, useMemo, useState } from 'react';
 import {
   Platform,
+  useColorScheme,
   Pressable,
   ScrollView,
   StyleSheet,
@@ -10,6 +11,7 @@ import {
 import { Feather } from '@expo/vector-icons';
 import { router, usePathname } from 'expo-router';
 import { useAssistant } from '@/src/assistant';
+import { ACCENTS, type AccentKey } from '@/constants/colors';
 import { useWorkspace } from '@/src/workspace';
 import { formatContext } from '@/src/model-catalog';
 import { DesktopActivity as DesktopActivityPanel } from './DesktopActivity';
@@ -458,7 +460,44 @@ export function DesktopShell({ children }: { children?: React.ReactNode }) {
   // Default: inspector open only when the viewport is wide enough.
   const inspectorShown = inspectorOverride === null ? wideEnough : inspectorOverride;
 
-  const { createSession } = useAssistant();
+  const { createSession, appearance } = useAssistant();
+  const systemScheme = useColorScheme();
+
+  // The desktop workspace follows the user's saved app theme and accent too;
+  // its CSS variables are kept separate from mobile tokens/layout.
+  useEffect(() => {
+    if (Platform.OS !== 'web' || typeof document === 'undefined') return;
+    const media = typeof window !== 'undefined' && typeof window.matchMedia === 'function'
+      ? window.matchMedia('(prefers-color-scheme: dark)')
+      : null;
+    const applyTheme = () => {
+      const preference = appearance?.theme ?? 'system';
+      const dark = preference === 'dark' || (preference === 'system' && (systemScheme === 'dark' || media?.matches === true));
+      const accentKey = (appearance?.accent ?? 'emerald') as AccentKey;
+      const accent = ACCENTS[accentKey] ?? ACCENTS.emerald;
+      const palette: Record<string, string> = dark ? {
+        background: '#050806', surface: '#101713', 'surface-secondary': '#151E18', 'surface-raised': '#1B2820',
+        text: '#F3F7F4', 'text-muted': '#8A978F', border: 'rgba(255,255,255,0.10)', 'border-strong': accent.borderHighlighted,
+        success: '#35D98A', warning: '#F3B94F', error: '#FF6868',
+      } : {
+        background: '#F3F7F4', surface: '#FFFFFF', 'surface-secondary': '#E8F1EC', 'surface-raised': '#DCE8E0',
+        text: '#0B100D', 'text-muted': '#4A5550', border: 'rgba(11,16,13,0.18)', 'border-strong': accent.borderHighlighted,
+        success: '#008A51', warning: '#996515', error: '#B42318',
+      };
+      palette.accent = accent.primary;
+      palette['accent-hover'] = accent.secondary;
+      palette['accent-soft'] = accent.glow;
+      palette['accent-glow'] = accent.glowStrong;
+      Object.entries(palette).forEach(([key, value]) => {
+        document.documentElement.style.setProperty('--ob-dt-' + key, value);
+      });
+      document.documentElement.dataset.onebyteDesktopTheme = dark ? 'dark' : 'light';
+    };
+    applyTheme();
+    if (appearance?.theme && appearance.theme !== 'system') return;
+    media?.addEventListener?.('change', applyTheme);
+    return () => media?.removeEventListener?.('change', applyTheme);
+  }, [appearance?.theme, appearance?.accent, systemScheme]);
   const handleNewChat = useCallback(() => {
     void (async () => {
       await createSession();

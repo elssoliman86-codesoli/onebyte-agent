@@ -445,6 +445,19 @@ export default function BrowserScreen() {
                 {'\n'}Response preview: {selectedNetworkEntry.responsePreview || '(not available)'}
                 {selectedNetworkEntry.error ? '\nError: ' + selectedNetworkEntry.error : ''}
               </Text>
+              <Pressable
+                accessibilityRole="button"
+                onPress={() => router.push({ pathname: '/(tabs)/hunter', params: {
+                  capturedMethod: selectedNetworkEntry.method,
+                  capturedUrl: selectedNetworkEntry.url,
+                  capturedHeaders: JSON.stringify(selectedNetworkEntry.requestHeaders),
+                  capturedBody: (selectedNetworkEntry.requestBody || '').slice(0, 4000),
+                  capturedAt: selectedNetworkEntry.id,
+                } })}
+                style={[styles.networkToLabButton, { backgroundColor: colors.primary }]}
+              >
+                <Text style={[styles.networkToLabText, { color: colors.primaryForeground }]}>استخدام الطلب في مختبر HTTP</Text>
+              </Pressable>
             </ScrollView>
           ) : null}
         </View>
@@ -526,7 +539,7 @@ export default function BrowserScreen() {
               waiter.reject(new Error(message));
             });
           }}
-          onHttpError={(event) => setBrowserError('فشل تحميل الصفحة: ' + event.nativeEvent.description + ' (رمز ' + event.nativeEvent.code + ').')}
+          onHttpError={(event) => setBrowserError('فشل تحميل الصفحة: ' + event.nativeEvent.description)}
           onMessage={(event) => {
             try {
               const data = JSON.parse(event.nativeEvent.data);
@@ -594,6 +607,8 @@ const styles = StyleSheet.create({
   networkUrl: { fontSize: 10, lineHeight: 14, textAlign: 'left' },
   networkDetails: { maxHeight: 110, borderTopWidth: 1, paddingTop: 6 },
   networkDetailsText: { fontSize: 10, lineHeight: 15, textAlign: 'left' },
+  networkToLabButton: { alignSelf: 'flex-start', borderRadius: 8, marginTop: 8, paddingHorizontal: 12, paddingVertical: 8 },
+  networkToLabText: { fontSize: 11, fontWeight: '800' },
   networkError: { fontSize: 11, lineHeight: 16 },
   webview: { flex: 1 },
   empty: { flex: 1, alignItems: 'center', justifyContent: 'center', gap: 12, padding: 26 },
