@@ -581,6 +581,7 @@ export default function ChatScreen() {
     setActiveSession,
     deleteSession,
     appendMessage,
+    upsertMessage,
     replaceSessionMessages,
     consumePendingPrompt,
     saveAgentSettings,
@@ -1203,25 +1204,51 @@ export default function ChatScreen() {
     let assistantPersisted = false;
     let responseForCaller = '';
 
+    const buildResponseMessage = (): ChatMessage => ({
+      id: responseId,
+      role: 'assistant',
+      content: fullResponse,
+      createdAt: responseCreatedAt,
+      steps,
+    });
+    const queueStreamingCheckpoint = () => {
+      const snapshot = buildResponseMessage();
+      persistQueue = persistQueue
+        .catch(() => undefined)
+        .then(() => upsertMessage(sessionId, snapshot))
+        .catch((error) => console.warn('[chat] Streaming checkpoint failed:', error));
+    };
+    const persistStreamingCheckpoint = (force = false) => {
+      if (persistTimer) {
+        clearTimeout(persistTimer);
+        persistTimer = null;
+      }
+      const elapsed = Date.now() - lastPersistAt;
+      if (force || elapsed >= 1000) {
+        lastPersistAt = Date.now();
+        queueStreamingCheckpoint();
+      } else {
+        persistTimer = setTimeout(() => {
+          persistTimer = null;
+          lastPersistAt = Date.now();
+          queueStreamingCheckpoint();
+        }, 1000 - elapsed);
+      }
+    };
     const publish = () => {
       // The user may have switched to another chat while the run is in flight;
       // keep streaming output out of that chat's local message list.
       if (visibleSessionIdRef.current !== sessionId) return;
       setStreamText(fullResponse);
       setMessages((current) => {
-        const responseMessage: ChatMessage = {
-          id: responseId,
-          role: 'assistant',
-          content: fullResponse,
-          createdAt: new Date().toISOString(),
-          steps,
-        };
+        const responseMessage = buildResponseMessage();
         const existing = current.findIndex((item) => item.id === responseId);
         if (existing === -1) return [...current, responseMessage];
         const updated = [...current];
         updated[existing] = responseMessage;
         return updated;
       });
+      if (fullResponse.trim() || steps.length) persistStreamingCheckpoint();
     };
 
     try {
@@ -1352,28 +1379,19 @@ export default function ChatScreen() {
       if (!fullResponse.trim()) fullResponse = 'تم تنفيذ الخطوات المطلوبة.';
       responseForCaller = fullResponse;
       publish();
-      await appendMessage(sessionId, {
-        id: responseId,
-        role: 'assistant',
-        content: fullResponse,
-        createdAt: new Date().toISOString(),
-        steps,
-      });
+      if (persistTimer) { clearTimeout(persistTimer); persistTimer = null; }
+      await persistQueue;
+      await upsertMessage(sessionId, buildResponseMessage());
       assistantPersisted = true;
     } catch (caught) {
       const stopped = controller.signal.aborted;
       setPlanDone('fail');
+      if (persistTimer) { clearTimeout(persistTimer); persistTimer = null; }
+      await persistQueue;
       if (!assistantPersisted && (fullResponse.trim() || steps.length)) {
-        // Keep what was already produced so nothing the agent did is lost from history.
-        // Skipped if the append above already ran, otherwise a storage failure would
-        // leave two copies of the same response (commit updates memory before disk).
-        await appendMessage(sessionId, {
-          id: responseId,
-          role: 'assistant',
-          content: (fullResponse.trim() || 'توقفت المهمة.') + (stopped ? '\n\n(أوقفتَ المهمة)' : ''),
-          createdAt: new Date().toISOString(),
-          steps,
-        }).catch(() => undefined);
+        const partialMessage = buildResponseMessage();
+        partialMessage.content = (fullResponse.trim() || 'توقفت المهمة.') + (stopped ? '\n\n(أوقفتَ المهمة)' : '');
+        await upsertMessage(sessionId, partialMessage).catch(() => undefined);
       }
       if (!stopped) {
         setError(
