@@ -4,7 +4,7 @@ import { getEmbeddedBrowser, waitForEmbeddedBrowser } from './embedded-browser';
 import { isAuthorized, loadTargets } from './hunter';
 import { fetchWithRetry } from './fetch-with-retry';
 import * as Device from './device';
-import { createFile, getRepoTree, listRepos, loadGithubToken, readFileSnapshot, verifyGithubToken, writeFile } from './github';
+import { createFile, getDefaultBranch, getRepoTree, listRepos, loadGithubToken, readFileSnapshot, verifyGithubToken, writeFile } from './github';
 import type {
   AssistantMemory,
   AssistantSkill,
@@ -66,14 +66,14 @@ export const TOOL_SPECS: ToolSpec[] = [
     group: 'local',
     label: 'تعديل ملف GitHub',
     description: 'Replace the complete contents of an existing text file and create a GitHub commit. Read the file first, preserve unrelated code, pass the exact current SHA as expected_sha, and use a concise commit message. Report the actual commit URL returned.',
-    parameters: obj({ repository: { type: 'string' }, path: { type: 'string' }, content: { type: 'string' }, message: { type: 'string' }, branch: { type: 'string' }, expected_sha: { type: 'string' } }, ['repository', 'path', 'content', 'message', 'branch', 'expected_sha']),
+    parameters: obj({ repository: { type: 'string' }, path: { type: 'string' }, content: { type: 'string' }, message: { type: 'string' }, branch: { type: 'string' }, expected_sha: { type: 'string' } }, ['repository', 'path', 'content', 'message', 'expected_sha']),
   },
   {
     name: 'github_create_file',
     group: 'local',
     label: 'إنشاء ملف GitHub',
     description: 'Create a new text file in a repository and commit it. Never overwrite existing files; if the path exists, read it and use github_update_file.',
-    parameters: obj({ repository: { type: 'string' }, path: { type: 'string' }, content: { type: 'string' }, message: { type: 'string' }, branch: { type: 'string' } }, ['repository', 'path', 'content', 'message', 'branch']),
+    parameters: obj({ repository: { type: 'string' }, path: { type: 'string' }, content: { type: 'string' }, message: { type: 'string' }, branch: { type: 'string' } }, ['repository', 'path', 'content', 'message']),
   },
 
   {
@@ -498,16 +498,16 @@ export async function executeTool(
       if (!token) throw new Error('GitHub غير متصل داخل OneByte. أضف التوكن من إعدادات GitHub أولًا.');
       const repository = str(args, 'repository').trim();
       const path = str(args, 'path').trim();
-      const branch = typeof args.branch === 'string' && args.branch.trim() ? args.branch.trim() : undefined;
+      const branch = typeof args.branch === 'string' && args.branch.trim() ? args.branch.trim() : await getDefaultBranch(token, repository);
       const file = await readFileSnapshot(token, repository, path, branch);
-      return JSON.stringify({ repository, path, branch: branch ?? 'default branch', sha: file.sha, size: file.size, content: file.content, url: 'https://github.com/' + repository + '/blob/' + encodeURIComponent(branch ?? 'main') + '/' + path.split('/').map(encodeURIComponent).join('/') });
+      return JSON.stringify({ repository, path, branch, sha: file.sha, size: file.size, content: file.content, url: 'https://github.com/' + repository + '/blob/' + encodeURIComponent(branch) + '/' + path.split('/').map(encodeURIComponent).join('/') });
     }
     case 'github_update_file': {
       const token = await loadGithubToken();
       if (!token) throw new Error('GitHub غير متصل داخل OneByte. أضف التوكن من إعدادات GitHub أولًا.');
       const repository = str(args, 'repository').trim();
       const path = str(args, 'path').trim();
-      const branch = str(args, 'branch').trim();
+      const branch = typeof args.branch === 'string' && args.branch.trim() ? args.branch.trim() : await getDefaultBranch(token, repository);
       const expectedSha = str(args, 'expected_sha').trim();
       const content = typeof args.content === 'string' ? args.content : '';
       const result = await writeFile(token, repository, path, content, str(args, 'message'), branch, expectedSha);
@@ -518,7 +518,7 @@ export async function executeTool(
       if (!token) throw new Error('GitHub غير متصل داخل OneByte. أضف التوكن من إعدادات GitHub أولًا.');
       const repository = str(args, 'repository').trim();
       const path = str(args, 'path').trim();
-      const branch = str(args, 'branch').trim();
+      const branch = typeof args.branch === 'string' && args.branch.trim() ? args.branch.trim() : await getDefaultBranch(token, repository);
       const content = typeof args.content === 'string' ? args.content : '';
       const result = await createFile(token, repository, path, content, str(args, 'message'), branch);
       return JSON.stringify({ ...result, repository, path, branch, message: 'تم إنشاء الملف وحفظه في commit فعلي على GitHub.' });
