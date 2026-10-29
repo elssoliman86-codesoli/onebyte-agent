@@ -4,6 +4,8 @@ import {
 } from 'react-native';
 import { Feather } from '@expo/vector-icons';
 import { SafeAreaView } from 'react-native-safe-area-context';
+import { router } from 'expo-router';
+import { useAssistant } from '@/src/assistant';
 import { ScreenTopBar } from '@/components/PhoneDrawer';
 import { useColors } from '@/hooks/useColors';
 import {
@@ -33,6 +35,7 @@ type Tone = 'info' | 'success' | 'error';
 
 export default function GithubProjectsScreen() {
   const colors = useColors();
+  const { setPendingPrompt } = useAssistant();
   const [token, setToken] = useState('');
   const [tokenDraft, setTokenDraft] = useState('');
   const [account, setAccount] = useState('');
@@ -289,6 +292,21 @@ export default function GithubProjectsScreen() {
                 <Text style={[styles.cardTitle, { color: fg }]}>{selectedRepo.full_name}</Text>
               </View>
               <Text style={[styles.help, { color: muted }]}>{selectedRepo.default_branch}</Text>
+            </View>
+            <View style={styles.buttonRow}>
+              <Action
+                label="اطلب من المساعد تعديل المشروع"
+                icon="message-circle"
+                primary
+                disabled={busy}
+                onPress={() => {
+                  const repoUrl = `https://github.com/${selectedRepo.full_name}`;
+                  setPendingPrompt(
+                    `مهمة GitHub للمستودع ${selectedRepo.full_name} (الفرع الافتراضي: ${selectedRepo.default_branch || 'main'}). افتح ${repoUrl} داخل متصفح OneByte المدمج باستخدام أداة open_url، ولا تفتح متصفح الجهاز الخارجي. إذا لم أكن مسجّل الدخول، توقف واطلب مني تسجيل الدخول يدويًا داخل المتصفح المدمج، ولا تطلب PAT أو كلمة المرور ولا تتجاوز MFA/CAPTCHA. بعد تسجيل الدخول، اقرأ صفحة المستودع، افهم الطلب الذي سأكتبه بعد فتح الشات، عدّل الملفات من واجهة GitHub فقط، راجع diff، ثم احفظ التغييرات وأعد رابط commit أو Pull Request وتحقق أن GitHub أكد الحفظ. لا تدّعِ نجاح أي تعديل لم يتم التحقق منه.`,
+                  );
+                  router.push('/(tabs)');
+                }}
+              />
             </View>
             <TextInput value={fileQuery} onChangeText={setFileQuery} placeholder="ابحث في ملفات المشروع…" placeholderTextColor={muted} style={[styles.input, { color: fg, backgroundColor: colors.background, borderColor: colors.border }]} />
             <View style={styles.listBox}>
