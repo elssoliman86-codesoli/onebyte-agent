@@ -318,7 +318,6 @@ export default function GithubProjectsScreen() {
                 primary
                 disabled={busy}
                 onPress={() => {
-                  const repoUrl = `https://github.com/${selectedRepo.full_name}`;
                   setPendingPrompt(
                     `مهمة GitHub عبر API للمستودع ${selectedRepo.full_name} (الفرع الافتراضي: ${selectedRepo.default_branch || 'main'}). لا تفتح أي متصفح. استخدم أدوات GitHub المخصصة في الشات: github_list_files لمعرفة الملفات، github_read_file لقراءة الملف قبل التعديل، ثم github_update_file مع expected_sha الحالي للحفظ الآمن، أو github_create_file للملف الجديد. استخدم الفرع ${selectedRepo.default_branch || 'main'}، وراجع النتيجة التي ترجعها الأداة، ثم أرسل رابط الملف ورابط الـcommit الفعلي. إذا لم يتوفر توكن GitHub في OneByte، اطلب مني الاتصال من شاشة GitHub Projects ولا تطلب التوكن داخل الشات. لا تدّعِ نجاح أي تعديل لم يتم التحقق منه.`,
                   );
