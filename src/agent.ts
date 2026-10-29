@@ -277,7 +277,7 @@ export async function runAgent({
   const repeatedDeviceActions = new Set<string>();
   const repeatedWebReads = new Map<string, number>();
   let webReadActions = 0;
-  let stopForWebLoop = false;
+  let forceFinalResponse = false;
   let deviceActionsExecuted = 0;
   let lastScreenSnapshot: string | null = null;
   let screenNeedsRefresh = false;
@@ -335,7 +335,7 @@ export async function runAgent({
           settings,
           apiKey,
           messages: wire,
-          specs: round === maxSteps ? [] : activeSpecs,
+          specs: round === maxSteps || forceFinalResponse ? [] : activeSpecs,
           onText: (chunk) => {
             roundText += chunk;
             onText(finalText + roundText);
@@ -381,19 +381,21 @@ export async function runAgent({
     for (const call of result.toolCalls) {
       if (signal?.aborted) throw new Error('تم إيقاف المهمة.');
       const spec = specs.find((s) => s.name === call.name);
-      const isWebReadTool = ['web_search', 'open_url', 'browser_navigate', 'browser_read_page'].includes(call.name);
+      const isWebReadTool = ['web_search', 'web_fetch', 'open_url', 'browser_navigate', 'browser_read_page'].includes(call.name);
       let webLoopMessage = '';
-      if (isWebReadTool) {
+      if (forceFinalResponse) {
+        webLoopMessage = 'تم إيقاف استدعاءات الأدوات الإضافية لتجنب الدوران. لخّص النتائج التي جُمعت بالفعل الآن.';
+      } else if (isWebReadTool) {
         webReadActions += 1;
         const signature = call.name + ':' + (call.arguments || '{}').replace(/\s+/g, '');
         const repeated = (repeatedWebReads.get(signature) ?? 0) + 1;
         repeatedWebReads.set(signature, repeated);
         if (repeated >= 2) {
-          webLoopMessage = 'توقفت عن تكرار نفس عملية البحث/قراءة الصفحة. استخدم النتائج التي تم جمعها بالفعل وقدّم إجابة مباشرة للمستخدم.';
-          stopForWebLoop = true;
+          webLoopMessage = 'تم منع تكرار نفس عملية البحث أو قراءة الصفحة. لخّص النتائج المتاحة بدل إعادة المحاولة.';
+          forceFinalResponse = true;
         } else if (webReadActions > 8) {
-          webLoopMessage = 'وصلت إلى حد 8 عمليات بحث/قراءة ويب في هذه المهمة لتجنب الدوران. لخّص النتائج المتاحة الآن.';
-          stopForWebLoop = true;
+          webLoopMessage = 'تم الوصول إلى حد 8 عمليات بحث/قراءة ويب. لخّص النتائج المتاحة الآن.';
+          forceFinalResponse = true;
         }
       }
       let args: Record<string, unknown> = {};
@@ -488,15 +490,7 @@ export async function runAgent({
       });
       // Save checkpoint after each tool execution
       await saveCheckpoint(round);
-      if (stopForWebLoop) break;
-    }
 
-    if (stopForWebLoop) {
-      const message = 'أوقفت تكرار البحث حتى لا تظل المهمة معلّقة. هذه هي النتائج المتاحة حتى الآن؛ إذا كانت غير كافية، حدّد ما الذي ينقص بدل إعادة فتح الروابط نفسها.';
-      finalText = [finalText.trim(), message].filter(Boolean).join('\n\n');
-      onText(finalText);
-      await saveCheckpoint(maxSteps + 1);
-      break;
     }
 
     if (stopForDeviceActionLimit) {
