@@ -45,6 +45,8 @@ export default function GithubProjectsScreen() {
   const [deviceAuth, setDeviceAuth] = useState<GithubDeviceAuthorization | null>(null);
   const [deviceFlowBusy, setDeviceFlowBusy] = useState(false);
   const [account, setAccount] = useState('');
+  const [tokenScopes, setTokenScopes] = useState<string[]>([]);
+  const [acceptedScopes, setAcceptedScopes] = useState<string[]>([]);
   const [editingToken, setEditingToken] = useState(false);
   const [repos, setRepos] = useState<GhRepo[]>([]);
   const [repoQuery, setRepoQuery] = useState('');
@@ -90,6 +92,8 @@ export default function GithubProjectsScreen() {
       if (save) await saveGithubToken(clean);
       setToken(clean);
       setAccount(profile.login);
+      setTokenScopes(profile.scopes);
+      setAcceptedScopes(profile.acceptedScopes);
       setEditingToken(false);
       const loaded = await listRepos(clean);
       setRepos(loaded);
@@ -154,6 +158,8 @@ export default function GithubProjectsScreen() {
         const loaded = await listRepos(poll.accessToken);
         setToken(poll.accessToken);
         setAccount(profile.login);
+        setTokenScopes(profile.scopes);
+        setAcceptedScopes(profile.acceptedScopes);
         setRepos(loaded);
         setEditingToken(false);
         setDeviceAuth(null);
