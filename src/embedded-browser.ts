@@ -7,7 +7,6 @@ export interface EmbeddedBrowserElement {
   placeholder?: string;
   href?: string;
   disabled: boolean;
-  /** Password controls are never exposed as writable fields. */
   password?: boolean;
 }
 
@@ -19,7 +18,6 @@ export interface EmbeddedBrowserSnapshot {
 }
 
 export type EmbeddedBrowserNetworkSource = 'fetch' | 'xhr' | 'beacon' | 'navigation';
-
 export interface EmbeddedBrowserNetworkEntry {
   id: string;
   source: EmbeddedBrowserNetworkSource;
@@ -35,6 +33,7 @@ export interface EmbeddedBrowserNetworkEntry {
   responsePreview?: string;
   error?: string;
 }
+
 export interface EmbeddedBrowserRequestResult {
   url: string;
   status: number;
@@ -56,7 +55,7 @@ export interface EmbeddedBrowserDriver {
   wait(ms: number): Promise<string>;
   getNetworkLog(): Promise<EmbeddedBrowserNetworkEntry[]>;
   clearNetworkLog(): Promise<void>;
-  sendRequest(input): {
+  sendRequest(input: {
     url: string;
     method: string;
     headers: Record<string, string>;
@@ -70,16 +69,17 @@ const driverWaiters = new Set<{
   resolve: (driver: EmbeddedBrowserDriver) => void;
   reject: (error: Error) => void;
   timer: ReturnType<typeof setTimeout>;
+  afterDriver?: EmbeddedBrowserDriver | null;
 }>();
 
 export function registerEmbeddedBrowser(driver: EmbeddedBrowserDriver): () => void {
   activeDriver = driver;
-  for (const waiter of driverWaiters) {
+  for (const waiter of [...driverWaiters]) {
+    if (waiter.afterDriver && waiter.afterDriver === driver) continue;
     clearTimeout(waiter.timer);
     waiter.resolve(driver);
+    driverWaiters.delete(waiter);
   }
-  driverWaiters.clear();
-
   return () => {
     if (activeDriver === driver) activeDriver = null;
   };
@@ -89,12 +89,16 @@ export function getEmbeddedBrowser(): EmbeddedBrowserDriver | null {
   return activeDriver;
 }
 
-export function waitForEmbeddedBrowser(timeoutMs = 15_000): Promise<EmbeddedBrowserDriver> {
-  if (activeDriver) return Promise.resolve(activeDriver);
+export function waitForEmbeddedBrowser(
+  timeoutMs = 15_000,
+  afterDriver?: EmbeddedBrowserDriver | null,
+): Promise<EmbeddedBrowserDriver> {
+  if (activeDriver && activeDriver !== afterDriver) return Promise.resolve(activeDriver);
   return new Promise((resolve, reject) => {
     const waiter = {
       resolve,
       reject,
+      afterDriver,
       timer: setTimeout(() => {
         driverWaiters.delete(waiter);
         reject(new Error('المتصفح المدمج لم يصبح جاهزًا. ارجع للشات وافتحه مرة أخرى.'));

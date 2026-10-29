@@ -70,18 +70,33 @@ export function hostOf(url: string): string {
   }
 }
 
-/** Is this URL inside an authorized scope (exact host or subdomain of one)? */
+/** Match a hostname against a saved host or HackerOne-style *.example.com entry. */
+export function targetMatchesHost(targetHost: string, actualHost: string): boolean {
+  const target = targetHost.trim().toLowerCase().replace(/\.$/, '');
+  const host = actualHost.trim().toLowerCase().replace(/\.$/, '');
+  if (!target || !host) return false;
+  if (target.startsWith('*.')) {
+    const root = target.slice(2);
+    // A wildcard covers subdomains, not the apex itself.
+    return host !== root && host.endsWith('.' + root);
+  }
+  return host === target || host.endsWith('.' + target);
+}
+
+export function findAuthorizedTarget(url: string, targets: HunterTarget[]): HunterTarget | null {
+  const host = hostOf(url);
+  if (!host) return null;
+  return targets.find((target) => targetMatchesHost(target.host, host)) ?? null;
+}
+
+/** Is this URL inside an authorized scope (exact host, wildcard, or saved subdomain tree)? */
 export function isAuthorized(url: string, targets: HunterTarget[]): { ok: boolean; reason: string } {
   const host = hostOf(url);
   if (!host) return { ok: false, reason: 'الرابط غير صالح.' };
   if (!targets.length) {
     return { ok: false, reason: 'أضف تارجت مصرحًا به أولًا — الإرسال خارج السكوب مرفوض.' };
   }
-  const match = targets.find(
-    (t) =>
-      host === t.host.toLowerCase() ||
-      host.endsWith('.' + t.host.toLowerCase()),
-  );
+  const match = findAuthorizedTarget(url, targets);
   if (!match) {
     return { ok: false, reason: `النطاق ${host} مش في قايمة التارجت المصرح بيها.` };
   }
