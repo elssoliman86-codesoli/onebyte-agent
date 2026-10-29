@@ -471,6 +471,8 @@ export default function BrowserScreen() {
           ref={webRef}
           source={webSource}
           style={styles.webview}
+          // Request desktop layouts (not mobile pages) in the embedded browser.
+          userAgent={Platform.OS === 'android' ? 'Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36' : undefined}
           originWhitelist={['http://*', 'https://*']}
           javaScriptEnabled
           domStorageEnabled
