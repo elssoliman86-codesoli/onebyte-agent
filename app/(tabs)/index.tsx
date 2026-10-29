@@ -22,6 +22,7 @@ import { router } from 'expo-router';
 import * as ImagePicker from 'expo-image-picker';
 import * as DocumentPicker from 'expo-document-picker';
 import * as FileSystem from 'expo-file-system/legacy';
+import { strFromU8, unzipSync } from 'fflate';
 import { Image as RNImage } from 'react-native';
 import { useColors } from '@/hooks/useColors';
 import {
@@ -592,6 +593,9 @@ export default function ChatScreen() {
   const [contextInfo, setContextInfo] = useState('');
   const [attachImages, setAttachImages] = useState<string[]>([]);
   const [attachFiles, setAttachFiles] = useState<{ name: string; content: string }[]>([]);
+  const [terminalOpen, setTerminalOpen] = useState(false);
+  const [terminalLogs, setTerminalLogs] = useState<string[]>([]);
+  const [terminalBusy, setTerminalBusy] = useState(false);
   const [attachMenuVisible, setAttachMenuVisible] = useState(false);
   const [previewHtml, setPreviewHtml] = useState<string | null>(null);
   const abortRef = useRef<AbortController | null>(null);
@@ -794,54 +798,96 @@ export default function ChatScreen() {
     }
   }
 
-  /**
-   * Attach text-based files (.md/.txt/code/csv/json) whose content is embedded
-   * in the prompt, plus ZIP archives (name+size only — the archive stays
-   * binary and is never unpacked; the model is told that honestly).
-   * Unlimited files per message.
-   */
+  function logTerminal(line: string) {
+    setTerminalLogs((current) => [...current.slice(-59), `[${new Date().toLocaleTimeString()}] ${line}`]);
+    setTerminalOpen(true);
+  }
+
+  /** Read text/code files and inspect supported text entries in ZIPs in memory. */
   async function attachFilesPicker(options?: { zipsOnly?: boolean }) {
     try {
       const result = await DocumentPicker.getDocumentAsync({
         type: options?.zipsOnly
           ? ['application/zip', 'application/x-zip-compressed', 'application/octet-stream']
-          : [
-              'text/*', 'text/markdown', 'text/plain', 'text/csv',
-              'application/json', 'application/xml', 'application/javascript',
-              'application/x-yaml', 'application/octet-stream',
-              'application/zip', 'application/x-zip-compressed',
-            ],
+          : ['text/*', 'text/markdown', 'text/plain', 'text/csv', 'application/json', 'application/xml', 'application/javascript', 'application/x-yaml', 'application/octet-stream', 'application/zip', 'application/x-zip-compressed'],
         copyToCacheDirectory: true,
         multiple: true,
       });
       if (result.canceled || !result.assets?.length) return;
+      setTerminalBusy(true);
+      logTerminal(`بدأ فحص ${result.assets.length} ملف/ملفات.`);
       const loaded: { name: string; content: string }[] = [];
       for (const file of result.assets) {
         const isZip = /\.zip$/i.test(file.name) || /zip/i.test(file.mimeType ?? '');
         if (isZip) {
-          loaded.push({
-            name: file.name,
-            content: `[أرشيف ZIP: ${file.name} — الحجم ${Math.round((file.size ?? 0) / 1024)}KB. الأرشيف ثنائي ولم يُفكّ؛ اطلب من المستخدم فكّه وإرفاق الملفات المطلوبة نصيًا.]`,
-          });
+          logTerminal(`فتح الأرشيف: ${file.name}`);
+          if ((file.size ?? 0) > 20 * 1024 * 1024) {
+            logTerminal(`تخطّي ${file.name}: الحجم أكبر من 20MB.`);
+            continue;
+          }
+          try {
+            const response = await fetch(file.uri);
+            if (!response.ok) throw new Error(`HTTP ${response.status}`);
+            const bytes = new Uint8Array(await response.arrayBuffer());
+            let acceptedCount = 0, acceptedBytes = 0;
+            const supportedText = /\.(txt|md|mdx|json|jsonc|csv|tsv|xml|html?|css|scss|sass|js|jsx|mjs|cjs|ts|tsx|py|ipynb|java|kt|kts|c|h|cc|cpp|hpp|cs|go|rs|php|rb|swift|dart|sql|sh|bash|yml|yaml|toml|ini|properties|gradle|vue|svelte|astro|log|diff|patch)$/i;
+            const entries = unzipSync(bytes, {
+              filter: (entry) => {
+                if (!entry.name || entry.name.endsWith('/') || !supportedText.test(entry.name) || /(^|\/)\.\.(\/|$)/.test(entry.name)) return false;
+                if (entry.originalSize > 200_000 || acceptedCount >= 40 || acceptedBytes + entry.originalSize > 900_000) return false;
+                acceptedCount++; acceptedBytes += entry.originalSize; return true;
+              },
+            });
+            let count = 0, promptChars = 0;
+            for (const [entryPath, data] of Object.entries(entries)) {
+              if (!data || !supportedText.test(entryPath)) continue;
+              let content = strFromU8(data);
+              if (!content || content.includes('\u0000')) {
+                logTerminal(`تخطّي ملف غير نصي: ${entryPath}`);
+                continue;
+              }
+              const remaining = 800_000 - promptChars;
+              if (remaining <= 0) { logTerminal('وصلت إلى حد النص المسموح للأرشيف.'); break; }
+              if (content.length > Math.min(30_000, remaining)) content = content.slice(0, Math.min(30_000, remaining)) + '\n…(مقتطع)';
+              promptChars += content.length;
+              loaded.push({ name: `${file.name} / ${entryPath}`, content });
+              count++;
+              logTerminal(`فكّ وقراءة: ${entryPath} (${data.length.toLocaleString()} bytes)`);
+            }
+            logTerminal(`اكتمل ${file.name}: تمت قراءة ${count} ملف نصي.`);
+          } catch (error) {
+            logTerminal(`فشل فك ${file.name}: ${error instanceof Error ? error.message : 'أرشيف غير صالح أو مشفّر'}`);
+            alertCompat('تعذّر فك ZIP', `لم أستطع قراءة "${file.name}". قد يكون الأرشيف تالفًا أو محميًا بكلمة مرور.`);
+          }
           continue;
         }
         if ((file.size ?? 0) > 400_000) {
+          logTerminal(`تخطّي ${file.name}: أكبر من 400KB.`);
           alertCompat('ملف كبير', `"${file.name}" أكبر من 400KB — تم تجاهله.`);
           continue;
         }
-        const response = await fetch(file.uri);
-        let content = await response.text();
-        if (content.length > 30_000) {
-          content = content.slice(0, 30_000) + '\n…(مقتطع)';
+        try {
+          const response = await fetch(file.uri);
+          let content = await response.text();
+          if (content.includes('\u0000')) { logTerminal(`تخطّي ${file.name}: ملف ثنائي.`); continue; }
+          if (content.length > 30_000) content = content.slice(0, 30_000) + '\n…(مقتطع)';
+          loaded.push({ name: file.name, content });
+          logTerminal(`تم فتح الملف النصي: ${file.name}`);
+        } catch {
+          logTerminal(`فشل فتح الملف: ${file.name}`);
         }
-        loaded.push({ name: file.name, content });
       }
-      if (loaded.length) setAttachFiles((cur) => [...cur, ...loaded]);
+      if (loaded.length) {
+        setAttachFiles((cur) => [...cur, ...loaded]);
+        logTerminal(`تم تجهيز ${loaded.length} ملفًا للإرفاق والتحليل.`);
+      } else logTerminal('لم يتم العثور على ملفات نصية مدعومة.');
     } catch (error) {
-      alertCompat('تعذّر إرفاق الملفات', error instanceof Error ? error.message : 'حاولي مرة أخرى.');
+      logTerminal(`خطأ: ${error instanceof Error ? error.message : 'تعذّر إرفاق الملفات'}`);
+      alertCompat('تعذّر إرفاق الملفات', error instanceof Error ? error.message : 'حاول مرة أخرى.');
+    } finally {
+      setTerminalBusy(false);
     }
   }
-
   function requestApproval(
     spec: ToolSpec,
     args: Record<string, unknown>,
@@ -1552,6 +1598,26 @@ export default function ChatScreen() {
           </View>
         ) : null}
 
+        {terminalLogs.length > 0 ? (
+          <View style={[styles.terminalPanel, { borderColor: colors.border, backgroundColor: colors.card }]}>
+            <Pressable accessibilityRole="button" accessibilityLabel={terminalOpen ? 'إخفاء سجل التيرمنال' : 'عرض سجل التيرمنال'}
+              onPress={() => setTerminalOpen((open) => !open)} style={styles.terminalHeader}>
+              <Feather name={terminalOpen ? 'chevron-down' : 'chevron-right'} size={17} color={colors.primary} />
+              <Feather name="terminal" size={15} color={colors.primary} />
+              <Text style={[styles.terminalTitle, { color: colors.foreground }]}>Terminal · {terminalBusy ? 'يعمل الآن' : 'سجل التنفيذ'}</Text>
+              {terminalBusy ? <ActivityIndicator size="small" color={colors.primary} /> : null}
+              <Text style={[styles.terminalCount, { color: colors.mutedForeground }]}>{terminalLogs.length}</Text>
+            </Pressable>
+            {terminalOpen ? (
+              <ScrollView style={styles.terminalOutput} nestedScrollEnabled>
+                {terminalLogs.map((line, i) => (
+                  <Text key={`${i}-${line}`} style={[styles.terminalLine, { color: line.includes('فشل') || line.includes('خطأ') ? colors.destructive : colors.foreground }]}>{line}</Text>
+                ))}
+              </ScrollView>
+            ) : null}
+          </View>
+        ) : null}
+
         {runPlan ? (
           <View style={[styles.planBar, { borderColor: colors.border, backgroundColor: colors.card }]}>
             <View style={styles.planHead}>
@@ -1673,22 +1739,6 @@ export default function ChatScreen() {
               </Pressable>
             </View>
           ) : null}
-          {/* The model actually in use — visible at all times, tap to change it. */}
-          {provider.model ? (
-            <Pressable
-              accessibilityRole="button"
-              accessibilityLabel={t('modelInUse')}
-              onPress={() => router.push('/(tabs)/settings')}
-              style={[styles.modelChip, { backgroundColor: colors.card, borderColor: colors.border }]}
-            >
-              <Feather name="cpu" size={12} color={colors.primary} />
-              <Text style={[styles.modelChipText, { color: colors.mutedForeground }]} numberOfLines={1}>
-                {t('modelInUse')}: {provider.model}
-                {provider.free ? ' · مجاني' : provider.promptPrice !== null ? ' · مدفوع' : ''}
-              </Text>
-              <Feather name="chevron-left" size={13} color={colors.mutedForeground} />
-            </Pressable>
-          ) : null}
           {pinnedSkill ? (
             <View style={[styles.selectedSkillRow, { backgroundColor: colors.accentSubtle, borderColor: colors.border }]}>
               <Feather name="zap" size={13} color={colors.primary} />
@@ -1807,41 +1857,27 @@ export default function ChatScreen() {
               textAlignVertical="top"
               accessibilityLabel="رسالتك للمساعد"
             />
-            {attachFiles.length ? (
-              <View style={styles.fileChipsRow}>
+            {(attachFiles.length > 0 || attachImages.length > 0) ? (
+              <ScrollView horizontal showsHorizontalScrollIndicator={false} style={styles.attachmentTrayScroll}
+                contentContainerStyle={styles.attachmentTray} keyboardShouldPersistTaps="handled">
                 {attachFiles.map((f, i) => (
-                  <View key={i} style={[styles.fileChip, { backgroundColor: colors.accentSubtle }]}>
-                    <Feather name="file-text" size={11} color={colors.primary} />
-                    <Text style={[styles.fileChipText, { color: colors.primary }]} numberOfLines={1}>
-                      {f.name}
-                    </Text>
-                    <Pressable
-                      accessibilityRole="button"
-                      accessibilityLabel={`إزالة ${f.name}`}
-                      onPress={() => setAttachFiles((cur) => cur.filter((_, idx) => idx !== i))}
-                    >
+                  <View key={`file-${i}-${f.name}`} style={[styles.fileChip, { backgroundColor: colors.accentSubtle }]}>
+                    <Feather name="file-text" size={13} color={colors.primary} />
+                    <Text style={[styles.fileChipText, { color: colors.primary }]} numberOfLines={1}>{f.name}</Text>
+                    <Pressable accessibilityRole="button" accessibilityLabel={`إزالة ${f.name}`} onPress={() => setAttachFiles((cur) => cur.filter((_, idx) => idx !== i))} hitSlop={5}>
                       <Feather name="x" size={13} color={colors.mutedForeground} />
                     </Pressable>
                   </View>
                 ))}
-              </View>
-            ) : null}
-            {attachImages.length ? (
-              <View style={styles.attachPreviewWrap}>
                 {attachImages.map((uri, i) => (
-                  <View key={`${i}-${uri.slice(24, 40)}`} style={styles.attachPreviewItem}>
+                  <View key={`image-${i}-${uri.slice(24, 40)}`} style={styles.attachPreviewItem}>
                     <RNImage source={{ uri }} style={styles.attachPreview} />
-                    <Pressable
-                      accessibilityRole="button"
-                      accessibilityLabel={`${t('remove')} ${i + 1}`}
-                      onPress={() => setAttachImages((cur) => cur.filter((_, idx) => idx !== i))}
-                      style={styles.attachRemove}
-                    >
+                    <Pressable accessibilityRole="button" accessibilityLabel={`${t('remove')} ${i + 1}`} onPress={() => setAttachImages((cur) => cur.filter((_, idx) => idx !== i))} style={styles.attachRemove} hitSlop={4}>
                       <Feather name="x-circle" size={16} color={colors.destructive} />
                     </Pressable>
                   </View>
                 ))}
-              </View>
+              </ScrollView>
             ) : null}
             <View style={styles.composerButtons}>
               <Pressable
@@ -2232,6 +2268,14 @@ const styles = StyleSheet.create({
     borderRadius: radius.sm,
   },
   shareDraftStart: { borderTopWidth: 0, marginTop: 0, paddingTop: 0 },
+  attachmentTrayScroll: { maxHeight: 76, marginBottom: spacing.xs },
+  attachmentTray: { flexDirection: 'row-reverse', alignItems: 'center', gap: spacing.sm, paddingHorizontal: spacing.xs, paddingTop: spacing.xs, paddingBottom: spacing.xs },
+  terminalPanel: { borderWidth: 1, borderRadius: radius.md, marginHorizontal: spacing.md - 2, marginBottom: spacing.sm, overflow: 'hidden' },
+  terminalHeader: { minHeight: 38, flexDirection: 'row', alignItems: 'center', gap: spacing.xs + 2, paddingHorizontal: spacing.sm, paddingVertical: spacing.xs },
+  terminalTitle: { flex: 1, fontSize: typography.xs + 1, fontWeight: typography.weightSemiBold },
+  terminalCount: { fontSize: typography.xs, fontVariant: ['tabular-nums'] },
+  terminalOutput: { maxHeight: 160, borderTopWidth: 1, borderTopColor: 'rgba(128,128,128,0.25)', paddingHorizontal: spacing.sm, paddingVertical: spacing.xs },
+  terminalLine: { fontFamily: 'monospace', fontSize: 11, lineHeight: 17, textAlign: 'left', writingDirection: 'ltr', paddingVertical: 1 },
   attachPreviewWrap: { flexDirection: 'row', flexWrap: 'wrap', gap: spacing.xs, paddingHorizontal: spacing.sm + 2, paddingTop: spacing.xs },
   composerButtons: { flexDirection: 'row-reverse', alignItems: 'flex-end', gap: spacing.xs + 2 },
   fileChipsRow: { flexDirection: 'row-reverse', flexWrap: 'wrap', gap: spacing.xs + 2, marginTop: spacing.sm },
