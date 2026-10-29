@@ -260,6 +260,100 @@ export async function writeFile(
   return { ok: true, commitUrl: data.commit?.html_url ?? '' };
 }
 
+
+const OAUTH_CLIENT_ID_KEY = 'onebyte-agent.github-oauth-client-id';
+
+export interface GithubDeviceAuthorization {
+  device_code: string;
+  user_code: string;
+  verification_uri: string;
+  expires_in: number;
+  interval: number;
+}
+
+export async function loadGithubOAuthClientId(): Promise<string> {
+  if (Platform.OS === 'web') {
+    try { return typeof window === 'undefined' ? '' : window.localStorage.getItem(OAUTH_CLIENT_ID_KEY) ?? ''; }
+    catch { return ''; }
+  }
+  return (await SecureStore.getItemAsync(OAUTH_CLIENT_ID_KEY).catch(() => null)) ?? '';
+}
+
+export async function saveGithubOAuthClientId(clientId: string): Promise<void> {
+  const clean = clientId.trim();
+  if (!clean) throw new Error('أدخل Client ID الخاص بتطبيق GitHub OAuth.');
+  if (Platform.OS === 'web') {
+    try {
+      if (typeof window === 'undefined') throw new Error('localStorage غير متاح.');
+      window.localStorage.setItem(OAUTH_CLIENT_ID_KEY, clean);
+    } catch { throw new Error('تعذّر حفظ Client ID في هذا المتصفح.'); }
+    return;
+  }
+  await SecureStore.setItemAsync(OAUTH_CLIENT_ID_KEY, clean, {
+    keychainAccessible: SecureStore.WHEN_UNLOCKED_THIS_DEVICE_ONLY,
+  });
+}
+
+export async function requestGithubDeviceAuthorization(clientId: string): Promise<GithubDeviceAuthorization> {
+  const clean = clientId.trim();
+  if (!clean) throw new Error('أدخل Client ID أولًا.');
+  const body = new URLSearchParams({ client_id: clean, scope: 'repo read:user' }).toString();
+  const res = await fetch('https://github.com/login/device/code', {
+    method: 'POST',
+    headers: { Accept: 'application/json', 'Content-Type': 'application/x-www-form-urlencoded' },
+    body,
+  });
+  const data = (await res.json().catch(() => ({}))) as Partial<GithubDeviceAuthorization> & { error?: string; error_description?: string };
+  if (!res.ok || !data.device_code || !data.user_code || !data.verification_uri) {
+    if (data.error === 'device_flow_disabled') {
+      throw new Error('Device Flow غير مفعّل في إعدادات OAuth App. فعّله ثم جرّب مجددًا.');
+    }
+    throw new Error(data.error_description || 'GitHub رفض بدء OAuth. تأكد من Client ID وتفعيل Device Flow.');
+  }
+  return {
+    device_code: data.device_code,
+    user_code: data.user_code,
+    verification_uri: data.verification_uri,
+    expires_in: data.expires_in ?? 900,
+    interval: data.interval ?? 5,
+  };
+}
+
+export type GithubDeviceTokenPoll =
+  | { status: 'success'; accessToken: string }
+  | { status: 'pending'; interval?: number }
+  | { status: 'slow_down'; interval?: number }
+  | { status: 'error'; message: string };
+
+export async function pollGithubDeviceToken(
+  clientId: string,
+  deviceCode: string,
+): Promise<GithubDeviceTokenPoll> {
+  const body = new URLSearchParams({
+    client_id: clientId.trim(),
+    device_code: deviceCode,
+    grant_type: 'urn:ietf:params:oauth:grant-type:device_code',
+  }).toString();
+  const res = await fetch('https://github.com/login/oauth/access_token', {
+    method: 'POST',
+    headers: { Accept: 'application/json', 'Content-Type': 'application/x-www-form-urlencoded' },
+    body,
+  });
+  const data = (await res.json().catch(() => ({}))) as { access_token?: string; error?: string; error_description?: string; interval?: number };
+  if (res.ok && data.access_token) return { status: 'success', accessToken: data.access_token };
+  if (data.error === 'authorization_pending') return { status: 'pending' };
+  if (data.error === 'slow_down') return { status: 'slow_down', interval: data.interval };
+  const messages: Record<string, string> = {
+    access_denied: 'تم رفض طلب الربط من GitHub.',
+    expired_token: 'انتهت صلاحية كود الربط. ابدأ العملية من جديد.',
+    incorrect_client_credentials: 'Client ID غير صحيح.',
+    incorrect_device_code: 'كود الجهاز غير صالح. ابدأ العملية من جديد.',
+    device_flow_disabled: 'فعّل Device Flow في إعدادات OAuth App على GitHub.',
+    bad_verification_code: 'كود التحقق غير صالح أو انتهت صلاحيته.',
+  };
+  return { status: 'error', message: messages[data.error ?? ''] || data.error_description || 'فشل إكمال مصادقة GitHub.' };
+}
+
 function encodeBase64(content: string): string {
   const bytes = new TextEncoder().encode(content);
   let binary = '';
