@@ -157,7 +157,7 @@ export default function SkillsScreen() {
         parsed.description || `مستوردة من GitHub · ${source}`.slice(0, 120),
       instructions: parsed.instructions,
     });
-    setGhDone((cur) => [...cur, parsed.title]);
+    setGhDone((cur) => cur.includes(fileName) ? cur : [...cur, fileName]);
   }
 
   /** Fetch a GitHub file (direct) or list markdown files in a repo/directory. */
@@ -240,6 +240,30 @@ export default function SkillsScreen() {
     } finally {
       setGhLoading(false);
     }
+  }
+
+  async function importGhBundle() {
+    const target = parseGitHubUrl(ghUrl);
+    if (!target || !ghFiles.length) return;
+    setGhLoading(true); setGhError('');
+    try {
+      const branch = target.branch ?? 'HEAD';
+      const docs: string[] = []; const paths: string[] = []; let total = 0;
+      for (const file of ghFiles) {
+        if (ghDone.includes(file.path) || file.size > 200_000) continue;
+        const res = await fetch('https://raw.githubusercontent.com/' + target.owner + '/' + target.repo + '/' + branch + '/' + file.path);
+        if (!res.ok) throw new Error('فشل جلب ' + file.path + ' (HTTP ' + res.status + ').');
+        const body = await res.text(); total += body.length;
+        if (total > 180_000) throw new Error('حجم الملفات المجمّع تجاوز 180KB؛ اختار مجلدًا أصغر.');
+        docs.push('# FILE: ' + file.path + '\n\n' + body); paths.push(file.path);
+      }
+      if (!docs.length) throw new Error('لا توجد ملفات جديدة قابلة للاستيراد ضمن الحد المسموح.');
+      const folder = target.path?.split('/').filter(Boolean).pop() || target.repo;
+      await createSkill({ name: (folder + ' · ' + target.repo).slice(0, 60), description: ('حزمة مهارات مدمجة من ' + target.owner + '/' + target.repo + ' · ' + paths.length + ' ملفًا').slice(0, 120), instructions: docs.join('\n\n---\n\n') });
+      setGhDone((cur) => [...new Set([...cur, ...paths])]);
+      setGhSource(target.owner + '/' + target.repo + ' · تم دمج ' + paths.length + ' ملفًا');
+    } catch (caught) { setGhError(caught instanceof Error ? caught.message : 'فشل دمج الملفات.'); }
+    finally { setGhLoading(false); }
   }
 
   /** Import a chosen repo file: fetch its raw content and create the skill. */
@@ -582,10 +606,12 @@ export default function SkillsScreen() {
                   {ghSource} — اختاري ملفًا لاستيراده كتعليمات مهارة:
                 </Text>
               ) : null}
+              {ghFiles.length ? (
+                <ActionButton label={ghLoading ? 'جارٍ تجهيز المهارة…' : 'دمج كل الملفات في مهارة واحدة (' + ghFiles.length + ')'} icon="layers" variant="primary" onPress={() => void importGhBundle()} disabled={ghLoading || ghFiles.every((file) => ghDone.includes(file.path))} />
+              ) : null}
+              {ghFiles.length ? <Text style={[styles.ghSource, { color: colors.mutedForeground }]}>يجمع الملفات النصية في مهارة واحدة مع حفظ مسار كل ملف، ويضع علامة صح بعد نجاح الاستيراد.</Text> : null}
               {ghFiles.map((file) => {
-                const done = ghDone.includes(
-                  file.name.replace(/\.(md|markdown|txt)$/i, '').slice(0, 60),
-                );
+                const done = ghDone.includes(file.path);
                 return (
                   <Pressable
                     key={file.path}
