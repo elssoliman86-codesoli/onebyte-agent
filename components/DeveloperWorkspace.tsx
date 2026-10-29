@@ -10,10 +10,12 @@ import { useAssistant } from '@/src/assistant';
 import { alertCompat } from '@/src/web-alert';
 import { endpointFor } from '@/src/model-provider';
 import { getStoredModelApiKey } from '@/src/assistant';
+import { ModelPicker } from '@/components/ModelPicker';
+import type { ModelInfo } from '@/src/model-catalog';
 import fetchWithRetry from '@/src/fetch-with-retry';
 import {
   buildProjectOutline, decideCodeReview, getDeveloperProject, proposeCodeReview,
-  replaceProjectPlan, saveProjectFile, updatePlanStep,
+  replaceProjectPlan, saveProjectFile, setDeveloperCodeModel, updatePlanStep,
   type DeveloperProject, type DeveloperPlanStep,
 } from '@/src/developer-projects';
 
@@ -45,6 +47,7 @@ export function DeveloperWorkspace() {
   const [reviewProposed, setReviewProposed] = useState('');
   const [reviewPath, setReviewPath] = useState('');
   const [reviewOpen, setReviewOpen] = useState(false);
+  const [codeModelPickerOpen, setCodeModelPickerOpen] = useState(false);
 
   const refresh = useCallback(async () => {
     if (!activeSession) { setProject(null); setSelectedPath(''); setDraft(''); return; }
@@ -118,7 +121,7 @@ export function DeveloperWorkspace() {
         method: 'POST',
         headers: { 'Content-Type': 'application/json', ...(apiKey ? { Authorization: `Bearer ${apiKey}` } : {}) },
         body: JSON.stringify({
-          model: provider.model,
+          model: project?.codeModelId || provider.model,
           temperature: 0.2,
           messages: [
             { role: 'system', content: 'You are the code-generation worker inside an IDE. Return only the complete file contents, no markdown fences or commentary. Preserve requested language and produce maintainable, secure code. Do not claim to have run tests. Never generate secrets or hardcode credentials.' },
@@ -179,7 +182,7 @@ export function DeveloperWorkspace() {
         <Pressable onPress={()=>void exportZip()} style={[s.button,{borderColor:colors.border}]}><Feather name="download" size={14} color={colors.foreground}/><Text style={{color:colors.foreground,fontSize:11}}>تحميل المشروع ZIP</Text></Pressable>
       </View>
       <View style={[s.editor,{borderColor:colors.border,backgroundColor:colors.card}]}>
-        <View style={s.fileHeading}><View style={{flex:1}}><Text style={{color:colors.foreground,fontWeight:'700'}}>{selectedPath||'لا يوجد ملف مفتوح'}</Text><Text style={{color:colors.mutedForeground,fontSize:11}}>{selectedFile?.language??'اختر ملفًا من الشجرة'}</Text></View><Pressable onPress={()=>setPlanOpen(v=>!v)}><Feather name="help-circle" size={18} color={colors.primary}/></Pressable></View>
+        <View style={s.fileHeading}><View style={{flex:1}}><Text style={{color:colors.foreground,fontWeight:'700'}}>{selectedPath||'لا يوجد ملف مفتوح'}</Text><Text style={{color:colors.mutedForeground,fontSize:11}}>{selectedFile?.language??'اختر ملفًا من الشجرة'}</Text><Text style={{color:colors.mutedForeground,fontSize:10}}>موديل الكود: {project?.codeModelId || provider.model || 'غير محدد'}</Text></View><Pressable onPress={()=>setCodeModelPickerOpen(true)} style={{padding:5}}><Feather name="cpu" size={17} color={colors.primary}/></Pressable><Pressable onPress={()=>setPlanOpen(v=>!v)}><Feather name="help-circle" size={18} color={colors.primary}/></Pressable></View>
         <TextInput value={draft} onChangeText={setDraft} editable={!!selectedFile} multiline autoCapitalize="none" autoCorrect={false} spellCheck={false} textAlignVertical="top" placeholder="اكتب الكود أو عدّله هنا..." placeholderTextColor={colors.mutedForeground} style={[s.code,{color:colors.foreground,borderColor:colors.border}]}/>
         <View style={s.inline}><Pressable disabled={!selectedFile||busy} onPress={()=>void saveFile()} style={[s.primary,{backgroundColor:colors.primary,opacity:busy?0.6:1}]}><Feather name="save" size={13} color={colors.primaryForeground}/><Text style={{color:colors.primaryForeground,fontSize:12}}>حفظ</Text></Pressable><Pressable disabled={!selectedFile} onPress={()=>{setReviewPath(selectedPath);setReviewProposed(draft);setReviewReason('مراجعة التعديلات اليدوية');setReviewOpen(true);}} style={[s.button,{borderColor:colors.border}]}><Text style={{color:colors.foreground,fontSize:12}}>طلب مراجعة</Text></Pressable></View>
       </View>
@@ -190,6 +193,18 @@ export function DeveloperWorkspace() {
     </View>
     {pendingReviews.length>0&&<View style={[s.review,{borderColor:colors.warning,backgroundColor:colors.card}]}><Text style={{color:colors.foreground,fontWeight:'700'}}>اقتراحات تنتظر الموافقة</Text>{pendingReviews.map(r=><View key={r.id} style={{gap:6,marginTop:5}}><Text style={{color:colors.foreground}}>{r.filePath} — {r.reason}</Text><View style={s.inline}><Pressable onPress={()=>void decideReview(r.id,true)} style={[s.primary,{backgroundColor:colors.success}]}><Text style={{color:'#fff'}}>موافقة وتطبيق</Text></Pressable><Pressable onPress={()=>void decideReview(r.id,false)} style={[s.button,{borderColor:colors.border}]}><Text style={{color:colors.foreground}}>رفض</Text></Pressable></View></View>)}</View>}
     {reviewOpen&&<View style={[s.review,{borderColor:colors.border,backgroundColor:colors.card}]}><Text style={{color:colors.foreground,fontWeight:'700'}}>اقتراح تعديل — لن يطبق دون موافقتك</Text><TextInput value={reviewPath} onChangeText={setReviewPath} placeholder="مسار الملف" placeholderTextColor={colors.mutedForeground} style={[s.path,{color:colors.foreground,borderColor:colors.border}]}/><TextInput value={reviewReason} onChangeText={setReviewReason} placeholder="سبب التعديل" placeholderTextColor={colors.mutedForeground} style={[s.path,{color:colors.foreground,borderColor:colors.border}]}/><TextInput value={reviewProposed} onChangeText={setReviewProposed} multiline placeholder="الكود المقترح" placeholderTextColor={colors.mutedForeground} style={[s.planInput,{color:colors.foreground,borderColor:colors.border}]}/><View style={s.inline}><Pressable onPress={()=>void submitReview()} style={[s.primary,{backgroundColor:colors.primary}]}><Text style={{color:colors.primaryForeground}}>إرسال للمراجعة</Text></Pressable><Pressable onPress={()=>setReviewOpen(false)} style={[s.button,{borderColor:colors.border}]}><Text style={{color:colors.foreground}}>إلغاء</Text></Pressable></View></View>}
+    <ModelPicker
+      visible={codeModelPickerOpen}
+      baseUrl={provider.baseUrl}
+      getApiKey={() => provider.keyless ? Promise.resolve('') : getStoredModelApiKey()}
+      currentModel={project?.codeModelId || provider.model}
+      onClose={() => setCodeModelPickerOpen(false)}
+      onPick={(model: ModelInfo) => {
+        if (!activeSession) return;
+        void setDeveloperCodeModel(activeSession.id, model.id).then(() => refresh()).catch(error => alertCompat('تعذّر حفظ موديل الكود', error instanceof Error ? error.message : 'خطأ غير معروف'));
+        setCodeModelPickerOpen(false);
+      }}
+    />
   </View>;
 }
 const s=StyleSheet.create({
