@@ -117,6 +117,14 @@ export async function listRepos(token: string): Promise<GhRepo[]> {
   return all;
 }
 
+export async function getDefaultBranch(token: string, fullName: string): Promise<string> {
+  const res = await fetch(API + '/repos/' + apiRepo(fullName), { headers: headers(token) });
+  if (!res.ok) throw new Error(apiError(res.status));
+  const data = (await res.json()) as { default_branch?: string };
+  if (!data.default_branch) throw new Error('GitHub لم يرجع الفرع الافتراضي للمستودع.');
+  return data.default_branch;
+}
+
 export interface GhTreeItem { path: string; type: 'blob' | 'tree'; size?: number; sha?: string }
 
 export async function getRepoTree(
