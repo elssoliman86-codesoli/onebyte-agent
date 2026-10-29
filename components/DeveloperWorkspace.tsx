@@ -1,5 +1,5 @@
 import React, { useCallback, useEffect, useMemo, useState } from 'react';
-import { Pressable, ScrollView, StyleSheet, Text, TextInput, View, Platform } from 'react-native';
+import { Platform, Pressable, ScrollView, StyleSheet, Text, TextInput, View } from 'react-native';
 import * as FileSystem from 'expo-file-system/legacy';
 import * as Sharing from 'expo-sharing';
 import { zipSync, strToU8 } from 'fflate';
@@ -11,25 +11,20 @@ import { alertCompat } from '@/src/web-alert';
 import {
   buildProjectOutline, decideCodeReview, getDeveloperProject, proposeCodeReview,
   replaceProjectPlan, saveProjectFile, updatePlanStep,
-  type DeveloperProject, type DeveloperProjectFile, type DeveloperPlanStep,
+  type DeveloperProject, type DeveloperPlanStep,
 } from '@/src/developer-projects';
 
 function toBase64(bytes: Uint8Array): string {
   const alphabet = 'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/';
   let out = '';
   for (let i = 0; i < bytes.length; i += 3) {
-    const a = bytes[i]; const hasB = i + 1 < bytes.length; const hasC = i + 2 < bytes.length;
-    const b = hasB ? bytes[i + 1] : 0; const d = hasC ? bytes[i + 2] : 0;
-    out += alphabet[a >> 2] + alphabet[((a & 3) << 4) | (b >> 4)] + (hasB ? alphabet[((b & 15) << 2) | (d >> 6)] : '=') + (hasC ? alphabet[d & 63] : '=');
+    const a = bytes[i], hasB = i + 1 < bytes.length, hasC = i + 2 < bytes.length;
+    const b = hasB ? bytes[i + 1] : 0, c = hasC ? bytes[i + 2] : 0;
+    out += alphabet[a >> 2] + alphabet[((a & 3) << 4) | (b >> 4)] + (hasB ? alphabet[((b & 15) << 2) | (c >> 6)] : '=') + (hasC ? alphabet[c & 63] : '=');
   }
   return out;
 }
-
-function timeLabel(value?: string) {
-  if (!value) return 'بانتظار التنفيذ';
-  const date = new Date(value);
-  return Number.isNaN(date.getTime()) ? value : date.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
-}
+const timeLabel = (value?: string) => value ? new Date(value).toLocaleTimeString([], {hour:'2-digit',minute:'2-digit'}) : 'لم تبدأ';
 
 export function DeveloperWorkspace() {
   const colors = useColors();
@@ -43,13 +38,12 @@ export function DeveloperWorkspace() {
   const [details, setDetails] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
   const [reviewReason, setReviewReason] = useState('');
-  const [reviewOriginal, setReviewOriginal] = useState('');
   const [reviewProposed, setReviewProposed] = useState('');
   const [reviewPath, setReviewPath] = useState('');
   const [reviewOpen, setReviewOpen] = useState(false);
 
   const refresh = useCallback(async () => {
-    if (!activeSession) { setProject(null); return; }
+    if (!activeSession) { setProject(null); setSelectedPath(''); setDraft(''); return; }
     const next = await getDeveloperProject(activeSession.id, activeSession.title);
     setProject(next);
     const chosen = next.files.find(f => f.path === selectedPath) ?? next.files[0];
@@ -58,79 +52,91 @@ export function DeveloperWorkspace() {
   }, [activeSession?.id, activeSession?.title]);
   useEffect(() => { void refresh(); }, [refresh]);
 
-  const selectedFile = useMemo(() => project?.files.find(f => f.path === selectedPath) ?? null, [project, selectedPath]);
   const outline = useMemo(() => buildProjectOutline(project?.files ?? []), [project?.files]);
+  const selectedFile = project?.files.find(f => f.path === selectedPath);
+  const pendingReviews = project?.reviews.filter(r => r.status === 'pending') ?? [];
 
-  async function startProjectChat() {
+  async function newProject() {
     if (busy) return;
     setBusy(true);
-    try {
-      const id = await createSession();
-      await patchSession(id, { mode: 'developer' });
-      await setActiveSession(id);
-    } catch { alertCompat('تعذّر إنشاء المشروع', 'حاول مرة أخرى.'); }
+    try { const id = await createSession(); await patchSession(id, { mode: 'developer' }); await setActiveSession(id); }
+    catch { alertCompat('تعذّر إنشاء المشروع', 'حاول مرة أخرى.'); }
     finally { setBusy(false); }
   }
-
   async function createFile() {
     if (!activeSession || !newPath.trim()) return;
     try {
       await saveProjectFile(activeSession.id, activeSession.title, newPath.trim(), '');
-      await refresh();
-      setSelectedPath(newPath.trim());
-      setDraft('');
-    } catch (error) { alertCompat('تعذّر إنشاء الملف', error instanceof Error ? error.message : 'مسار غير صالح'); }
+      setSelectedPath(newPath.trim()); setDraft(''); await refresh();
+    } catch (e) { alertCompat('تعذّر إنشاء الملف', e instanceof Error ? e.message : 'مسار غير صالح'); }
   }
-
   async function saveFile() {
     if (!activeSession || !selectedPath) return;
     setBusy(true);
-    try {
-      await saveProjectFile(activeSession.id, activeSession.title, selectedPath, draft);
-      await refresh();
-      alertCompat('تم حفظ المسودة', 'تم حفظ الملف في مشروع هذه المحادثة. لم يتم تشغيل الكود تلقائيًا في هذه النسخة.');
-    } catch (error) { alertCompat('فشل الحفظ', error instanceof Error ? error.message : 'خطأ غير معروف'); }
+    try { await saveProjectFile(activeSession.id, activeSession.title, selectedPath, draft); await refresh(); alertCompat('تم الحفظ', 'تم حفظ الملف في مشروع المحادثة الحالية.'); }
+    catch (e) { alertCompat('فشل الحفظ', e instanceof Error ? e.message : 'خطأ غير معروف'); }
     finally { setBusy(false); }
   }
-
-  async function createPlan() {
-    if (!activeSession || !goal.trim()) return;
-    setBusy(true);
-    try {
-      // Store an explicit user-visible execution checklist; it does not claim code has run.
-      const lines = goal.split(/\n+/).map(s => s.trim()).filter(Boolean);
-      await replaceProjectPlan(activeSession.id, activeSession.title, lines.map((line, i) => ({
-        title: line.length > 70 ? line.slice(0, 67) + '…' : line,
-        detail: line || `الخطوة ${i + 1}`,
-      })));
-      await refresh();
-      setPlanOpen(true);
-    } catch (error) { alertCompat('تعذّر حفظ الخطة', error instanceof Error ? error.message : 'خطأ غير معروف'); }
-    finally { setBusy(false); }
-  }
-
-  async function markStep(step: DeveloperPlanStep, status: DeveloperPlanStep['status']) {
-    if (!activeSession) return;
-    await updatePlanStep(activeSession.id, step.id, status);
-    await refresh();
-  }
-
   async function exportZip() {
     if (!project?.files.length) { alertCompat('المشروع فارغ', 'أضف ملفات أولًا.'); return; }
     try {
       const entries: Record<string, Uint8Array> = {};
-      for (const file of project.files) entries[file.path] = strToU8(file.content);
-      const zipped = zipSync(entries, { level: 6 });
-      const encoded = toBase64(zipped);
+      project.files.forEach(file => { entries[file.path] = strToU8(file.content); });
+      const encoded = toBase64(zipSync(entries, { level: 6 }));
       const uri = `${FileSystem.cacheDirectory ?? FileSystem.documentDirectory}onebyte-project-${project.sessionId}.zip`;
       await FileSystem.writeAsStringAsync(uri, encoded, { encoding: FileSystem.EncodingType.Base64 });
-      if (Platform.OS !== 'web' && await Sharing.isAvailableAsync()) {
-        await Sharing.shareAsync(uri, { mimeType: 'application/zip', dialogTitle: 'تحميل المشروع' });
-      } else {
-        alertCompat('تم تجهيز ZIP', uri);
-      }
-    } catch (error) {
-      alertCompat('فشل تصدير ZIP', error instanceof Error ? error.message : 'خطأ غير معروف');
-    }
+      if (Platform.OS !== 'web' && await Sharing.isAvailableAsync()) await Sharing.shareAsync(uri, { mimeType: 'application/zip', dialogTitle: 'تحميل المشروع ZIP' });
+      else alertCompat('تم تجهيز ملف ZIP', uri);
+    } catch (e) { alertCompat('فشل التصدير', e instanceof Error ? e.message : 'خطأ غير معروف'); }
+  }
+  async function savePlan() {
+    if (!activeSession || !goal.trim()) return;
+    const lines = goal.split(/\n+/).map(x => x.trim()).filter(Boolean);
+    await replaceProjectPlan(activeSession.id, activeSession.title, lines.map(line => ({title: line.slice(0,70), detail: line})));
+    await refresh(); setPlanOpen(true);
+  }
+  async function markStep(step: DeveloperPlanStep, status: DeveloperPlanStep['status']) {
+    if (!activeSession) return;
+    await updatePlanStep(activeSession.id, step.id, status); await refresh();
+  }
+  async function submitReview() {
+    if (!activeSession || !reviewPath.trim()) return;
+    const file = project?.files.find(f => f.path === reviewPath);
+    await proposeCodeReview(activeSession.id, reviewPath, file?.content ?? '', reviewProposed, reviewReason);
+    setReviewOpen(false); await refresh();
+    alertCompat('الاقتراح بانتظار موافقتك', 'لم يتم تطبيق أي تغيير تلقائيًا.');
+  }
+  async function decideReview(id: string, approve: boolean) {
+    if (!activeSession) return;
+    try { await decideCodeReview(activeSession.id, id, approve); await refresh(); }
+    catch (e) { alertCompat('تعذّر تنفيذ القرار', e instanceof Error ? e.message : 'خطأ غير معروف'); }
   }
 
+  return <View style={[s.root,{backgroundColor:colors.background}]}>
+    <ScreenTopBar active="developer" center={<Text style={{color:colors.foreground,fontWeight:'700'}}>مختبر المطوّر</Text>} />
+    <View style={s.header}><View style={{flex:1}}><Text style={[s.heading,{color:colors.foreground}]}>مساحة المشروع</Text><Text style={{color:colors.mutedForeground,fontSize:12}}>{activeSession?.title ?? 'اختر محادثة مطوّر'}</Text></View><Pressable onPress={() => void newProject()} style={[s.button,{borderColor:colors.border}]}><Feather name="plus" size={14} color={colors.foreground}/><Text style={{color:colors.foreground}}>مشروع جديد</Text></Pressable></View>
+    <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={s.sessions}>{sessions.filter(x=>x.mode==='developer').map(x=><Pressable key={x.id} onPress={()=>void setActiveSession(x.id)} style={[s.chip,{borderColor:x.id===activeSession?.id?colors.primary:colors.border,backgroundColor:colors.card}]}><Text style={{color:colors.foreground}} numberOfLines={1}>{x.title||'مشروع'}</Text></Pressable>)}</ScrollView>
+    <View style={s.body}>
+      <View style={[s.sidebar,{borderColor:colors.border,backgroundColor:colors.card}]}>
+        <Text style={[s.sectionTitle,{color:colors.foreground}]}> <Feather name="folder" size={14}/> ملفات المشروع</Text>
+        <View style={s.inline}><TextInput value={newPath} onChangeText={setNewPath} placeholder="src/main.ts" placeholderTextColor={colors.mutedForeground} style={[s.path,{color:colors.foreground,borderColor:colors.border}]}/><Pressable onPress={()=>void createFile()} style={[s.plus,{backgroundColor:colors.primary}]}><Feather name="plus" size={15} color={colors.primaryForeground}/></Pressable></View>
+        <ScrollView style={{maxHeight:240}}>{outline.map(item=><Pressable key={item.path} disabled={item.directory} onPress={()=>{setSelectedPath(item.path);setDraft(project?.files.find(f=>f.path===item.path)?.content??'');}} style={[s.tree,{paddingLeft:7+item.depth*11,backgroundColor:selectedPath===item.path?colors.accentSubtle:'transparent'}]}><Feather name={item.directory?'folder':'file-text'} size={13} color={colors.mutedForeground}/><Text numberOfLines={1} style={{color:colors.foreground,fontSize:12,flex:1}}>{item.path.split('/').pop()}</Text></Pressable>)}</ScrollView>
+        <Pressable onPress={()=>void exportZip()} style={[s.button,{borderColor:colors.border}]}><Feather name="download" size={14} color={colors.foreground}/><Text style={{color:colors.foreground,fontSize:11}}>تحميل المشروع ZIP</Text></Pressable>
+      </View>
+      <View style={[s.editor,{borderColor:colors.border,backgroundColor:colors.card}]}>
+        <View style={s.fileHeading}><View style={{flex:1}}><Text style={{color:colors.foreground,fontWeight:'700'}}>{selectedPath||'لا يوجد ملف مفتوح'}</Text><Text style={{color:colors.mutedForeground,fontSize:11}}>{selectedFile?.language??'اختر ملفًا من الشجرة'}</Text></View><Pressable onPress={()=>setPlanOpen(v=>!v)}><Feather name="help-circle" size={18} color={colors.primary}/></Pressable></View>
+        <TextInput value={draft} onChangeText={setDraft} editable={!!selectedFile} multiline autoCapitalize="none" autoCorrect={false} spellCheck={false} textAlignVertical="top" placeholder="اكتب الكود أو عدّله هنا..." placeholderTextColor={colors.mutedForeground} style={[s.code,{color:colors.foreground,borderColor:colors.border}]}/>
+        <View style={s.inline}><Pressable disabled={!selectedFile||busy} onPress={()=>void saveFile()} style={[s.primary,{backgroundColor:colors.primary,opacity:busy?0.6:1}]}><Feather name="save" size={13} color={colors.primaryForeground}/><Text style={{color:colors.primaryForeground,fontSize:12}}>حفظ</Text></Pressable><Pressable disabled={!selectedFile} onPress={()=>{setReviewPath(selectedPath);setReviewProposed(draft);setReviewReason('مراجعة التعديلات اليدوية');setReviewOpen(true);}} style={[s.button,{borderColor:colors.border}]}><Text style={{color:colors.foreground,fontSize:12}}>طلب مراجعة</Text></Pressable></View>
+      </View>
+    </View>
+    <View style={[s.timeline,{borderColor:colors.border,backgroundColor:colors.card}]}>
+      <Pressable style={s.timelineHead} onPress={()=>setPlanOpen(v=>!v)}><Feather name="activity" size={15} color={colors.primary}/><Text style={{color:colors.foreground,fontWeight:'700',flex:1}}>Timeline · خطة التنفيذ</Text><Text style={{color:colors.mutedForeground,fontSize:11}}>{project?.plan.length??0} خطوات</Text><Feather name={planOpen?'chevron-up':'chevron-down'} size={14} color={colors.mutedForeground}/></Pressable>
+      {planOpen&&<><TextInput value={goal} onChangeText={setGoal} multiline placeholder="خطوة في كل سطر..." placeholderTextColor={colors.mutedForeground} style={[s.planInput,{color:colors.foreground,borderColor:colors.border}]}/><Pressable onPress={()=>void savePlan()} style={[s.button,{borderColor:colors.border,alignSelf:'flex-start'}]}><Text style={{color:colors.foreground}}>حفظ الخطة</Text></Pressable><ScrollView style={{maxHeight:170}}>{(project?.plan??[]).map((step,i)=><View key={step.id} style={s.step}><View style={s.rail}><View style={[s.dot,{backgroundColor:step.status==='done'?colors.success:step.status==='running'?colors.primary:step.status==='error'?colors.destructive:colors.border}]}/>{i<(project?.plan.length??0)-1&&<View style={[s.connector,{backgroundColor:colors.border}]}/>}</View><View style={{flex:1,paddingBottom:9}}><Pressable onPress={()=>setDetails(details===step.id?null:step.id)}><Text style={{color:colors.foreground,fontWeight:'600'}}>{step.title}</Text></Pressable><Text style={{color:colors.mutedForeground,fontSize:10}}>{step.status} · {timeLabel(step.startedAt??step.finishedAt)}</Text>{details===step.id&&<Text style={{color:colors.mutedForeground,fontSize:12}}>{step.detail}</Text>}{step.status!=='done'&&<View style={s.inline}><Pressable onPress={()=>void markStep(step,'running')}><Text style={{color:colors.primary,fontSize:11}}>بدء</Text></Pressable><Pressable onPress={()=>void markStep(step,'done')}><Text style={{color:colors.success,fontSize:11}}>اكتملت</Text></Pressable><Pressable onPress={()=>void markStep(step,'error')}><Text style={{color:colors.destructive,fontSize:11}}>فشل</Text></Pressable></View>}</View></View>)}</ScrollView></>}
+    </View>
+    {pendingReviews.length>0&&<View style={[s.review,{borderColor:colors.warning,backgroundColor:colors.card}]}><Text style={{color:colors.foreground,fontWeight:'700'}}>اقتراحات تنتظر الموافقة</Text>{pendingReviews.map(r=><View key={r.id} style={{gap:6,marginTop:5}}><Text style={{color:colors.foreground}}>{r.filePath} — {r.reason}</Text><View style={s.inline}><Pressable onPress={()=>void decideReview(r.id,true)} style={[s.primary,{backgroundColor:colors.success}]}><Text style={{color:'#fff'}}>موافقة وتطبيق</Text></Pressable><Pressable onPress={()=>void decideReview(r.id,false)} style={[s.button,{borderColor:colors.border}]}><Text style={{color:colors.foreground}}>رفض</Text></Pressable></View></View>)}</View>}
+    {reviewOpen&&<View style={[s.review,{borderColor:colors.border,backgroundColor:colors.card}]}><Text style={{color:colors.foreground,fontWeight:'700'}}>اقتراح تعديل — لن يطبق دون موافقتك</Text><TextInput value={reviewPath} onChangeText={setReviewPath} placeholder="مسار الملف" placeholderTextColor={colors.mutedForeground} style={[s.path,{color:colors.foreground,borderColor:colors.border}]}/><TextInput value={reviewReason} onChangeText={setReviewReason} placeholder="سبب التعديل" placeholderTextColor={colors.mutedForeground} style={[s.path,{color:colors.foreground,borderColor:colors.border}]}/><TextInput value={reviewProposed} onChangeText={setReviewProposed} multiline placeholder="الكود المقترح" placeholderTextColor={colors.mutedForeground} style={[s.planInput,{color:colors.foreground,borderColor:colors.border}]}/><View style={s.inline}><Pressable onPress={()=>void submitReview()} style={[s.primary,{backgroundColor:colors.primary}]}><Text style={{color:colors.primaryForeground}}>إرسال للمراجعة</Text></Pressable><Pressable onPress={()=>setReviewOpen(false)} style={[s.button,{borderColor:colors.border}]}><Text style={{color:colors.foreground}}>إلغاء</Text></Pressable></View></View>}
+  </View>;
+}
+const s=StyleSheet.create({
+ root:{flex:1,minHeight:0,paddingHorizontal:12,gap:8},header:{flexDirection:'row',alignItems:'center',gap:8,paddingTop:8},heading:{fontSize:20,fontWeight:'800'},button:{minHeight:33,paddingHorizontal:9,borderWidth:1,borderRadius:8,flexDirection:'row',alignItems:'center',justifyContent:'center',gap:5},sessions:{gap:6,paddingVertical:3},chip:{paddingHorizontal:9,paddingVertical:6,borderWidth:1,borderRadius:8,maxWidth:180},body:{flex:1,minHeight:170,flexDirection:'row',gap:8},sidebar:{width:185,borderWidth:1,borderRadius:11,padding:7,gap:7},sectionTitle:{fontWeight:'700',fontSize:12},inline:{flexDirection:'row',alignItems:'center',gap:7,flexWrap:'wrap'},path:{flex:1,minHeight:32,borderWidth:1,borderRadius:7,paddingHorizontal:7,fontSize:11},plus:{width:32,height:32,borderRadius:7,alignItems:'center',justifyContent:'center'},tree:{minHeight:26,flexDirection:'row',alignItems:'center',gap:5,paddingVertical:4,paddingRight:3,borderRadius:5},editor:{flex:1,minWidth:0,borderWidth:1,borderRadius:11,padding:7,gap:7},fileHeading:{flexDirection:'row',alignItems:'center',gap:7},code:{flex:1,minHeight:80,borderWidth:1,borderRadius:7,padding:7,fontFamily:'monospace',fontSize:12,lineHeight:18},primary:{minHeight:33,paddingHorizontal:10,borderRadius:8,flexDirection:'row',alignItems:'center',justifyContent:'center',gap:5},timeline:{borderWidth:1,borderRadius:11,padding:8,maxHeight:260},timelineHead:{minHeight:28,flexDirection:'row',alignItems:'center',gap:7},planInput:{minHeight:48,maxHeight:90,borderWidth:1,borderRadius:7,padding:7,fontSize:12,marginVertical:5},step:{flexDirection:'row',gap:8},rail:{width:12,alignItems:'center'},dot:{width:9,height:9,borderRadius:5,marginTop:4},connector:{width:2,flex:1,minHeight:22,marginTop:2},review:{borderWidth:1,borderRadius:10,padding:9,gap:6,maxHeight:220}
+});
