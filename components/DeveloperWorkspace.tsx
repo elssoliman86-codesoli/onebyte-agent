@@ -143,6 +143,68 @@ export function DeveloperWorkspace() {
   const selectedFile = project?.files.find(f => f.path === selectedPath);
   const pendingReviews = project?.reviews.filter(r => r.status === 'pending') ?? [];
 
+  async function callCodeModel(
+    messages: Array<{ role: string; content: string }>,
+    temperature = 0.2,
+    onChunk?: (chunk: string) => void,
+  ): Promise<string> {
+    if (!provider.baseUrl.trim() || !(project?.codeModelId || provider.model).trim()) {
+      throw new Error('اختار مزودًا وموديلًا من الإعدادات أولًا.');
+    }
+    const apiKey = provider.keyless ? '' : await getStoredModelApiKey();
+    const response = await fetchWithRetry(endpointFor(provider.baseUrl), {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', ...(apiKey ? { Authorization: \`Bearer \${apiKey}\` } : {}) },
+      body: JSON.stringify({
+        model: project?.codeModelId || provider.model,
+        temperature,
+        stream: !!onChunk,
+        messages,
+      }),
+    }, { timeout: 180000, maxRetries: 1 });
+    if (!response.ok) throw new Error(\`Provider returned HTTP \${response.status}: \${(await response.text()).slice(0, 500)}\`);
+
+    const readPayloadContent = (payload: any): string => {
+      const value = payload?.choices?.[0]?.message?.content;
+      return typeof value === 'string' ? value : Array.isArray(value)
+        ? value.map((part: any) => typeof part?.text === 'string' ? part.text : '').join('') : '';
+    };
+    const contentType = response.headers.get('content-type') || '';
+    const reader = response.body?.getReader?.();
+    if (!onChunk || !reader || !contentType.includes('text/event-stream')) {
+      const full = readPayloadContent(await response.json());
+      if (onChunk && full) onChunk(full);
+      return full;
+    }
+
+    const decoder = new TextDecoder();
+    let buffer = '';
+    let complete = '';
+    const consumeLine = (line: string) => {
+      const trimmed = line.trim();
+      if (!trimmed.startsWith('data:')) return;
+      const data = trimmed.slice(5).trim();
+      if (!data || data === '[DONE]') return;
+      try {
+        const payload = JSON.parse(data);
+        const delta = payload?.choices?.[0]?.delta?.content;
+        const chunk = typeof delta === 'string' ? delta : Array.isArray(delta)
+          ? delta.map((part: any) => typeof part?.text === 'string' ? part.text : '').join('') : '';
+        if (chunk) { complete += chunk; onChunk?.(chunk); }
+      } catch { /* Ignore incomplete/non-JSON SSE lines; the next frame is parsed separately. */ }
+    };
+    while (true) {
+      const { value, done } = await reader.read();
+      buffer += decoder.decode(value ?? new Uint8Array(), { stream: !done });
+      const lines = buffer.split(/\r?\n/);
+      buffer = lines.pop() ?? '';
+      lines.forEach(consumeLine);
+      if (done) break;
+    }
+    if (buffer.trim()) consumeLine(buffer);
+    return complete;
+  }
+
   async function newProject() {
     if (busy) return;
     setBusy(true);
@@ -273,22 +335,12 @@ export function DeveloperWorkspace() {
       if (activeSession.mode !== 'developer') await patchSession(activeSession.id, { mode: 'developer' });
       if (step) await updatePlanStep(activeSession.id, step.id, 'running');
       await refresh();
-      const response = await fetchWithRetry(endpointFor(provider.baseUrl), {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json', ...(apiKey ? { Authorization: `Bearer ${apiKey}` } : {}) },
-        body: JSON.stringify({
-          model: project?.codeModelId || provider.model,
-          temperature: 0.2,
-          messages: [
-            { role: 'system', content: 'You are the code-generation worker inside an IDE. Return only the complete file contents, no markdown fences or commentary. Preserve requested language and produce maintainable, secure code. Do not claim to have run tests. Never generate secrets or hardcode credentials.' },
-            { role: 'user', content: `Project: ${activeSession.title}\nFile path: ${selectedPath}\nTask: ${goal}\nExisting file content (replace/update as appropriate):\n${draft}\nReturn the complete contents for this one file only.` },
-          ],
-        }),
-      }, { timeout: 120000, maxRetries: 1 });
-      if (!response.ok) throw new Error(`Provider returned HTTP ${response.status}: ${(await response.text()).slice(0, 500)}`);
-      const payload = await response.json() as { choices?: Array<{ message?: { content?: string | Array<{type?:string;text?:string}> } }> };
-      const content = payload.choices?.[0]?.message?.content;
-      const generated = typeof content === 'string' ? content : Array.isArray(content) ? content.map(part => part.text ?? '').join('') : '';
+      const existingContent = draft;
+      setDraft('');
+      const generated = await callCodeModel([
+        { role: 'system', content: 'You are the code-generation worker inside an IDE. Return only the complete file contents, no markdown fences or commentary. Preserve requested language and produce maintainable, secure code. Do not claim to have run tests. Never generate secrets or hardcode credentials.' },
+        { role: 'user', content: `Project: ${activeSession.title}\nFile path: ${selectedPath}\nTask: ${goal}\nExisting file content (replace/update as appropriate):\n${existingContent}\nReturn the complete contents for this one file only.` },
+      ], 0.2, chunk => setDraft(current => current + chunk));
       if (!generated.trim()) throw new Error('الموديل لم يرجع محتوى كود صالحًا.');
       const clean = generated.replace(/^\`\`\`[a-zA-Z0-9_-]*\s*\n/, '').replace(/\n\`\`\`\s*$/, '');
       await saveProjectFile(activeSession.id, activeSession.title, selectedPath, clean);
@@ -308,14 +360,7 @@ export function DeveloperWorkspace() {
     if (!provider.baseUrl.trim() || !provider.model.trim()) { alertCompat('الموديل غير مضبوط', 'اختار مزودًا وموديلًا من إعدادات التطبيق.'); return; }
     setBusy(true);
     try {
-      const apiKey = provider.keyless ? '' : await getStoredModelApiKey();
-      const callModel = async (messages: Array<{role:string;content:string}>, temperature=0.2) => {
-        const response = await fetchWithRetry(endpointFor(provider.baseUrl), {method:'POST',headers:{'Content-Type':'application/json',...(apiKey?{Authorization:`Bearer ${apiKey}`}:{})},body:JSON.stringify({model:project?.codeModelId||provider.model,temperature,messages})},{timeout:120000,maxRetries:1});
-        if (!response.ok) throw new Error(`HTTP ${response.status}: ${(await response.text()).slice(0,300)}`);
-        const payload=await response.json() as {choices?:Array<{message?:{content?:string|Array<{text?:string}>}} >};
-        const value=payload.choices?.[0]?.message?.content;
-        return typeof value==='string'?value:Array.isArray(value)?value.map(x=>x.text??'').join(''):'';
-      };
+      const callModel = callCodeModel;
       const rawPlan=await callModel([
         {role:'system',content:'Plan a software project as a practical ordered list of files. Return ONLY JSON: {"files":[{"path":"relative/path.ext","task":"specific task"}]}. Include only necessary source/config/test/docs files. No absolute paths, no .. segments, no secrets, max 30 files.'},
         {role:'user',content:`Project: ${activeSession.title}\nRequirements:\n${goal}\nExisting files:\n${(project?.files??[]).map(f=>f.path).join('\n')}`},
@@ -337,10 +382,12 @@ export function DeveloperWorkspace() {
         await refresh();
         const current=await getDeveloperProject(activeSession.id,activeSession.title);
         const old=current.files.find(f=>f.path===item.path)?.content??'';
+        setSelectedPath(item.path);
+        setDraft('');
         const generated=await callModel([
           {role:'system',content:'You are a code-writing worker in an IDE. Return only the complete contents of this one file, no markdown fences. Keep interfaces consistent with the provided existing project files. Secure, maintainable code. Never claim tests ran.'},
           {role:'user',content:`Project: ${activeSession.title}\nOverall requirements:\n${goal}\nFile ${i+1}/${normalized.length}: ${item.path}\nTask: ${item.task}\nExisting project files (path and contents):\n${current.files.map(f=>`--- ${f.path} ---\n${f.content.slice(0,12000)}`).join('\n').slice(0,50000)}\nExisting content for target file:\n${old}\nReturn the full new contents for ${item.path} only.`},
-        ]);
+        ],0.2,chunk=>setDraft(value=>value+chunk));
         const output=generated.replace(/^\`\`\`[a-zA-Z0-9_-]*\s*\n/,'').replace(/\n\`\`\`\s*$/,'');
         if(!output.trim()) throw new Error(`الموديل لم ينتج محتوى للملف ${item.path}`);
         await saveProjectFile(activeSession.id,activeSession.title,item.path,output);
