@@ -34,6 +34,7 @@ export function DeveloperWorkspace() {
   const { activeSession, sessions, provider, createSession, setActiveSession, patchSession } = useAssistant();
   const [project, setProject] = useState<DeveloperProject | null>(null);
   const [selectedPath, setSelectedPath] = useState('');
+  const [collapsedFolders, setCollapsedFolders] = useState<Record<string, boolean>>({});
   const [draft, setDraft] = useState('');
   const [newPath, setNewPath] = useState('src/main.ts');
   const [goal, setGoal] = useState('');
@@ -56,6 +57,13 @@ export function DeveloperWorkspace() {
   useEffect(() => { void refresh(); }, [refresh]);
 
   const outline = useMemo(() => buildProjectOutline(project?.files ?? []), [project?.files]);
+  const visibleOutline = useMemo(() => outline.filter(item => {
+    const parts = item.path.split('/');
+    for (let i = 1; i < parts.length; i++) {
+      if (collapsedFolders[parts.slice(0, i).join('/')]) return false;
+    }
+    return true;
+  }), [outline, collapsedFolders]);
   const selectedFile = project?.files.find(f => f.path === selectedPath);
   const pendingReviews = project?.reviews.filter(r => r.status === 'pending') ?? [];
 
@@ -167,7 +175,7 @@ export function DeveloperWorkspace() {
       <View style={[s.sidebar,{borderColor:colors.border,backgroundColor:colors.card}]}>
         <Text style={[s.sectionTitle,{color:colors.foreground}]}> <Feather name="folder" size={14}/> ملفات المشروع</Text>
         <View style={s.inline}><TextInput value={newPath} onChangeText={setNewPath} placeholder="src/main.ts" placeholderTextColor={colors.mutedForeground} style={[s.path,{color:colors.foreground,borderColor:colors.border}]}/><Pressable onPress={()=>void createFile()} style={[s.plus,{backgroundColor:colors.primary}]}><Feather name="plus" size={15} color={colors.primaryForeground}/></Pressable></View>
-        <ScrollView style={{maxHeight:240}}>{outline.map(item=><Pressable key={item.path} disabled={item.directory} onPress={()=>{setSelectedPath(item.path);setDraft(project?.files.find(f=>f.path===item.path)?.content??'');}} style={[s.tree,{paddingLeft:7+item.depth*11,backgroundColor:selectedPath===item.path?colors.accentSubtle:'transparent'}]}><Feather name={item.directory?'folder':'file-text'} size={13} color={colors.mutedForeground}/><Text numberOfLines={1} style={{color:colors.foreground,fontSize:12,flex:1}}>{item.path.split('/').pop()}</Text></Pressable>)}</ScrollView>
+        <ScrollView style={{maxHeight:240}}>{visibleOutline.map(item=><Pressable key={item.path} onPress={()=>{if(item.directory){setCollapsedFolders(prev=>({...prev,[item.path]:!prev[item.path]}));}else{setSelectedPath(item.path);setDraft(project?.files.find(f=>f.path===item.path)?.content??'');}}} style={[s.tree,{paddingLeft:7+item.depth*11,backgroundColor:selectedPath===item.path?colors.accentSubtle:'transparent'}]}><Feather name={item.directory?(collapsedFolders[item.path]?'chevron-right':'chevron-down'):'file-text'} size={13} color={colors.mutedForeground}/><Text numberOfLines={1} style={{color:colors.foreground,fontSize:12,flex:1}}>{item.path.split('/').pop()}</Text></Pressable>)}</ScrollView>
         <Pressable onPress={()=>void exportZip()} style={[s.button,{borderColor:colors.border}]}><Feather name="download" size={14} color={colors.foreground}/><Text style={{color:colors.foreground,fontSize:11}}>تحميل المشروع ZIP</Text></Pressable>
       </View>
       <View style={[s.editor,{borderColor:colors.border,backgroundColor:colors.card}]}>
