@@ -1,6 +1,6 @@
 import { Linking, Platform } from 'react-native';
 import { router } from 'expo-router';
-import { waitForEmbeddedBrowser } from './embedded-browser';
+import { getEmbeddedBrowser, waitForEmbeddedBrowser } from './embedded-browser';
 import { isAuthorized, loadTargets } from './hunter';
 import { fetchWithRetry } from './fetch-with-retry';
 import * as Device from './device';
@@ -471,14 +471,16 @@ export async function executeTool(
     }
     case 'open_url': {
       const url = safeUrl(str(args, 'url'));
-      // Keep agent browsing in-app and verify the page actually loaded.
       if (Platform.OS === 'web') {
         throw new Error('المتصفح القابل للتحكم متاح داخل تطبيق Android المثبت؛ نسخة الويب لا تحتوي على WebView bridge.');
       }
-      router.push({ pathname: '/browser', params: { url } });
-      const browser = await waitForEmbeddedBrowser(15_000);
-      await browser.waitUntilReady(20_000);
-      const page = await browser.readPage();
+      let browser = getEmbeddedBrowser();
+      if (!browser) {
+        router.push({ pathname: '/browser' });
+        browser = await waitForEmbeddedBrowser(15_000);
+      }
+      const parsed = new URL(url);
+      const page = await browser.navigate(url, parsed.hostname, false);
       return JSON.stringify({ message: 'تم فتح الرابط وقراءة الصفحة داخل متصفح OneByte المدمج.', url: page.url, title: page.title, text: page.text, elements: page.elements });
     }
     case 'browser_navigate': {
@@ -488,9 +490,12 @@ export async function executeTool(
       if (!['http:', 'https:'].includes(parsed.protocol) || parsed.username || parsed.password) throw new Error('يسمح فقط بروابط HTTP/HTTPS دون بيانات اعتماد مضمّنة.');
       const scope = isAuthorized(parsed.toString(), await loadTargets());
       if (!scope.ok) throw new Error(scope.reason);
-      router.push({ pathname: '/browser', params: { url: parsed.toString() } });
-      const browser = await waitForEmbeddedBrowser(15_000);
-      const page = await browser.navigate(parsed.toString(), parsed.hostname);
+      let browser = getEmbeddedBrowser();
+      if (!browser) {
+        router.push({ pathname: '/browser' });
+        browser = await waitForEmbeddedBrowser(15_000);
+      }
+      const page = await browser.navigate(parsed.toString(), parsed.hostname, true);
       return JSON.stringify({ message: 'تم فتح الهدف في المتصفح المدمج ضمن النطاق المصرح.', url: page.url, title: page.title, text: page.text, elements: page.elements });
     }
     case 'browser_read_page': {

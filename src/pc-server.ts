@@ -387,10 +387,6 @@ async function runPcChat(text: string): Promise<void> {
   const ctx = contextRef;
   if (!ctx || !running) return;
   const data = ctx.getData();
-  if (!data.provider.model.trim()) {
-    liveText = '⛔ الموديل غير مضبوط — افتحي إعدادات الهاتف أولًا.';
-    return;
-  }
   let sessionId = data.activeSessionId;
   if (!sessionId) {
     sessionId = await ctx.createSession();
@@ -402,6 +398,15 @@ async function runPcChat(text: string): Promise<void> {
     createdAt: new Date().toISOString(),
   };
   await ctx.appendMessage(sessionId, userMessage);
+  if (!data.provider.model.trim()) {
+    await ctx.appendMessage(sessionId, {
+      id: makeMessageId(), role: 'assistant',
+      content: '⛔ الموديل غير مضبوط — افتحي إعدادات الهاتف واحفظي مزودًا وموديلًا قبل إرسال المهام.',
+      createdAt: new Date().toISOString(),
+    });
+    liveText = '';
+    return;
+  }
 
   const controller = new AbortController();
   abortRef = controller;
@@ -415,7 +420,13 @@ async function runPcChat(text: string): Promise<void> {
     const { getStoredModelApiKey } = await import('./assistant');
     settingsApiKey = data.provider.keyless ? '' : await getStoredModelApiKey();
   } catch {
-    liveText = '⛔ المفتاح غير محفوظ — أضيفيه من إعدادات الهاتف.';
+    const message: ChatMessage = {
+      id: makeMessageId(), role: 'assistant',
+      content: '⛔ المفتاح غير محفوظ — أضيفيه من إعدادات الهاتف ثم أعد إرسال المهمة.',
+      createdAt: new Date().toISOString(),
+    };
+    await ctx.appendMessage(sessionId, message).catch(() => undefined);
+    liveText = '';
     abortRef = null;
     return;
   }
@@ -433,7 +444,6 @@ async function runPcChat(text: string): Promise<void> {
       deviceControl: deviceOn,
       deviceAvailable: Device.isAvailable(),
       summary: session?.summary,
-      mode: session?.mode,
     });
     const budget = workingBudget(fresh.provider, fresh.agent.maxWorkingTokens);
     const plan = planContext(

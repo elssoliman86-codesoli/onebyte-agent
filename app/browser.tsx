@@ -112,7 +112,7 @@ export default function BrowserScreen() {
   const initialUrl = (Array.isArray(params.url) ? params.url[0] : params.url) ?? '';
   const [address, setAddress] = useState(initialUrl);
   const [url, setUrl] = useState(initialUrl);
-  const [sourceUrl, setSourceUrl] = useState(initialUrl);
+  const [sourceUrl, setSourceUrl] = useState('');
   const [networkLog, setNetworkLog] = useState<EmbeddedBrowserNetworkEntry[]>([]);
   const [networkVisible, setNetworkVisible] = useState(false);
   const [selectedNetworkEntry, setSelectedNetworkEntry] = useState<EmbeddedBrowserNetworkEntry | null>(null);
@@ -157,18 +157,26 @@ export default function BrowserScreen() {
   };
 
   useEffect(() => {
+    let active = true;
     setAddress(initialUrl);
     setUrl(initialUrl);
-    setSourceUrl(initialUrl);
+    setSourceUrl('');
     currentUrlRef.current = initialUrl;
     pageReadyRef.current = false;
     clearNetworkEntries();
     activateScope('');
-    if (!initialUrl) return;
+    if (!initialUrl) return () => { active = false; };
+    // Resolve the saved scope before mounting the page so the request monitor
+    // is injected before the target's scripts issue their first requests.
     void loadTargets().then((targets) => {
+      if (!active) return;
       const match = findAuthorizedTarget(initialUrl, targets);
-      if (match) activateScope(match.host);
-    }).catch(() => undefined);
+      activateScope(match?.host ?? '');
+      setSourceUrl(initialUrl);
+    }).catch(() => {
+      if (active) setSourceUrl(initialUrl);
+    });
+    return () => { active = false; };
   }, [initialUrl]);
 
   useEffect(() => {
@@ -210,18 +218,21 @@ export default function BrowserScreen() {
           readyWaitersRef.current.push(waiter);
         });
       },
-      navigate: async (requestedUrl, _requestedScope) => {
+      navigate: async (requestedUrl, _requestedScope, requireAuthorization = true) => {
         const parsed = new URL(requestedUrl);
         if (!['http:', 'https:'].includes(parsed.protocol) || parsed.username || parsed.password) {
           throw new Error('يسمح فقط بروابط HTTP وHTTPS دون بيانات اعتماد مضمّنة.');
         }
         const targets = await loadTargets();
-        const check = isAuthorized(parsed.toString(), targets);
-        if (!check.ok) throw new Error(check.reason);
         const target = findAuthorizedTarget(parsed.toString(), targets);
-        if (!target) throw new Error('الرابط خارج النطاق المصرّح به.');
-        if (scopeHostRef.current !== target.host) clearNetworkEntries();
-        activateScope(target.host);
+        if (requireAuthorization) {
+          const check = isAuthorized(parsed.toString(), targets);
+          if (!check.ok) throw new Error(check.reason);
+          if (!target) throw new Error('الرابط خارج النطاق المصرّح به.');
+        }
+        const nextScope = target?.host ?? '';
+        if (scopeHostRef.current !== nextScope) clearNetworkEntries();
+        activateScope(nextScope);
         setBrowserError('');
         const nextUrl = parsed.toString();
         if (currentUrlRef.current === nextUrl && pageReadyRef.current) return driver.readPage();
@@ -515,7 +526,7 @@ export default function BrowserScreen() {
               waiter.reject(new Error(message));
             });
           }}
-          onHttpError={(event) => setBrowserError('أرجع الموقع HTTP ' + event.nativeEvent.status + ' أثناء التحميل.')}
+          onHttpError={(event) => setBrowserError('فشل تحميل الصفحة: ' + event.nativeEvent.description + ' (رمز ' + event.nativeEvent.code + ').')}
           onMessage={(event) => {
             try {
               const data = JSON.parse(event.nativeEvent.data);

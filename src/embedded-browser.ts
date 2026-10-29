@@ -47,7 +47,7 @@ export interface EmbeddedBrowserRequestResult {
 export interface EmbeddedBrowserDriver {
   currentUrl(): string;
   waitUntilReady(timeoutMs?: number): Promise<string>;
-  navigate(url: string, scopeHost: string): Promise<EmbeddedBrowserSnapshot>;
+  navigate(url: string, scopeHost: string, requireAuthorization?: boolean): Promise<EmbeddedBrowserSnapshot>;
   readPage(): Promise<EmbeddedBrowserSnapshot>;
   click(index: number): Promise<string>;
   typeText(index: number, text: string): Promise<string>;
