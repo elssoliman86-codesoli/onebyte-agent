@@ -5,6 +5,7 @@ import { isAuthorized, loadTargets } from './hunter';
 import { fetchWithRetry } from './fetch-with-retry';
 import * as Device from './device';
 import { createFile, getDefaultBranch, getRepoTree, listRepos, loadGithubToken, readFileSnapshot, verifyGithubToken, writeFile } from './github';
+import { loadConnections, sendTelegramMessage } from './marketing';
 import type {
   AssistantMemory,
   AssistantSkill,
@@ -40,6 +41,13 @@ const obj = (properties: Record<string, unknown>, required: string[] = []) => ({
 });
 
 export const TOOL_SPECS: ToolSpec[] = [
+  {
+    name: 'telegram_send_message',
+    group: 'local',
+    label: 'إرسال رسالة تيليجرام',
+    description: 'Send a text message to the Telegram chat/channel configured in OneByte Marketing connections using the official Telegram Bot API. Use only when the user explicitly asks to send or publish. Never claim success unless the API confirms it. If no bot/chat is configured, ask the user to configure it in Marketing connections.',
+    parameters: obj({ text: { type: 'string' } }, ['text']),
+  },
   {
     name: 'github_list_repositories',
     group: 'local',
@@ -476,6 +484,18 @@ export async function executeTool(
   ctx: ToolContext,
 ): Promise<string> {
   switch (name) {
+    case 'telegram_send_message': {
+      const connections = await loadConnections();
+      const config = connections.telegram;
+      if (!config?.botToken?.trim() || !config?.chatId?.trim()) {
+        throw new Error('تيليجرام غير متصل. افتح Marketing Studio > الاتصالات واضبط Bot Token وChat ID/القناة أولًا. لا ترسل التوكن في الشات.');
+      }
+      const message = str(args, 'text').trim();
+      if (message.length > 4096) throw new Error('رسالة تيليجرام تتجاوز حد 4096 حرفًا. قسّمها إلى رسائل أقصر.');
+      const result = await sendTelegramMessage(config, message);
+      if (!result.ok) throw new Error(result.detail);
+      return JSON.stringify({ ok: true, platform: 'Telegram', destination: config.chatId, detail: result.detail, url: /^@/.test(config.chatId) ? 'https://t.me/' + config.chatId.slice(1) : null });
+    }
     case 'github_list_repositories': {
       const token = await loadGithubToken();
       if (!token) throw new Error('GitHub غير متصل داخل OneByte. افتح إعدادات GitHub وأضف Fine-grained Personal Access Token بصلاحية المستودعات المطلوبة.');
