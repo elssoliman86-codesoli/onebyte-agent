@@ -221,6 +221,8 @@ function MarkdownText({ text, user }: { text: string; user?: boolean }) {
     <>
       {text.split('\n').map((line, li) => {
         // Markdown structure: headings and bullets/numbered lists.
+        const normalizedLine = line.replace(/^\s*#{1,6}\s+/, '').replace(/^\s*[-*_]{3,}\s*$/, '').trim();
+        if (/^[-*_]{3,}$/.test(line.trim())) return <View key={li} style={{ height: 1, backgroundColor: colors.border, marginVertical: 8 }} />;
         const heading = /^(#{1,4})\s+(.*)$/.exec(line);
         if (heading && !user) {
           const level = heading[1].length;
@@ -238,11 +240,11 @@ function MarkdownText({ text, user }: { text: string; user?: boolean }) {
                 },
               ]}
             >
-              {heading[2]}
+              {heading[2].replace(/^\*\*(.*?)\*\*$/, '$1').replace(/\s*\*\*$/, '')}
             </Text>
           );
         }
-        const bullet = /^[-•]\s+(.*)$/.exec(line.trim());
+        const bullet = /^[-•*]\s+(.*)$/.exec(line.trim());
         if (bullet) {
           return (
             <View key={li} style={styles.bulletRow}>
@@ -264,8 +266,8 @@ function MarkdownText({ text, user }: { text: string; user?: boolean }) {
             </View>
           );
         }
-        const rendered = line
-          .split(/(\*\*[^*]+\*\*|`[^`]+`)/g)
+        const rendered = normalizedLine
+          .split(/(\*\*[^*]+\*\*|`[^`]+`|\*[^*]+\*)/g)
           .filter(Boolean)
           .map((part, i) => {
             if (part.startsWith('**') && part.endsWith('**')) {
@@ -274,6 +276,9 @@ function MarkdownText({ text, user }: { text: string; user?: boolean }) {
                   {part.slice(2, -2)}
                 </Text>
               );
+            }
+            if (part.startsWith('*') && part.endsWith('*') && part.length > 2) {
+              return <Text key={i} style={{ fontStyle: 'italic' }}>{part.slice(1, -1)}</Text>;
             }
             if (part.startsWith('`') && part.endsWith('`') && part.length > 2) {
               return (
@@ -340,7 +345,17 @@ function MessageBubble({
   const [copied, setCopied] = useState(false);
   const [rating, setRating] = useState<'up' | 'down' | null>(null);
   // Code blocks are not meant to be read aloud; keep prose only.
-  const speakableText = message.content.replace(/```[\s\S]*?(?:```|$)/g, ' ').replace(/\s+/g, ' ').trim();
+  const speakableText = message.content
+    .replace(/```[\s\S]*?(?:```|$)/g, ' كود برمجي تم إخفاؤه ')
+    .replace(/^\s*#{1,6}\s+/gm, '')
+    .replace(/^\s*[-*_]{3,}\s*$/gm, '')
+    .replace(/\*\*(.*?)\*\*/g, '$1')
+    .replace(/\*(.*?)\*/g, '$1')
+    .replace(/`([^`]+)`/g, '$1')
+    .replace(/^\s*[-•]\s+/gm, '')
+    .replace(/^\s*\d+[.)]\s+/gm, '')
+    .replace(/[>#*_~]/g, '')
+    .replace(/\s+/g, ' ').trim();
 
   async function toggleSpeak() {
     if (speaking) {
