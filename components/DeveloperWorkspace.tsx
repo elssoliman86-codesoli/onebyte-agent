@@ -122,11 +122,11 @@ export function DeveloperWorkspace() {
   const [reviewOpen, setReviewOpen] = useState(false);
   const [codeModelPickerOpen, setCodeModelPickerOpen] = useState(false);
 
-  const refresh = useCallback(async () => {
+  const refresh = useCallback(async (preferredPath?: string) => {
     if (!activeSession) { setProject(null); setSelectedPath(''); setDraft(''); return; }
     const next = await getDeveloperProject(activeSession.id, activeSession.title);
     setProject(next);
-    const chosen = next.files.find(f => f.path === selectedPath) ?? next.files[0];
+    const chosen = next.files.find(f => f.path === (preferredPath ?? selectedPath)) ?? next.files[0];
     setSelectedPath(chosen?.path ?? '');
     setDraft(chosen?.content ?? '');
   }, [activeSession?.id, activeSession?.title]);
@@ -345,7 +345,7 @@ export function DeveloperWorkspace() {
       await saveProjectFile(activeSession.id, activeSession.title, selectedPath, clean);
       setDraft(clean);
       if (step) await updatePlanStep(activeSession.id, step.id, 'done');
-      await refresh();
+      await refresh(selectedPath);
       alertCompat('اكتمل توليد الملف', 'تم حفظ الكود في مساحة المشروع. لم يتم تشغيله تلقائيًا؛ راجعه واختبره قبل الاستخدام.');
     } catch (error) {
       if (step) await updatePlanStep(activeSession.id, step.id, 'error').catch(() => undefined);
@@ -395,7 +395,6 @@ export function DeveloperWorkspace() {
         const after=await getDeveloperProject(activeSession.id,activeSession.title);
         const step=after.plan[i];
         if(step) await updatePlanStep(activeSession.id,step.id,'done');
-        await refresh();
       }
       const finished=await getDeveloperProject(activeSession.id,activeSession.title);
       const completedSteps = finished.plan.filter(step => step.status === 'done');
@@ -412,7 +411,7 @@ export function DeveloperWorkspace() {
           if(result.should_change&&result.proposed_code?.trim()&&result.proposed_code!==file.content) await proposeCodeReview(activeSession.id,file.path,file.content,result.proposed_code,result.reason||'مراجعة ما بعد البناء');
         } catch { /* Preserve generated files; review failures are surfaced in the completion notice. */ }
       }
-      await refresh();
+      await refresh(normalized[normalized.length - 1].path);
       alertCompat('انتهى البناء متعدد الملفات', `تم توليد ${normalized.length} ملفًا بالتتابع، ثم إنشاء اقتراحات المراجعة الممكنة. راجع اقتراحات الموافقة قبل تطبيقها. لم يتم تشغيل المشروع أو الاختبارات تلقائيًا.`);
     } catch(error) {
       if (activeSession) {
