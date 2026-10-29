@@ -897,9 +897,23 @@ export default function ChatScreen() {
   }, [pendingPrompt, consumePendingPrompt]);
 
   async function startNewChat() {
-    const mode = activeSession?.mode;
+    // A new conversation is a hard boundary: never let an old generation,
+    // approval dialog, or queued follow-up continue into the next chat.
+    abortRef.current?.abort();
+    pending?.resolve('deny');
+    setPending(null);
+    queueRunningRef.current = false;
+    setQueue([]);
+    setSending(false);
+    setStreamText('');
+    setRunPlan(null);
+    setPlanDone(null);
+    runSessionIdRef.current = null;
+
+    // Do not inherit the previous chat's specialty/mode. The user is starting
+    // a genuinely independent conversation and can choose a mode explicitly.
     const id = await createSession();
-    if (mode) await patchSession(id, { mode });
+    visibleSessionIdRef.current = id;
     setMessages([]);
     setDraft('');
     setEditingMessageId(null);
