@@ -13,6 +13,7 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 import { Feather } from '@expo/vector-icons';
 import Svg, { Circle, Defs, RadialGradient, Stop } from 'react-native-svg';
 import { speechService } from '@/src/speech-service';
+import type { VoicePersona } from '@/src/assistant';
 
 type VoiceState = 'ready' | 'listening' | 'thinking' | 'speaking' | 'error';
 
@@ -20,6 +21,8 @@ interface VoiceConversationModalProps {
   visible: boolean;
   language: string;
   modelLabel?: string;
+  voicePersona?: VoicePersona;
+  voiceId?: string;
   onClose: () => void;
   onSend: (text: string) => Promise<string>;
   onStop: () => void;
@@ -36,6 +39,8 @@ export function VoiceConversationModal({
   visible,
   language,
   modelLabel,
+  voicePersona = 'friendly',
+  voiceId = '',
   onClose,
   onSend,
   onStop,
@@ -64,6 +69,7 @@ export function VoiceConversationModal({
     retryAllowedRef.current = true;
     setError('');
     setState('listening');
+    let completedReply = false;
     try {
       let spoken = (await speechService.startListening({
         language: speechLocale(language),
@@ -89,10 +95,19 @@ export function VoiceConversationModal({
         // model reply is spoken. Never run STT in parallel with TTS, otherwise
         // the assistant hears its own voice and sends it back as a new prompt.
         await speechService.cancelListening().catch(() => undefined);
+        const voicePreset = {
+          friendly: { pitch: 1.04, rate: 0.96 },
+          calm: { pitch: 0.92, rate: 0.86 },
+          energetic: { pitch: 1.12, rate: 1.08 },
+          formal: { pitch: 0.98, rate: 0.94 },
+        }[voicePersona];
         await speechService.speak(answer, {
           language: speechLocale(language),
-          rate: 0.96,
+          pitch: voicePreset.pitch,
+          rate: voicePreset.rate,
+          ...(voiceId ? { voice: voiceId } : {}),
         });
+        completedReply = true;
         if (!visibleRef.current || cancelledRef.current) {
           await speechService.stopSpeaking().catch(() => undefined);
           return;
@@ -101,7 +116,7 @@ export function VoiceConversationModal({
         spoken = '';
       }
 
-      if (!visibleRef.current || cancelledRef.current) return;
+      if (!visibleRef.current || cancelledRef.current || completedReply) return;
       setError('لم أسمع كلامًا واضحًا. سأعيد الاستماع تلقائيًا.');
       setState('ready');
     } catch (cause) {
@@ -130,7 +145,7 @@ export function VoiceConversationModal({
         }, 350);
       }
     }
-  }, [language]);
+  }, [language, voicePersona, voiceId]);
 
   const startTurnRef = useRef(startTurn);
   startTurnRef.current = startTurn;
@@ -182,6 +197,7 @@ export function VoiceConversationModal({
 
   function handleMainButton() {
     if (state === 'listening') {
+      // Stop recognition and immediately hand the captured transcript to the turn logic.
       void speechService.stopListening().catch(() => undefined);
       return;
     }

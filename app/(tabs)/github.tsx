@@ -3,6 +3,7 @@ import {
   ActivityIndicator, Linking, Platform, Pressable, ScrollView, StyleSheet, Text, TextInput, View,
 } from 'react-native';
 import { Feather } from '@expo/vector-icons';
+import * as Clipboard from 'expo-clipboard';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { router } from 'expo-router';
 import { useAssistant } from '@/src/assistant';
@@ -10,7 +11,9 @@ import { ScreenTopBar } from '@/components/PhoneDrawer';
 import { useColors } from '@/hooks/useColors';
 import {
   deleteGithubToken, getRepoTree, listRepos, loadGithubToken, MAX_GITHUB_TEXT_FILE_BYTES,
-  readFileSnapshot, saveGithubToken, verifyGithubToken, writeFile, type GhRepo, type GhTreeItem,
+  readFileSnapshot, saveGithubToken, verifyGithubToken, writeFile,
+  loadGithubOAuthClientId, saveGithubOAuthClientId, requestGithubDeviceAuthorization, pollGithubDeviceToken,
+  type GithubDeviceAuthorization, type GhRepo, type GhTreeItem,
 } from '@/src/github';
 
 const EDITABLE_EXTENSIONS = new Set([
@@ -38,7 +41,12 @@ export default function GithubProjectsScreen() {
   const { setPendingPrompt } = useAssistant();
   const [token, setToken] = useState('');
   const [tokenDraft, setTokenDraft] = useState('');
+  const [oauthClientId, setOauthClientId] = useState('');
+  const [deviceAuth, setDeviceAuth] = useState<GithubDeviceAuthorization | null>(null);
+  const [deviceFlowBusy, setDeviceFlowBusy] = useState(false);
   const [account, setAccount] = useState('');
+  const [tokenScopes, setTokenScopes] = useState<string[]>([]);
+  const [acceptedScopes, setAcceptedScopes] = useState<string[]>([]);
   const [editingToken, setEditingToken] = useState(false);
   const [repos, setRepos] = useState<GhRepo[]>([]);
   const [repoQuery, setRepoQuery] = useState('');
@@ -84,6 +92,8 @@ export default function GithubProjectsScreen() {
       if (save) await saveGithubToken(clean);
       setToken(clean);
       setAccount(profile.login);
+      setTokenScopes(profile.scopes);
+      setAcceptedScopes(profile.acceptedScopes);
       setEditingToken(false);
       const loaded = await listRepos(clean);
       setRepos(loaded);
@@ -100,6 +110,8 @@ export default function GithubProjectsScreen() {
     let alive = true;
     void (async () => {
       try {
+        const savedClientId = await loadGithubOAuthClientId();
+        if (alive) setOauthClientId(savedClientId);
         const saved = await loadGithubToken();
         if (!alive) return;
         if (saved) {
@@ -114,6 +126,55 @@ export default function GithubProjectsScreen() {
     })();
     return () => { alive = false; };
   }, [connect, say]);
+
+
+  const connectWithOAuth = useCallback(async () => {
+    const clientId = oauthClientId.trim();
+    if (!clientId) { say('أدخل OAuth Client ID من إعدادات تطبيق GitHub مرة واحدة.', 'error'); return; }
+    setDeviceFlowBusy(true);
+    setBusy(true);
+    setDeviceAuth(null);
+    try {
+      await saveGithubOAuthClientId(clientId);
+      say('جاري طلب كود ربط آمن من GitHub…');
+      const authorization = await requestGithubDeviceAuthorization(clientId);
+      setDeviceAuth(authorization);
+      await Clipboard.setStringAsync(authorization.user_code).catch(() => undefined);
+      say('افتح GitHub وأدخل كود التحقق الظاهر. تم نسخ الكود للحافظة.', 'success');
+      await Linking.openURL(authorization.verification_uri);
+      const deadline = Date.now() + authorization.expires_in * 1000;
+      let intervalMs = Math.max(5, authorization.interval) * 1000;
+      while (Date.now() < deadline) {
+        await new Promise<void>((resolve) => setTimeout(resolve, intervalMs));
+        const poll = await pollGithubDeviceToken(clientId, authorization.device_code);
+        if (poll.status === 'pending') continue;
+        if (poll.status === 'slow_down') {
+          intervalMs = Math.max(intervalMs + 5000, (poll.interval ?? intervalMs / 1000) * 1000);
+          continue;
+        }
+        if (poll.status === 'error') throw new Error(poll.message);
+        await saveGithubToken(poll.accessToken);
+        const profile = await verifyGithubToken(poll.accessToken);
+        const loaded = await listRepos(poll.accessToken);
+        setToken(poll.accessToken);
+        setAccount(profile.login);
+        setTokenScopes(profile.scopes);
+        setAcceptedScopes(profile.acceptedScopes);
+        setRepos(loaded);
+        setEditingToken(false);
+        setDeviceAuth(null);
+        say('تم ربط GitHub OAuth بحساب @' + profile.login + ' وتحميل ' + loaded.length + ' مستودعًا.', 'success');
+        return;
+      }
+      throw new Error('انتهت صلاحية كود الربط. اضغط «ربط GitHub» وابدأ من جديد.');
+    } catch (error) {
+      say(error instanceof Error ? error.message : 'فشل ربط GitHub OAuth.', 'error');
+    } finally {
+      setBusy(false);
+      setDeviceFlowBusy(false);
+      setReady(true);
+    }
+  }, [oauthClientId, say]);
 
   const openRepo = useCallback(async (repo: GhRepo) => {
     if (dirty) { say('فيه تعديلات غير محفوظة. احفظها أو اضغط «تراجع» قبل تبديل المستودع.', 'error'); return; }
@@ -248,7 +309,7 @@ export default function GithubProjectsScreen() {
           {!token || editingToken ? (
             <>
               <Text style={[styles.help, { color: muted }]}>
-                استخدم Fine-grained Personal Access Token مع Metadata: read-only وContents: read and write، وقيّد الوصول للمستودعات التي تختارها.
+                يمكنك استخدام Personal Access Token كخيار متقدم فقط. الأفضل ربط OAuth بالأعلى، ولا تشارك أي توكن في الشات.
               </Text>
               <TextInput
                 value={tokenDraft}
@@ -281,6 +342,18 @@ export default function GithubProjectsScreen() {
 
         {token ? (
           <View style={[styles.card, { backgroundColor: colors.card, borderColor: colors.border }]}>
+            <View style={styles.row}>
+              <Feather name="shield" size={17} color={accent} />
+              <Text style={[styles.cardTitle, { color: fg }]}>صلاحيات GitHub المكتشفة</Text>
+            </View>
+            <Text style={[styles.help, { color: muted }]}>الحساب: @{account || '—'}</Text>
+            {tokenScopes.length ? <Text style={[styles.help, { color: fg }]}>OAuth scopes: {tokenScopes.join(' · ')}</Text> : <Text style={[styles.help, { color: fg }]}>GitHub لم يُرجع OAuth scopes؛ قد تكون الصلاحيات محددة لكل مستودع.</Text>}
+            {acceptedScopes.length ? <Text style={[styles.help, { color: muted }]}>Scopes المطلوبة من API: {acceptedScopes.join(' · ')}</Text> : null}
+          </View>
+        ) : null}
+
+        {token ? (
+          <View style={[styles.card, { backgroundColor: colors.card, borderColor: colors.border }]}>
             <View style={styles.rowBetween}>
               <Text style={[styles.cardTitle, { color: fg }]}>مستودعاتك</Text>
               <Text style={[styles.help, { color: muted }]}>{shownRepos.length} / {repos.length}</Text>
@@ -293,7 +366,7 @@ export default function GithubProjectsScreen() {
                   <Feather name={repo.private ? 'lock' : 'book-open'} size={16} color={selectedRepo?.full_name === repo.full_name ? accent : muted} />
                   <View style={{ flex: 1, minWidth: 0, gap: 3 }}>
                     <Text style={[styles.repoName, { color: fg }]} numberOfLines={1}>{repo.full_name}</Text>
-                    <Text style={[styles.help, { color: muted }]} numberOfLines={1}>{repo.description || 'بدون وصف'} · {repo.default_branch || 'default branch'}</Text>
+                    <Text style={[styles.help, { color: muted }]} numberOfLines={1}>{repo.description || 'بدون وصف'} · {repo.default_branch || 'default branch'} · {repo.permissions?.admin ? 'إدارة' : repo.permissions?.push ? 'قراءة وكتابة' : repo.permissions?.pull ? 'قراءة فقط' : 'الصلاحية غير معروفة'}</Text>
                   </View>
                   {selectedRepo?.full_name === repo.full_name ? <Feather name="check-circle" size={16} color={accent} /> : <Feather name="chevron-left" size={16} color={muted} />}
                 </Pressable>

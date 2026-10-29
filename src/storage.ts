@@ -65,6 +65,8 @@ const DEFAULT_APPEARANCE: AppearanceSettings = {
   accent: 'emerald',
   language: 'ar',
   fontColor: '#F3F7F4',
+  voicePersona: 'friendly',
+  voiceId: '',
 };
 
 // ─── Agent Checkpoint Types ──────────────────────────────────────────────
@@ -249,6 +251,20 @@ export const storage = {
         messages: [...session.messages, message],
         updatedAt: new Date().toISOString(),
       };
+    });
+    await this.setSessions(updated);
+  },
+
+  /** Insert or replace a message by ID, used for durable streaming checkpoints. */
+  async upsertMessage(sessionId: string, message: ChatMessage): Promise<void> {
+    const sessions = await this.getSessions();
+    const updated = sessions.map((session) => {
+      if (session.id !== sessionId) return session;
+      const index = session.messages.findIndex((item) => item.id === message.id);
+      const messages = index < 0
+        ? [...session.messages, message]
+        : session.messages.map((item, i) => i === index ? message : item);
+      return { ...session, messages, updatedAt: new Date().toISOString() };
     });
     await this.setSessions(updated);
   },

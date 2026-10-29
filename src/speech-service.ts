@@ -10,7 +10,7 @@ export interface SpeechServiceInterface {
   }): Promise<string[]>;
   stopListening(): Promise<void>;
   cancelListening(): Promise<void>;
-  speak(text: string, options?: { language?: string; pitch?: number; rate?: number }): Promise<void>;
+  speak(text: string, options?: { language?: string; pitch?: number; rate?: number; voice?: string }): Promise<void>;
   stopSpeaking(): Promise<void>;
   pauseSpeaking(): Promise<void>;
   resumeSpeaking(): Promise<void>;
@@ -56,7 +56,7 @@ class SpeechService {
     this.isListening = false;
   }
 
-  async speak(text: string, options?: { language?: string; pitch?: number; rate?: number }): Promise<void> {
+  async speak(text: string, options?: { language?: string; pitch?: number; rate?: number; voice?: string }): Promise<void> {
     this.isSpeaking = true;
     this.currentUtterance = text;
     return new Promise<void>((resolve, reject) => {
@@ -64,6 +64,7 @@ class SpeechService {
         language: options?.language ?? 'ar-SA',
         pitch: options?.pitch ?? 1.0,
         rate: options?.rate ?? 1.0,
+        ...(options?.voice ? { voice: options.voice } : {}),
         onDone: () => {
           this.isSpeaking = false;
           this.currentUtterance = '';

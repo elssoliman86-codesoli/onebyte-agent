@@ -275,6 +275,9 @@ export async function runAgent({
   let finalThinking = '';
   const allowedForTurn = new Set<string>();
   const repeatedDeviceActions = new Set<string>();
+  const repeatedWebReads = new Map<string, number>();
+  let webReadActions = 0;
+  let forceFinalResponse = false;
   let deviceActionsExecuted = 0;
   let lastScreenSnapshot: string | null = null;
   let screenNeedsRefresh = false;
@@ -327,12 +330,13 @@ export async function runAgent({
       if (signal?.aborted) throw new Error('تم إيقاف المهمة.');
       let roundText = '';
       let result: { text: string; toolCalls: ToolCall[] };
+      const roundSpecs = round === maxSteps || forceFinalResponse ? [] : activeSpecs;
       try {
         result = await streamCompletion({
           settings,
           apiKey,
           messages: wire,
-          specs: round === maxSteps ? [] : activeSpecs,
+          specs: roundSpecs,
           onText: (chunk) => {
             roundText += chunk;
             onText(finalText + roundText);
@@ -377,7 +381,24 @@ export async function runAgent({
 
     for (const call of result.toolCalls) {
       if (signal?.aborted) throw new Error('تم إيقاف المهمة.');
-      const spec = specs.find((s) => s.name === call.name);
+      const spec = roundSpecs.find((s) => s.name === call.name);
+      const isWebReadTool = ['web_search', 'web_fetch', 'open_url', 'browser_navigate', 'browser_read_page'].includes(call.name);
+      let webLoopMessage = '';
+      if (forceFinalResponse) {
+        webLoopMessage = 'تم إيقاف استدعاءات الأدوات الإضافية لتجنب الدوران. لخّص النتائج التي جُمعت بالفعل الآن.';
+      } else if (isWebReadTool) {
+        webReadActions += 1;
+        const signature = call.name + ':' + (call.arguments || '{}').replace(/\s+/g, '');
+        const repeated = (repeatedWebReads.get(signature) ?? 0) + 1;
+        repeatedWebReads.set(signature, repeated);
+        if (repeated >= 2) {
+          webLoopMessage = 'تم منع تكرار نفس عملية البحث أو قراءة الصفحة. لخّص النتائج المتاحة بدل إعادة المحاولة.';
+          forceFinalResponse = true;
+        } else if (webReadActions > 8) {
+          webLoopMessage = 'تم الوصول إلى حد 8 عمليات بحث/قراءة ويب. لخّص النتائج المتاحة الآن.';
+          forceFinalResponse = true;
+        }
+      }
       let args: Record<string, unknown> = {};
       let output = '';
       let status: ToolStep['status'] = 'done';
@@ -390,7 +411,10 @@ export async function runAgent({
       steps.push(step);
       onStep([...steps]);
 
-      if (!spec) {
+      if (webLoopMessage) {
+        output = webLoopMessage;
+        status = 'denied';
+      } else if (!spec) {
         output = `خطأ: الأداة ${call.name} غير متاحة.`;
         status = 'error';
       } else {
@@ -467,6 +491,7 @@ export async function runAgent({
       });
       // Save checkpoint after each tool execution
       await saveCheckpoint(round);
+
     }
 
     if (stopForDeviceActionLimit) {

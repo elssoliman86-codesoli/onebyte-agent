@@ -9,6 +9,7 @@ import {
   View,
 } from 'react-native';
 import { Feather } from '@expo/vector-icons';
+import * as Speech from 'expo-speech';
 import { router } from 'expo-router';
 import { useColors } from '@/hooks/useColors';
 import { alertCompat } from '@/src/web-alert';
@@ -46,6 +47,8 @@ import {
   StatusPill,
   Surface,
 } from '@/components/Ui';
+
+type VoicePersona = 'friendly' | 'calm' | 'energetic' | 'formal';
 
 export default function SettingsScreen() {
   const colors = useColors();
@@ -90,6 +93,14 @@ export default function SettingsScreen() {
   const [pendingLanguage, setPendingLanguage] = useState(appearance.language);
   const [languageSaving, setLanguageSaving] = useState(false);
   const [languageSaved, setLanguageSaved] = useState(false);
+  const [availableVoices, setAvailableVoices] = useState<Array<{ identifier: string; name: string; language: string }>>([]);
+  useEffect(() => {
+    let active = true;
+    void Speech.getAvailableVoicesAsync().then((voices) => {
+      if (active) setAvailableVoices(voices.map((voice) => ({ identifier: voice.identifier, name: voice.name, language: voice.language })));
+    }).catch(() => undefined);
+    return () => { active = false; };
+  }, []);
   const [showResponseStyle, setShowResponseStyle] = useState(false);
   // PC companion server state
   const [pcRunning, setPcRunning] = useState(isPcControlRunning());
@@ -828,6 +839,54 @@ export default function SettingsScreen() {
       </View>
 
       <View style={styles.section}>
+      <View style={styles.section}>
+        <SectionTitle title="الصوت والشخصية" />
+        <Surface style={styles.formCard}>
+          <Text style={[styles.fieldLabel, { color: colors.foreground }]}>نبرة الكلام</Text>
+          <View style={styles.presetWrap}>
+            {([
+              ['friendly', 'ودود'],
+              ['calm', 'هادئ'],
+              ['energetic', 'حماسي'],
+              ['formal', 'رسمي'],
+            ] as [VoicePersona, string][]).map(([value, label]) => {
+              const active = (appearance.voicePersona ?? 'friendly') === value;
+              return (
+                <Pressable key={value} accessibilityRole="button" accessibilityLabel={`نبرة صوت ${label}`}
+                  onPress={() => void saveAppearanceSettings({ voicePersona: value }).catch(() => alertCompat('تعذّر الحفظ', 'حاول مرة أخرى.'))}
+                  style={[styles.presetChip, { borderColor: active ? colors.primary : colors.border, backgroundColor: active ? colors.primary + '22' : colors.background }]}>
+                  <Text style={[styles.presetChipText, { color: active ? colors.primary : colors.foreground }]}>{label}</Text>
+                </Pressable>
+              );
+            })}
+          </View>
+          <Text style={[styles.body, { color: colors.mutedForeground, marginTop: 8 }]}>
+            النبرة تغيّر سرعة الكلام ودرجة الصوت. اختيار الصوت الفعلي يعتمد على الأصوات المثبتة في Android.
+          </Text>
+          <Text style={[styles.fieldLabel, { color: colors.foreground, marginTop: 16 }]}>صوت القراءة المثبّت</Text>
+          <View style={styles.presetWrap}>
+            <Pressable accessibilityRole="button" accessibilityLabel="الصوت الافتراضي للنظام"
+              onPress={() => void saveAppearanceSettings({ voiceId: '' }).catch(() => alertCompat('تعذّر الحفظ', 'حاول مرة أخرى.'))}
+              style={[styles.presetChip, { borderColor: !appearance.voiceId ? colors.primary : colors.border, backgroundColor: !appearance.voiceId ? colors.primary + '22' : colors.background }]}>
+              <Text style={[styles.presetChipText, { color: !appearance.voiceId ? colors.primary : colors.foreground }]}>افتراضي النظام</Text>
+            </Pressable>
+            {availableVoices.filter((voice) => !appearance.language || voice.language.toLowerCase().startsWith(appearance.language.toLowerCase())).slice(0, 8).map((voice) => {
+              const active = appearance.voiceId === voice.identifier;
+              return (
+                <Pressable key={voice.identifier} accessibilityRole="button" accessibilityLabel={`اختيار الصوت ${voice.name}`}
+                  onPress={() => void saveAppearanceSettings({ voiceId: voice.identifier }).catch(() => alertCompat('تعذّر الحفظ', 'حاول مرة أخرى.'))}
+                  style={[styles.presetChip, { borderColor: active ? colors.primary : colors.border, backgroundColor: active ? colors.primary + '22' : colors.background }]}>
+                  <Text style={[styles.presetChipText, { color: active ? colors.primary : colors.foreground }]}>{voice.name}</Text>
+                </Pressable>
+              );
+            })}
+          </View>
+          {!availableVoices.length ? <Text style={[styles.body, { color: colors.mutedForeground, marginTop: 8 }]}>
+            لم أستطع قراءة قائمة الأصوات. تأكد من تثبيت خدمة تحويل النص إلى كلام في إعدادات Android.
+          </Text> : null}
+        </Surface>
+      </View>
+
         <SectionTitle title="المظهر" />
         <Surface style={styles.formCard}>
           <View style={styles.presetWrap}>

@@ -129,9 +129,10 @@ function StepList({ steps }: { steps: ToolStep[] }) {
                 : colors.destructive;
         return (
           <View key={step.id} style={styles.stepRow}>
-            <Text numberOfLines={1} style={[styles.stepText, { color: colors.mutedForeground }]}>
-              {label}
-            </Text>
+            <View style={{ flex: 1, minWidth: 0, gap: 2 }}>
+              <Text numberOfLines={1} style={[styles.stepText, { color: colors.mutedForeground }]}>{label}</Text>
+              {typeof step.args.repository === 'string' ? <Text numberOfLines={1} style={[styles.stepText, { color: colors.mutedForeground, fontSize: 10 }]}>{step.args.repository}{typeof step.args.path === 'string' ? ' / ' + step.args.path : ''}</Text> : typeof step.args.path === 'string' ? <Text numberOfLines={1} style={[styles.stepText, { color: colors.mutedForeground, fontSize: 10 }]}>{step.args.path}</Text> : null}
+            </View>
             <Feather name={STEP_ICON[step.status]} size={13} color={tone} />
           </View>
         );
@@ -221,6 +222,8 @@ function MarkdownText({ text, user }: { text: string; user?: boolean }) {
     <>
       {text.split('\n').map((line, li) => {
         // Markdown structure: headings and bullets/numbered lists.
+        const normalizedLine = line.replace(/^\s*#{1,6}\s+/, '').replace(/^\s*[-*_]{3,}\s*$/, '').trim();
+        if (/^[-*_]{3,}$/.test(line.trim())) return <View key={li} style={{ height: 1, backgroundColor: colors.border, marginVertical: 8 }} />;
         const heading = /^(#{1,4})\s+(.*)$/.exec(line);
         if (heading && !user) {
           const level = heading[1].length;
@@ -238,11 +241,11 @@ function MarkdownText({ text, user }: { text: string; user?: boolean }) {
                 },
               ]}
             >
-              {heading[2]}
+              {heading[2].replace(/^\*\*(.*?)\*\*$/, '$1').replace(/\s*\*\*$/, '')}
             </Text>
           );
         }
-        const bullet = /^[-•]\s+(.*)$/.exec(line.trim());
+        const bullet = /^[-•*]\s+(.*)$/.exec(line.trim());
         if (bullet) {
           return (
             <View key={li} style={styles.bulletRow}>
@@ -264,8 +267,8 @@ function MarkdownText({ text, user }: { text: string; user?: boolean }) {
             </View>
           );
         }
-        const rendered = line
-          .split(/(\*\*[^*]+\*\*|`[^`]+`)/g)
+        const rendered = normalizedLine
+          .split(/(\*\*[^*]+\*\*|`[^`]+`|\*[^*]+\*)/g)
           .filter(Boolean)
           .map((part, i) => {
             if (part.startsWith('**') && part.endsWith('**')) {
@@ -274,6 +277,9 @@ function MarkdownText({ text, user }: { text: string; user?: boolean }) {
                   {part.slice(2, -2)}
                 </Text>
               );
+            }
+            if (part.startsWith('*') && part.endsWith('*') && part.length > 2) {
+              return <Text key={i} style={{ fontStyle: 'italic' }}>{part.slice(1, -1)}</Text>;
             }
             if (part.startsWith('`') && part.endsWith('`') && part.length > 2) {
               return (
@@ -340,7 +346,17 @@ function MessageBubble({
   const [copied, setCopied] = useState(false);
   const [rating, setRating] = useState<'up' | 'down' | null>(null);
   // Code blocks are not meant to be read aloud; keep prose only.
-  const speakableText = message.content.replace(/```[\s\S]*?(?:```|$)/g, ' ').replace(/\s+/g, ' ').trim();
+  const speakableText = message.content
+    .replace(/```[\s\S]*?(?:```|$)/g, ' كود برمجي تم إخفاؤه ')
+    .replace(/^\s*#{1,6}\s+/gm, '')
+    .replace(/^\s*[-*_]{3,}\s*$/gm, '')
+    .replace(/\*\*(.*?)\*\*/g, '$1')
+    .replace(/\*(.*?)\*/g, '$1')
+    .replace(/`([^`]+)`/g, '$1')
+    .replace(/^\s*[-•]\s+/gm, '')
+    .replace(/^\s*\d+[.)]\s+/gm, '')
+    .replace(/[>#*_~]/g, '')
+    .replace(/\s+/g, ' ').trim();
 
   async function toggleSpeak() {
     if (speaking) {
@@ -565,6 +581,7 @@ export default function ChatScreen() {
     setActiveSession,
     deleteSession,
     appendMessage,
+    upsertMessage,
     replaceSessionMessages,
     consumePendingPrompt,
     saveAgentSettings,
@@ -579,6 +596,8 @@ export default function ChatScreen() {
   const [editingMessageId, setEditingMessageId] = useState<string | null>(null);
   const [voiceChatVisible, setVoiceChatVisible] = useState(false);
   const [sending, setSending] = useState(false);
+  const sendingRef = useRef(sending);
+  sendingRef.current = sending;
   const [streamText, setStreamText] = useState('');
   const [error, setError] = useState('');
   const [historyVisible, setHistoryVisible] = useState(false);
@@ -700,26 +719,58 @@ export default function ChatScreen() {
    * injected automatically — no manual /skill invocation needed.
    */
   function autoMatchSkill(text: string): AssistantSkill | null {
-    const normalize = (s: string) =>
-      s
+    const normalize = (value: string) =>
+      value
         .toLowerCase()
-        .replace(/[^\p{L}\p{N}\s]/gu, ' ')
-        .split(/\s+/)
-        .filter((w) => w.length >= 3);
-    const words = new Set(normalize(text));
-    if (!words.size) return null;
+        .replace(/[أإآٱ]/g, 'ا')
+        .replace(/ى/g, 'ي')
+        .replace(/[ًٌٍَُِّْـ]/g, '')
+        .replace(/[^\\p{L}\\p{N}\\s]/gu, ' ')
+        .split(/\\s+/)
+        .filter((word) => word.length >= 3);
+    const stopWords = new Set([
+      'هذا', 'هذه', 'ذلك', 'تلك', 'علي', 'الى', 'من', 'في', 'عن', 'مع',
+      'بعد', 'قبل', 'عند', 'كل', 'كان', 'يكون', 'تكون', 'الذي', 'التي',
+      'the', 'and', 'for', 'with', 'that', 'this', 'from', 'your', 'you',
+      'are', 'use', 'when', 'then', 'into', 'about', 'will', 'have',
+    ]);
+    const queryTokens = new Set(normalize(text).filter((word) => !stopWords.has(word)));
+    if (!queryTokens.size) return null;
+
+    const request = normalize(text).join(' ');
+    const domains: Array<{ pattern: RegExp; terms: RegExp }> = [
+      { pattern: /(?:عدل|تعديل|صلح|اصلح|طور|برمج|كود|ملفات المشروع|المشروع|repository|repo|edit|modify|fix|refactor|implement|codebase)/i,
+        terms: /(?:برمج|كود|مطور|تطوير|مشروع|ملفات|github|repository|repo|coding|developer|software|implementation|refactor|bug fix)/i },
+      { pattern: /(?:ابحث|بحث|مصادر|معلومه|معلومات حديثه|research|search|latest|current)/i,
+        terms: /(?:بحث|بحث دقيق|مصادر|تحقق|research|search|web|source|citation)/i },
+      { pattern: /(?:ثغره|ثغرات|اختبر|افحص|امن سيبراني|bug bounty|pentest|security|vulnerability)/i,
+        terms: /(?:امن|سيبراني|ثغره|اختبار|اختراق|pentest|security|vulnerability|hackerone|bug bounty)/i },
+      { pattern: /(?:اكتب|صياغه|صيغ|لخص|اعاده صياغه|write|rewrite|summarize|draft)/i,
+        terms: /(?:كتابه|صياغه|كتابه محتوى|تحرير|تلخيص|writing|editor|copywriting|summarize|draft)/i },
+    ];
+
     let best: { skill: AssistantSkill; score: number } | null = null;
     for (const skill of skills) {
       if (!skill.active) continue;
-      const tokens = normalize(skill.name + ' ' + skill.description);
-      if (!tokens.length) continue;
-      const hits = tokens.filter((t) => words.has(t)).length;
-      const ratio = hits / tokens.length;
-      // Require a strong signal: ≥2 keyword hits, or most of the skill tokens.
-      const confident = hits >= 2 || (ratio >= 0.5 && hits >= 1);
-      if (confident && (!best || hits > best.score)) {
-        best = { skill, score: hits };
+      const nameTokens = [...new Set(normalize(skill.name).filter((word) => !stopWords.has(word)))];
+      const descriptionTokens = [...new Set(normalize(skill.description).filter((word) => !stopWords.has(word)))];
+      const instructionTokens = [...new Set(normalize(skill.instructions.slice(0, 5000)).filter((word) => !stopWords.has(word)))];
+      const nameHits = nameTokens.filter((word) => queryTokens.has(word)).length;
+      const descriptionHits = descriptionTokens.filter((word) => queryTokens.has(word)).length;
+      const instructionHits = instructionTokens.filter((word) => queryTokens.has(word)).length;
+      let score = nameHits * 4 + descriptionHits * 1.5 + Math.min(instructionHits, 5) * 0.35;
+
+      // Explicitly naming a skill is always a strong match.
+      if (request.includes(normalize(skill.name).join(' '))) score += 12;
+      // Respect trigger words documented in a skill's own description/instructions.
+      const searchableSkill = skill.name + ' ' + skill.description + ' ' + skill.instructions.slice(0, 1800);
+      for (const domain of domains) {
+        if (domain.pattern.test(request) && domain.terms.test(searchableSkill)) score += 3;
       }
+      // A direct skill-name hit or two meaningful weighted matches is enough;
+      // don't require two tokens when the skill is clearly the right one.
+      const confident = nameHits > 0 || score >= 3.2;
+      if (confident && (!best || score > best.score)) best = { skill, score };
     }
     return best?.skill ?? null;
   }
@@ -1148,24 +1199,54 @@ export default function ChatScreen() {
     abortRef.current = controller;
     runSessionIdRef.current = sessionId;
     const responseId = messageId();
+    const responseCreatedAt = new Date().toISOString();
+    let persistTimer: ReturnType<typeof setTimeout> | null = null;
+    let lastPersistAt = 0;
+    let persistQueue: Promise<void> = Promise.resolve();
     let steps: ToolStep[] = [];
     let fullResponse = '';
     let assistantPersisted = false;
     let responseForCaller = '';
 
+    const buildResponseMessage = (): ChatMessage => ({
+      id: responseId,
+      role: 'assistant',
+      content: fullResponse,
+      createdAt: responseCreatedAt,
+      steps,
+    });
+    const queueStreamingCheckpoint = () => {
+      const snapshot = buildResponseMessage();
+      persistQueue = persistQueue
+        .catch(() => undefined)
+        .then(() => upsertMessage(sessionId, snapshot))
+        .catch((error) => console.warn('[chat] Streaming checkpoint failed:', error));
+    };
+    const persistStreamingCheckpoint = (force = false) => {
+      if (persistTimer) {
+        clearTimeout(persistTimer);
+        persistTimer = null;
+      }
+      const elapsed = Date.now() - lastPersistAt;
+      if (force || elapsed >= 1000) {
+        lastPersistAt = Date.now();
+        queueStreamingCheckpoint();
+      } else {
+        persistTimer = setTimeout(() => {
+          persistTimer = null;
+          lastPersistAt = Date.now();
+          queueStreamingCheckpoint();
+        }, 1000 - elapsed);
+      }
+    };
     const publish = () => {
-      // The user may have switched to another chat while the run is in flight;
-      // keep streaming output out of that chat's local message list.
+      // Persist into the originating session even if the user switches chats;
+      // only the visible UI update is scoped to the currently open session.
+      if (fullResponse.trim() || steps.length) persistStreamingCheckpoint();
       if (visibleSessionIdRef.current !== sessionId) return;
       setStreamText(fullResponse);
       setMessages((current) => {
-        const responseMessage: ChatMessage = {
-          id: responseId,
-          role: 'assistant',
-          content: fullResponse,
-          createdAt: new Date().toISOString(),
-          steps,
-        };
+        const responseMessage = buildResponseMessage();
         const existing = current.findIndex((item) => item.id === responseId);
         if (existing === -1) return [...current, responseMessage];
         const updated = [...current];
@@ -1302,28 +1383,19 @@ export default function ChatScreen() {
       if (!fullResponse.trim()) fullResponse = 'تم تنفيذ الخطوات المطلوبة.';
       responseForCaller = fullResponse;
       publish();
-      await appendMessage(sessionId, {
-        id: responseId,
-        role: 'assistant',
-        content: fullResponse,
-        createdAt: new Date().toISOString(),
-        steps,
-      });
+      if (persistTimer) { clearTimeout(persistTimer); persistTimer = null; }
+      await persistQueue;
+      await upsertMessage(sessionId, buildResponseMessage());
       assistantPersisted = true;
     } catch (caught) {
       const stopped = controller.signal.aborted;
       setPlanDone('fail');
+      if (persistTimer) { clearTimeout(persistTimer); persistTimer = null; }
+      await persistQueue;
       if (!assistantPersisted && (fullResponse.trim() || steps.length)) {
-        // Keep what was already produced so nothing the agent did is lost from history.
-        // Skipped if the append above already ran, otherwise a storage failure would
-        // leave two copies of the same response (commit updates memory before disk).
-        await appendMessage(sessionId, {
-          id: responseId,
-          role: 'assistant',
-          content: (fullResponse.trim() || 'توقفت المهمة.') + (stopped ? '\n\n(أوقفتَ المهمة)' : ''),
-          createdAt: new Date().toISOString(),
-          steps,
-        }).catch(() => undefined);
+        const partialMessage = buildResponseMessage();
+        partialMessage.content = (fullResponse.trim() || 'توقفت المهمة.') + (stopped ? '\n\n(أوقفتَ المهمة)' : '');
+        await upsertMessage(sessionId, partialMessage).catch(() => undefined);
       }
       if (!stopped) {
         setError(
@@ -1803,7 +1875,7 @@ export default function ChatScreen() {
               blurOnSubmit={false}
               keyboardAppearance={Platform.OS === 'ios' ? 'light' : undefined}
               returnKeyType="default"
-              style={[styles.input, { color: colors.foreground }]}
+              style={[styles.input, { color: colors.foreground, minWidth: 0, paddingBottom: attachImages.length ? 64 : spacing.sm + 1 }]}
               textAlignVertical="top"
               accessibilityLabel="رسالتك للمساعد"
             />
@@ -1893,9 +1965,19 @@ export default function ChatScreen() {
       <VoiceConversationModal
         visible={voiceChatVisible}
         language={appearance?.language ?? 'ar'}
+        voicePersona={appearance?.voicePersona ?? 'friendly'}
+        voiceId={appearance?.voiceId ?? ''}
         modelLabel={provider.model}
         onClose={() => setVoiceChatVisible(false)}
-        onSend={sendMessage}
+        onSend={async (text) => {
+          // Wait for an active chat run; otherwise sendMessage queues it and returns an empty string.
+          const deadline = Date.now() + 120_000;
+          while (sendingRef.current && Date.now() < deadline) {
+            await new Promise((resolve) => setTimeout(resolve, 150));
+          }
+          if (sendingRef.current) throw new Error('الطلب السابق ما زال يعمل. انتظر قليلًا ثم تحدث مرة أخرى.');
+          return sendMessage(text);
+        }}
         onStop={stopRun}
         onUseKeyboard={(transcript) => {
           setVoiceChatVisible(false);
@@ -2150,7 +2232,7 @@ const styles = StyleSheet.create({
   attachMenuItem: { flexDirection: 'row-reverse', alignItems: 'center', gap: spacing.sm, paddingVertical: 9, paddingHorizontal: spacing.sm + 4 },
   attachMenuItemText: { fontSize: typography.sm, fontWeight: typography.weightBold },
   bubbleImagesWrap: { flexDirection: 'row', flexWrap: 'wrap', gap: spacing.xs, marginBottom: spacing.xs },
-  attachPreviewItem: { position: 'relative' },
+  attachPreviewItem: { position: 'relative', flexShrink: 0 },
   userStack: { maxWidth: '85%', alignItems: 'flex-end' },
   iconAction: {
     width: 26,
@@ -2232,7 +2314,7 @@ const styles = StyleSheet.create({
     borderRadius: radius.sm,
   },
   shareDraftStart: { borderTopWidth: 0, marginTop: 0, paddingTop: 0 },
-  attachPreviewWrap: { flexDirection: 'row', flexWrap: 'wrap', gap: spacing.xs, paddingHorizontal: spacing.sm + 2, paddingTop: spacing.xs },
+  attachPreviewWrap: { position: 'absolute', left: spacing.sm, right: spacing.sm, bottom: 4, flexDirection: 'row', flexWrap: 'nowrap', gap: spacing.xs, paddingHorizontal: spacing.sm + 2, paddingTop: spacing.xs },
   composerButtons: { flexDirection: 'row-reverse', alignItems: 'flex-end', gap: spacing.xs + 2 },
   fileChipsRow: { flexDirection: 'row-reverse', flexWrap: 'wrap', gap: spacing.xs + 2, marginTop: spacing.sm },
   fileChip: {
@@ -2294,6 +2376,7 @@ const styles = StyleSheet.create({
     alignItems: 'flex-end',
     minHeight: 56,
     gap: spacing.sm,
+    position: 'relative',
     borderWidth: 1,
     borderRadius: radius.lg + 2,
     paddingLeft: spacing.xs + 3,

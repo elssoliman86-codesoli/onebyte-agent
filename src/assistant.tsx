@@ -91,6 +91,8 @@ export interface AgentSettings {
 
 export type ThemePreference = 'system' | 'light' | 'dark';
 
+export type VoicePersona = 'friendly' | 'calm' | 'energetic' | 'formal';
+
 export interface AppearanceSettings {
   theme: ThemePreference;
   /** Accent color theme (default emerald; also blue/red/purple/amber). */
@@ -99,6 +101,8 @@ export interface AppearanceSettings {
   language: string;
   /** Font color for the app UI (hex). */
   fontColor: string;
+  voicePersona: VoicePersona;
+  voiceId: string;
 }
 
 export interface SkillVersion {
@@ -166,6 +170,7 @@ interface AssistantContextValue extends AssistantData {
   createSession: () => Promise<string>;
   deleteSession: (id: string) => Promise<void>;
   appendMessage: (sessionId: string, message: ChatMessage) => Promise<void>;
+  upsertMessage: (sessionId: string, message: ChatMessage) => Promise<void>;
   replaceSessionMessages: (sessionId: string, messages: ChatMessage[]) => Promise<void>;
   saveProvider: (
     settings: ProviderSettings,
@@ -240,7 +245,9 @@ const DEFAULT_APPEARANCE: AppearanceSettings = {
   language: 'ar',
   // Empty means use a contrast-safe color from the selected theme.
   fontColor: '',
-};
+  voicePersona: 'friendly',
+  voiceId: '',
+}
 
 let idCounter = 0;
 function makeId(prefix: string): string {
@@ -522,6 +529,30 @@ export function AssistantProvider({
       } catch {
         setStorageError('لم يتم حفظ الرسالة. حاولي مرة أخرى.');
         throw new Error('تعذّر حفظ الرسالة.');
+      }
+    },
+    [],
+  );
+
+  const upsertMessage = useCallback(
+    async (sessionId: string, message: ChatMessage) => {
+      await ensureLoaded();
+      const current = dataRef.current;
+      const sessions = current.sessions.map((session) => {
+        if (session.id !== sessionId) return session;
+        const index = session.messages.findIndex((item) => item.id === message.id);
+        const messages = index < 0
+          ? [...session.messages, message]
+          : session.messages.map((item, i) => i === index ? message : item);
+        return { ...session, messages, updatedAt: new Date().toISOString() };
+      });
+      dataRef.current = { ...current, sessions };
+      setData(dataRef.current);
+      try {
+        await storage.upsertMessage(sessionId, message);
+      } catch {
+        setStorageError('تعذّر حفظ الرد الجاري. سيُعاد المحاولة عند التحديث التالي.');
+        throw new Error('تعذّر حفظ الرد الجاري.');
       }
     },
     [],
@@ -830,6 +861,7 @@ export function AssistantProvider({
       createSession,
       deleteSession,
       appendMessage,
+      upsertMessage,
       replaceSessionMessages,
       saveProvider,
       removeApiKey,
