@@ -65,6 +65,8 @@ const DEFAULT_APPEARANCE: AppearanceSettings = {
   accent: 'emerald',
   language: 'ar',
   fontColor: '#F3F7F4',
+  voicePersona: 'friendly',
+  voiceId: '',
 };
 
 // ─── Agent Checkpoint Types ──────────────────────────────────────────────
