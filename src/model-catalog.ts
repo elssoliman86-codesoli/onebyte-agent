@@ -11,6 +11,8 @@ export interface ModelInfo {
   completionPrice: number | null;
   free: boolean;
   supportsTools: boolean | null;
+  /** Image input support when the provider publishes modality metadata. */
+  supportsImages?: boolean | null;
 }
 
 type Json = Record<string, unknown>;
