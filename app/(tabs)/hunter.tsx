@@ -99,7 +99,7 @@ export default function CyberSecurityScreen() {
     setTargets(updated);
     setTargetHost('');
     setAuthorization('');
-    setSelectedTargetId(next[0]?.id ?? null);
+    setSelectedTargetId(next.id);
     setShowRequestEditor(false);
     setError('');
   }
