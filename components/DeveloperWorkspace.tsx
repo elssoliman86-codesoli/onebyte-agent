@@ -183,6 +183,70 @@ export function DeveloperWorkspace() {
     } finally { setBusy(false); }
   }
 
+  async function buildProjectAutomatically() {
+    if (!activeSession || !goal.trim()) { alertCompat('اكتب وصف المشروع أولًا', 'اكتب المطلوب في حقل المهمة ثم ابدأ البناء التلقائي.'); return; }
+    if (!provider.baseUrl.trim() || !provider.model.trim()) { alertCompat('الموديل غير مضبوط', 'اختار مزودًا وموديلًا من إعدادات التطبيق.'); return; }
+    setBusy(true);
+    try {
+      const apiKey = provider.keyless ? '' : await getStoredModelApiKey();
+      const callModel = async (messages: Array<{role:string;content:string}>, temperature=0.2) => {
+        const response = await fetchWithRetry(endpointFor(provider.baseUrl), {method:'POST',headers:{'Content-Type':'application/json',...(apiKey?{Authorization:`Bearer ${apiKey}`}:{})},body:JSON.stringify({model:project?.codeModelId||provider.model,temperature,messages})},{timeout:120000,maxRetries:1});
+        if (!response.ok) throw new Error(`HTTP ${response.status}: ${(await response.text()).slice(0,300)}`);
+        const payload=await response.json() as {choices?:Array<{message?:{content?:string|Array<{text?:string}>}} >};
+        const value=payload.choices?.[0]?.message?.content;
+        return typeof value==='string'?value:Array.isArray(value)?value.map(x=>x.text??'').join(''):'';
+      };
+      const rawPlan=await callModel([
+        {role:'system',content:'Plan a software project as a practical ordered list of files. Return ONLY JSON: {"files":[{"path":"relative/path.ext","task":"specific task"}]}. Include only necessary source/config/test/docs files. No absolute paths, no .. segments, no secrets, max 30 files.'},
+        {role:'user',content:`Project: ${activeSession.title}\nRequirements:\n${goal}\nExisting files:\n${(project?.files??[]).map(f=>f.path).join('\n')}`},
+      ]);
+      const json=rawPlan.replace(/^\`\`\`(?:json)?\s*/i,'').replace(/\s*\`\`\`$/,'');
+      const parsed=JSON.parse(json) as {files?:Array<{path?:string;task?:string}>};
+      const files=(parsed.files??[]).filter(f=>typeof f.path==='string'&&typeof f.task==='string').slice(0,30);
+      if (!files.length) throw new Error('الخطة لم تتضمن ملفات صالحة.');
+      const cleanPath=(path:string)=>path.trim().replace(/\\/g,'/').replace(/^\.\//,'');
+      const normalized=files.map(f=>({path:cleanPath(f.path!),task:f.task!.trim()})).filter(f=>f.path&&!f.path.startsWith('/')&&!/^[a-zA-Z]:/.test(f.path)&&!f.path.split('/').some(p=>p==='..'||p==='.'||!p.trim()));
+      if (!normalized.length) throw new Error('كل مسارات الملفات في الخطة غير صالحة.');
+      await replaceProjectPlan(activeSession.id,activeSession.title,normalized.map(f=>({title:f.path,detail:f.task})));
+      if (activeSession.mode!=='developer') await patchSession(activeSession.id,{mode:'developer'});
+      await refresh();
+      for (let i=0;i<normalized.length;i++) {
+        const item=normalized[i];
+        await updatePlanStep(activeSession.id,(await getDeveloperProject(activeSession.id,activeSession.title)).plan[i].id,'running');
+        await refresh();
+        const current=await getDeveloperProject(activeSession.id,activeSession.title);
+        const old=current.files.find(f=>f.path===item.path)?.content??'';
+        const generated=await callModel([
+          {role:'system',content:'You are a code-writing worker in an IDE. Return only the complete contents of this one file, no markdown fences. Keep interfaces consistent with the provided existing project files. Secure, maintainable code. Never claim tests ran.'},
+          {role:'user',content:`Project: ${activeSession.title}\nOverall requirements:\n${goal}\nFile ${i+1}/${normalized.length}: ${item.path}\nTask: ${item.task}\nExisting project files (path and contents):\n${current.files.map(f=>`--- ${f.path} ---\n${f.content.slice(0,12000)}`).join('\n').slice(0,50000)}\nExisting content for target file:\n${old}\nReturn the full new contents for ${item.path} only.`},
+        ]);
+        const output=generated.replace(/^\`\`\`[a-zA-Z0-9_-]*\s*\n/,'').replace(/\n\`\`\`\s*$/,'');
+        if(!output.trim()) throw new Error(`الموديل لم ينتج محتوى للملف ${item.path}`);
+        await saveProjectFile(activeSession.id,activeSession.title,item.path,output);
+        const after=await getDeveloperProject(activeSession.id,activeSession.title);
+        const step=after.plan[i];
+        if(step) await updatePlanStep(activeSession.id,step.id,'done');
+        await refresh();
+      }
+      const finished=await getDeveloperProject(activeSession.id,activeSession.title);
+      for(const file of finished.files) {
+        try {
+          const review=await callModel([
+            {role:'system',content:'Review the entire source file for correctness, security, logic bugs, and edge cases. Return ONLY JSON {"should_change":boolean,"reason":"short","proposed_code":"complete file contents"}. Never claim tests ran.'},
+            {role:'user',content:`File: ${file.path}\n${file.content}\nReview the whole file.`},
+          ],0.1);
+          const result=JSON.parse(review.replace(/^\`\`\`(?:json)?\s*/i,'').replace(/\s*\`\`\`$/,'')) as {should_change?:boolean;reason?:string;proposed_code?:string};
+          if(result.should_change&&result.proposed_code?.trim()&&result.proposed_code!==file.content) await proposeCodeReview(activeSession.id,file.path,file.content,result.proposed_code,result.reason||'مراجعة ما بعد البناء');
+        } catch { /* Preserve generated files; review failures are surfaced in the completion notice. */ }
+      }
+      await refresh();
+      alertCompat('انتهى البناء متعدد الملفات', `تم توليد ${normalized.length} ملفًا بالتتابع، ثم إنشاء اقتراحات المراجعة الممكنة. راجع اقتراحات الموافقة قبل تطبيقها. لم يتم تشغيل المشروع أو الاختبارات تلقائيًا.`);
+    } catch(error) {
+      await refresh();
+      alertCompat('توقف البناء متعدد الملفات',error instanceof Error?error.message:'خطأ غير معروف');
+    } finally { setBusy(false); }
+  }
+
   async function savePlan() {
     if (!activeSession || !goal.trim()) return;
     const lines = goal.split(/\n+/).map(x => x.trim()).filter(Boolean);
@@ -225,7 +289,7 @@ export function DeveloperWorkspace() {
     </View>
     <View style={[s.timeline,{borderColor:colors.border,backgroundColor:colors.card}]}>
       <Pressable style={s.timelineHead} onPress={()=>setPlanOpen(v=>!v)}><Feather name="activity" size={15} color={colors.primary}/><Text style={{color:colors.foreground,fontWeight:'700',flex:1}}>Timeline · خطة التنفيذ</Text><Text style={{color:colors.mutedForeground,fontSize:11}}>{project?.plan.length??0} خطوات</Text><Feather name={planOpen?'chevron-up':'chevron-down'} size={14} color={colors.mutedForeground}/></Pressable>
-      {planOpen&&<><TextInput value={goal} onChangeText={setGoal} multiline placeholder="خطوة في كل سطر..." placeholderTextColor={colors.mutedForeground} style={[s.planInput,{color:colors.foreground,borderColor:colors.border}]}/><Pressable onPress={()=>void savePlan()} style={[s.button,{borderColor:colors.border,alignSelf:'flex-start'}]}><Text style={{color:colors.foreground}}>حفظ الخطة</Text></Pressable><Pressable disabled={busy||!selectedFile} onPress={()=>void generateFile()} style={[s.primary,{backgroundColor:colors.primary,alignSelf:'flex-start',opacity:busy?0.6:1}]}><Feather name={busy?'loader':'zap'} size={13} color={colors.primaryForeground}/><Text style={{color:colors.primaryForeground}}>توليد الكود بالموديل الحالي</Text></Pressable><ScrollView style={{maxHeight:170}}>{(project?.plan??[]).map((step,i)=><View key={step.id} style={s.step}><View style={s.rail}><View style={[s.dot,{backgroundColor:step.status==='done'?colors.success:step.status==='running'?colors.primary:step.status==='error'?colors.destructive:colors.border}]}/>{i<(project?.plan.length??0)-1&&<View style={[s.connector,{backgroundColor:colors.border}]}/>}</View><View style={{flex:1,paddingBottom:9}}><Pressable onPress={()=>setDetails(details===step.id?null:step.id)}><Text style={{color:colors.foreground,fontWeight:'600'}}>{step.title}</Text></Pressable><Text style={{color:colors.mutedForeground,fontSize:10}}>{step.status} · {timeLabel(step.startedAt??step.finishedAt)}</Text>{details===step.id&&<Text style={{color:colors.mutedForeground,fontSize:12}}>{step.detail}</Text>}{step.status!=='done'&&<View style={s.inline}><Pressable onPress={()=>void markStep(step,'running')}><Text style={{color:colors.primary,fontSize:11}}>بدء</Text></Pressable><Pressable onPress={()=>void markStep(step,'done')}><Text style={{color:colors.success,fontSize:11}}>اكتملت</Text></Pressable><Pressable onPress={()=>void markStep(step,'error')}><Text style={{color:colors.destructive,fontSize:11}}>فشل</Text></Pressable></View>}</View></View>)}</ScrollView></>}
+      {planOpen&&<><TextInput value={goal} onChangeText={setGoal} multiline placeholder="خطوة في كل سطر..." placeholderTextColor={colors.mutedForeground} style={[s.planInput,{color:colors.foreground,borderColor:colors.border}]}/><Pressable onPress={()=>void savePlan()} style={[s.button,{borderColor:colors.border,alignSelf:'flex-start'}]}><Text style={{color:colors.foreground}}>حفظ الخطة</Text></Pressable><Pressable disabled={busy} onPress={()=>void buildProjectAutomatically()} style={[s.primary,{backgroundColor:colors.primary,alignSelf:'flex-start',opacity:busy?0.6:1}]}><Feather name={busy?'loader':'layers'} size={13} color={colors.primaryForeground}/><Text style={{color:colors.primaryForeground}}>بناء المشروع كاملًا بالتتابع</Text></Pressable><Pressable disabled={busy||!selectedFile} onPress={()=>void generateFile()} style={[s.primary,{backgroundColor:colors.primary,alignSelf:'flex-start',opacity:busy?0.6:1}]}><Feather name={busy?'loader':'zap'} size={13} color={colors.primaryForeground}/><Text style={{color:colors.primaryForeground}}>توليد الكود بالموديل الحالي</Text></Pressable><ScrollView style={{maxHeight:170}}>{(project?.plan??[]).map((step,i)=><View key={step.id} style={s.step}><View style={s.rail}><View style={[s.dot,{backgroundColor:step.status==='done'?colors.success:step.status==='running'?colors.primary:step.status==='error'?colors.destructive:colors.border}]}/>{i<(project?.plan.length??0)-1&&<View style={[s.connector,{backgroundColor:colors.border}]}/>}</View><View style={{flex:1,paddingBottom:9}}><Pressable onPress={()=>setDetails(details===step.id?null:step.id)}><Text style={{color:colors.foreground,fontWeight:'600'}}>{step.title}</Text></Pressable><Text style={{color:colors.mutedForeground,fontSize:10}}>{step.status} · {timeLabel(step.startedAt??step.finishedAt)}</Text>{details===step.id&&<Text style={{color:colors.mutedForeground,fontSize:12}}>{step.detail}</Text>}{step.status!=='done'&&<View style={s.inline}><Pressable onPress={()=>void markStep(step,'running')}><Text style={{color:colors.primary,fontSize:11}}>بدء</Text></Pressable><Pressable onPress={()=>void markStep(step,'done')}><Text style={{color:colors.success,fontSize:11}}>اكتملت</Text></Pressable><Pressable onPress={()=>void markStep(step,'error')}><Text style={{color:colors.destructive,fontSize:11}}>فشل</Text></Pressable></View>}</View></View>)}</ScrollView></>}
     </View>
     {pendingReviews.length>0&&<View style={[s.review,{borderColor:colors.warning,backgroundColor:colors.card}]}><Text style={{color:colors.foreground,fontWeight:'700'}}>اقتراحات تنتظر الموافقة</Text>{pendingReviews.map(r=><View key={r.id} style={{gap:6,marginTop:5}}><Text style={{color:colors.foreground}}>{r.filePath} — {r.reason}</Text><View style={s.inline}><Pressable onPress={()=>void decideReview(r.id,true)} style={[s.primary,{backgroundColor:colors.success}]}><Text style={{color:'#fff'}}>موافقة وتطبيق</Text></Pressable><Pressable onPress={()=>void decideReview(r.id,false)} style={[s.button,{borderColor:colors.border}]}><Text style={{color:colors.foreground}}>رفض</Text></Pressable></View></View>)}</View>}
     {reviewOpen&&<View style={[s.review,{borderColor:colors.border,backgroundColor:colors.card}]}><Text style={{color:colors.foreground,fontWeight:'700'}}>اقتراح تعديل — لن يطبق دون موافقتك</Text><TextInput value={reviewPath} onChangeText={setReviewPath} placeholder="مسار الملف" placeholderTextColor={colors.mutedForeground} style={[s.path,{color:colors.foreground,borderColor:colors.border}]}/><TextInput value={reviewReason} onChangeText={setReviewReason} placeholder="سبب التعديل" placeholderTextColor={colors.mutedForeground} style={[s.path,{color:colors.foreground,borderColor:colors.border}]}/><TextInput value={reviewProposed} onChangeText={setReviewProposed} multiline placeholder="الكود المقترح" placeholderTextColor={colors.mutedForeground} style={[s.planInput,{color:colors.foreground,borderColor:colors.border}]}/><View style={s.inline}><Pressable onPress={()=>void submitReview()} style={[s.primary,{backgroundColor:colors.primary}]}><Text style={{color:colors.primaryForeground}}>إرسال للمراجعة</Text></Pressable><Pressable onPress={()=>setReviewOpen(false)} style={[s.button,{borderColor:colors.border}]}><Text style={{color:colors.foreground}}>إلغاء</Text></Pressable></View></View>}
