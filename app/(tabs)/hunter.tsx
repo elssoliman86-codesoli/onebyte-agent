@@ -27,6 +27,8 @@ export default function CyberSecurityScreen() {
   const [targets, setTargets] = useState<HunterTarget[]>([]);
   const [log, setLog] = useState<HunterLogEntry[]>([]);
   const [targetHost, setTargetHost] = useState('');
+  const [selectedTargetId, setSelectedTargetId] = useState<string | null>(null);
+  const [showRequestEditor, setShowRequestEditor] = useState(false);
   const [authorization, setAuthorization] = useState('');
   const [method, setMethod] = useState('GET');
   const [url, setUrl] = useState('');
@@ -97,6 +99,8 @@ export default function CyberSecurityScreen() {
     setTargets(updated);
     setTargetHost('');
     setAuthorization('');
+    setSelectedTargetId(next[0]?.id ?? null);
+    setShowRequestEditor(false);
     setError('');
   }
 
@@ -225,9 +229,14 @@ export default function CyberSecurityScreen() {
               <Text style={[styles.scopeHost, { color: colors.foreground }]}>{target.host}</Text>
               <Text style={[styles.muted, { color: colors.mutedForeground }]}>{target.authorization}</Text>
             </View>
+            <Pressable accessibilityRole="button" onPress={() => { setSelectedTargetId(target.id); setUrl(`https://${target.host}/`); setShowRequestEditor(true); setError('تم اختيار النطاق المحفوظ. راجع قواعد البرنامج وحدود النطاق قبل إرسال أي طلب.'); }} style={[styles.secondaryButton,{borderColor:colors.border,paddingHorizontal:8,paddingVertical:5}]}>
+              <Feather name="shield" size={14} color={colors.primary} />
+              <Text style={[styles.secondaryText,{color:colors.primary}]}>فتح المختبر</Text>
+            </Pressable>
             <Pressable accessibilityRole="button" accessibilityLabel={`حذف نطاق ${target.host}`} onPress={() => {
               const next = targets.filter((item) => item.id !== target.id);
               setTargets(next);
+              if (selectedTargetId === target.id) { setSelectedTargetId(null); setShowRequestEditor(false); }
               void saveTargets(next);
             }}>
               <Feather name="trash-2" size={16} color={colors.mutedForeground} />
@@ -238,7 +247,7 @@ export default function CyberSecurityScreen() {
         )}
       </Surface>
 
-      <Surface style={styles.requestCard}>
+      {showRequestEditor && selectedTargetId && targets.some((target) => target.id === selectedTargetId) ? <Surface style={styles.requestCard}>
         <View style={styles.sectionHeading}>
           <Feather name="git-pull-request" size={18} color={colors.primary} />
           <Text style={[styles.sectionTitle, { color: colors.foreground }]}>HTTP Request Editor</Text>
@@ -298,7 +307,7 @@ export default function CyberSecurityScreen() {
           </Pressable>
         </View>
         {error ? <Text accessibilityRole="alert" style={[styles.error, { color: '#FF5F56' }]}>{error}</Text> : null}
-      </Surface>
+      </Surface> : null}
 
       {result ? (
         <Surface style={styles.resultCard}>
