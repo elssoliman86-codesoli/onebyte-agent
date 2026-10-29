@@ -458,12 +458,10 @@ export async function executeTool(
     }
     case 'open_url': {
       const url = safeUrl(str(args, 'url'));
-      if (Platform.OS === 'android' && args.browser !== 'default' && Device.isAvailable()) {
-        const ok = await Device.openUrl(url, 'com.android.chrome');
-        if (ok) return `فُتح الرابط في Chrome: ${url}`;
-      }
-      await Linking.openURL(url);
-      return `فُتح الرابط في المتصفح الافتراضي: ${url}`;
+      // Agent-requested browsing must stay inside the app so the model can read
+      // and interact with the same page. Never hand this action to Chrome/Edge.
+      router.push({ pathname: '/browser', params: { url } });
+      return `تم فتح الرابط داخل متصفح OneByte المدمج: ${url}. استخدم browser_read_page لقراءة الصفحة والتفاعل معها؛ لا تفتح متصفح الجهاز الخارجي.`;
     }
     case 'browser_navigate': {
       const raw = str(args, 'url');
