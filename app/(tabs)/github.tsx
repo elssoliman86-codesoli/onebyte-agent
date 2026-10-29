@@ -336,6 +336,18 @@ export default function GithubProjectsScreen() {
 
         {token ? (
           <View style={[styles.card, { backgroundColor: colors.card, borderColor: colors.border }]}>
+            <View style={styles.row}>
+              <Feather name="shield" size={17} color={accent} />
+              <Text style={[styles.cardTitle, { color: fg }]}>صلاحيات GitHub المكتشفة</Text>
+            </View>
+            <Text style={[styles.help, { color: muted }]}>الحساب: @{account || '—'}</Text>
+            {tokenScopes.length ? <Text style={[styles.help, { color: fg }]}>OAuth scopes: {tokenScopes.join(' · ')}</Text> : <Text style={[styles.help, { color: fg }]}>GitHub لم يُرجع OAuth scopes؛ قد تكون الصلاحيات محددة لكل مستودع.</Text>}
+            {acceptedScopes.length ? <Text style={[styles.help, { color: muted }]}>Scopes المطلوبة من API: {acceptedScopes.join(' · ')}</Text> : null}
+          </View>
+        ) : null}
+
+        {token ? (
+          <View style={[styles.card, { backgroundColor: colors.card, borderColor: colors.border }]}>
             <View style={styles.rowBetween}>
               <Text style={[styles.cardTitle, { color: fg }]}>مستودعاتك</Text>
               <Text style={[styles.help, { color: muted }]}>{shownRepos.length} / {repos.length}</Text>
@@ -348,7 +360,7 @@ export default function GithubProjectsScreen() {
                   <Feather name={repo.private ? 'lock' : 'book-open'} size={16} color={selectedRepo?.full_name === repo.full_name ? accent : muted} />
                   <View style={{ flex: 1, minWidth: 0, gap: 3 }}>
                     <Text style={[styles.repoName, { color: fg }]} numberOfLines={1}>{repo.full_name}</Text>
-                    <Text style={[styles.help, { color: muted }]} numberOfLines={1}>{repo.description || 'بدون وصف'} · {repo.default_branch || 'default branch'}</Text>
+                    <Text style={[styles.help, { color: muted }]} numberOfLines={1}>{repo.description || 'بدون وصف'} · {repo.default_branch || 'default branch'} · {repo.permissions?.admin ? 'إدارة' : repo.permissions?.push ? 'قراءة وكتابة' : repo.permissions?.pull ? 'قراءة فقط' : 'الصلاحية غير معروفة'}</Text>
                   </View>
                   {selectedRepo?.full_name === repo.full_name ? <Feather name="check-circle" size={16} color={accent} /> : <Feather name="chevron-left" size={16} color={muted} />}
                 </Pressable>
