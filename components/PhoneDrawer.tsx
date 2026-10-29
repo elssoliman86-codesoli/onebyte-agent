@@ -238,6 +238,32 @@ export function PhoneDrawer({
               })}
             </View>
 
+            {/* Separate conversation lists for each studio; generic Chat remains independent. */}
+            <View style={styles.section}>
+              <Text style={[styles.sectionTitle, { color: colors.mutedForeground }]}>مساحات العمل ومحادثاتها</Text>
+              {STUDIO_NAV.map((studio) => {
+                const sectionSessions = sessions.filter((session) => session.mode === studio.key).slice(0, 4);
+                return (
+                  <View key={studio.key} style={{ marginBottom: 10 }}>
+                    <View style={{ flexDirection: 'row-reverse', alignItems: 'center', gap: 8 }}>
+                      <Feather name={studio.icon as never} size={15} color={colors.primary} />
+                      <Text style={{ color: colors.foreground, fontWeight: '700', flex: 1 }}>{studio.label}</Text>
+                      <Pressable accessibilityRole="button" accessibilityLabel={`محادثة جديدة: ${studio.label}`} onPress={() => void openStudio(studio.key)} style={{ padding: 5, borderRadius: 8, borderWidth: 1, borderColor: colors.border }}>
+                        <Feather name="plus" size={13} color={colors.primary} />
+                      </Pressable>
+                    </View>
+                    {sectionSessions.map((session) => (
+                      <Pressable key={session.id} onPress={() => openSession(session.id)} style={[styles.sessionRow, { paddingRight: 24 }]}>
+                        <Feather name={session.id === activeSessionId ? 'message-square' : 'message-circle'} size={13} color={session.id === activeSessionId ? colors.primary : colors.mutedForeground} />
+                        <Text numberOfLines={1} style={[styles.sessionTitle, { color: session.id === activeSessionId ? colors.primary : colors.foreground }]}>{session.title || 'محادثة جديدة'}</Text>
+                      </Pressable>
+                    ))}
+                    {!sectionSessions.length ? <Text style={{ color: colors.mutedForeground, fontSize: 11, paddingVertical: 4, paddingRight: 24 }}>لا توجد محادثات بعد</Text> : null}
+                  </View>
+                );
+              })}
+            </View>
+
             {/* Recent chats — real sessions, tap to switch; clock entry opens the full history */}
             {(recent.length || onOpenHistory) ? (
               <View style={styles.section}>
