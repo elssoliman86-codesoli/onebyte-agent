@@ -4,6 +4,8 @@ import { getEmbeddedBrowser, waitForEmbeddedBrowser } from './embedded-browser';
 import { isAuthorized, loadTargets } from './hunter';
 import { fetchWithRetry } from './fetch-with-retry';
 import * as Device from './device';
+import { createFile, getDefaultBranch, getRepoTree, listRepos, loadGithubToken, readFileSnapshot, verifyGithubToken, writeFile } from './github';
+import { loadConnections, sendTelegramMessage } from './marketing';
 import type {
   AssistantMemory,
   AssistantSkill,
@@ -39,6 +41,49 @@ const obj = (properties: Record<string, unknown>, required: string[] = []) => ({
 });
 
 export const TOOL_SPECS: ToolSpec[] = [
+  {
+    name: 'telegram_send_message',
+    group: 'local',
+    label: 'إرسال رسالة تيليجرام',
+    description: 'Send a text message to the Telegram chat/channel configured in OneByte Marketing connections using the official Telegram Bot API. Use only when the user explicitly asks to send or publish. Never claim success unless the API confirms it. If no bot/chat is configured, ask the user to configure it in Marketing connections.',
+    parameters: obj({ text: { type: 'string' } }, ['text']),
+  },
+  {
+    name: 'github_list_repositories',
+    group: 'local',
+    label: 'عرض مستودعات GitHub',
+    description: 'List repositories accessible to the connected GitHub account. Use when the user asks to show/list their repos. Never claim the account is connected until token verification succeeds.',
+    parameters: obj({ query: { type: 'string', description: 'Optional case-insensitive name/description filter.' } }),
+  },
+  {
+    name: 'github_list_files',
+    group: 'local',
+    label: 'عرض ملفات مستودع GitHub',
+    description: 'List tracked files in a GitHub repository. The user must have access to the repository. Use repository full_name and optional branch.',
+    parameters: obj({ repository: { type: 'string' }, branch: { type: 'string' } }, ['repository']),
+  },
+  {
+    name: 'github_read_file',
+    group: 'local',
+    label: 'قراءة ملف GitHub',
+    description: 'Read a text file from a GitHub repository before discussing or editing it. Returns content, branch and a revision SHA. Files are limited to 250KB.',
+    parameters: obj({ repository: { type: 'string' }, path: { type: 'string' }, branch: { type: 'string' } }, ['repository', 'path']),
+  },
+  {
+    name: 'github_update_file',
+    group: 'local',
+    label: 'تعديل ملف GitHub',
+    description: 'Replace the complete contents of an existing text file and create a GitHub commit. Read the file first, preserve unrelated code, pass the exact current SHA as expected_sha, and use a concise commit message. Report the actual commit URL returned.',
+    parameters: obj({ repository: { type: 'string' }, path: { type: 'string' }, content: { type: 'string' }, message: { type: 'string' }, branch: { type: 'string' }, expected_sha: { type: 'string' } }, ['repository', 'path', 'content', 'message', 'expected_sha']),
+  },
+  {
+    name: 'github_create_file',
+    group: 'local',
+    label: 'إنشاء ملف GitHub',
+    description: 'Create a new text file in a repository and commit it. Never overwrite existing files; if the path exists, read it and use github_update_file.',
+    parameters: obj({ repository: { type: 'string' }, path: { type: 'string' }, content: { type: 'string' }, message: { type: 'string' }, branch: { type: 'string' } }, ['repository', 'path', 'content', 'message']),
+  },
+
   {
     name: 'read_skill',
     group: 'local',
@@ -439,6 +484,65 @@ export async function executeTool(
   ctx: ToolContext,
 ): Promise<string> {
   switch (name) {
+    case 'telegram_send_message': {
+      const connections = await loadConnections();
+      const config = connections.telegram;
+      if (!config?.botToken?.trim() || !config?.chatId?.trim()) {
+        throw new Error('تيليجرام غير متصل. افتح Marketing Studio > الاتصالات واضبط Bot Token وChat ID/القناة أولًا. لا ترسل التوكن في الشات.');
+      }
+      const message = str(args, 'text').trim();
+      if (message.length > 4096) throw new Error('رسالة تيليجرام تتجاوز حد 4096 حرفًا. قسّمها إلى رسائل أقصر.');
+      const result = await sendTelegramMessage(config, message);
+      if (!result.ok) throw new Error(result.detail);
+      return JSON.stringify({ ok: true, platform: 'Telegram', destination: config.chatId, detail: result.detail, url: /^@/.test(config.chatId) ? 'https://t.me/' + config.chatId.slice(1) : null });
+    }
+    case 'github_list_repositories': {
+      const token = await loadGithubToken();
+      if (!token) throw new Error('GitHub غير متصل داخل OneByte. افتح إعدادات GitHub وأضف Fine-grained Personal Access Token بصلاحية المستودعات المطلوبة.');
+      const account = await verifyGithubToken(token);
+      const all = await listRepos(token);
+      const query = typeof args.query === 'string' ? args.query.trim().toLowerCase() : '';
+      const repos = all.filter((repo) => !query || (repo.full_name + ' ' + (repo.description ?? '')).toLowerCase().includes(query));
+      return JSON.stringify({ account: account.login, totalAccessible: all.length, shown: repos.length, repositories: repos.map((repo) => ({ full_name: repo.full_name, default_branch: repo.default_branch, private: repo.private, description: repo.description ?? '', url: repo.html_url ?? 'https://github.com/' + repo.full_name })) });
+    }
+    case 'github_list_files': {
+      const token = await loadGithubToken();
+      if (!token) throw new Error('GitHub غير متصل داخل OneByte. أضف التوكن من إعدادات GitHub أولًا.');
+      const repository = str(args, 'repository').trim();
+      const branch = typeof args.branch === 'string' && args.branch.trim() ? args.branch.trim() : 'HEAD';
+      const tree = await getRepoTree(token, repository, branch);
+      return JSON.stringify({ repository, branch: tree.branch, count: tree.items.length, truncated: tree.truncated, files: tree.items.map((item) => ({ path: item.path, size: item.size ?? null, url: 'https://github.com/' + repository + '/blob/' + encodeURIComponent(tree.branch) + '/' + item.path.split('/').map(encodeURIComponent).join('/') })) });
+    }
+    case 'github_read_file': {
+      const token = await loadGithubToken();
+      if (!token) throw new Error('GitHub غير متصل داخل OneByte. أضف التوكن من إعدادات GitHub أولًا.');
+      const repository = str(args, 'repository').trim();
+      const path = str(args, 'path').trim();
+      const branch = typeof args.branch === 'string' && args.branch.trim() ? args.branch.trim() : await getDefaultBranch(token, repository);
+      const file = await readFileSnapshot(token, repository, path, branch);
+      return JSON.stringify({ repository, path, branch, sha: file.sha, size: file.size, content: file.content, url: 'https://github.com/' + repository + '/blob/' + encodeURIComponent(branch) + '/' + path.split('/').map(encodeURIComponent).join('/') });
+    }
+    case 'github_update_file': {
+      const token = await loadGithubToken();
+      if (!token) throw new Error('GitHub غير متصل داخل OneByte. أضف التوكن من إعدادات GitHub أولًا.');
+      const repository = str(args, 'repository').trim();
+      const path = str(args, 'path').trim();
+      const branch = typeof args.branch === 'string' && args.branch.trim() ? args.branch.trim() : await getDefaultBranch(token, repository);
+      const expectedSha = str(args, 'expected_sha').trim();
+      const content = typeof args.content === 'string' ? args.content : '';
+      const result = await writeFile(token, repository, path, content, str(args, 'message'), branch, expectedSha);
+      return JSON.stringify({ ...result, repository, path, branch, fileUrl: 'https://github.com/' + repository + '/blob/' + encodeURIComponent(branch) + '/' + path.split('/').map(encodeURIComponent).join('/'), message: 'تم حفظ التعديل على GitHub في commit فعلي.' });
+    }
+    case 'github_create_file': {
+      const token = await loadGithubToken();
+      if (!token) throw new Error('GitHub غير متصل داخل OneByte. أضف التوكن من إعدادات GitHub أولًا.');
+      const repository = str(args, 'repository').trim();
+      const path = str(args, 'path').trim();
+      const branch = typeof args.branch === 'string' && args.branch.trim() ? args.branch.trim() : await getDefaultBranch(token, repository);
+      const content = typeof args.content === 'string' ? args.content : '';
+      const result = await createFile(token, repository, path, content, str(args, 'message'), branch);
+      return JSON.stringify({ ...result, repository, path, branch, message: 'تم إنشاء الملف وحفظه في commit فعلي على GitHub.' });
+    }
     case 'read_skill': {
       const wanted = str(args, 'name').trim().toLowerCase();
       const skill = ctx.skills.find((s) => s.active && s.name.trim().toLowerCase() === wanted);

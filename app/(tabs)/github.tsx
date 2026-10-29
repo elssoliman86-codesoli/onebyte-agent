@@ -223,17 +223,17 @@ export default function GithubProjectsScreen() {
         </View>
 
         <View style={[styles.card, { backgroundColor: colors.card, borderColor: colors.border }]}>
-          <Text style={[styles.cardTitle, { color: fg }]}>تعديل بالمساعد دون توكن</Text>
+          <Text style={[styles.cardTitle, { color: fg }]}>تحكّم GitHub من الشات — بدون فتح متصفح</Text>
           <Text style={[styles.help, { color: muted }]}>
-            افتح GitHub داخل متصفح OneByte وسجّل الدخول بنفسك. المساعد يستخدم جلسة المتصفح؛ قد تحتاج لإكمال MFA أو CAPTCHA يدويًا.
+            اتصل مرة واحدة من قسم GitHub API أدناه. بعد الاتصال، اطلب من الشات عرض مستودعاتك أو قراءة الملفات وتعديلها وحفظ commit؛ التنفيذ يتم عبر GitHub API ويرجع رابط التغيير. لا تُشارك التوكن في الشات.
           </Text>
           <Action
-            label="ابدأ جلسة GitHub مع الذكاء الاصطناعي"
+            label="ابدأ التحكم في GitHub من الشات"
             icon="message-circle"
             primary
             onPress={() => {
               setPendingPrompt(
-                'أريد تنفيذ مهمة على GitHub من خلال متصفح OneByte المدمج، دون طلب Personal Access Token. افتح https://github.com/ باستخدام أداة open_url داخل التطبيق فقط. إذا لم أكن مسجّل الدخول، توقف واطلب مني تسجيل الدخول داخل المتصفح المدمج بنفسي. لا تطلب كلمة المرور أو التوكن في الشات، ولا تتجاوز MFA/CAPTCHA. بعد تسجيل الدخول اقرأ واجهة GitHub، ثم اسألني عن المستودع والمهمة إن لم أذكرهما. نفّذ التعديلات من واجهة الموقع، افحص diff، احفظ فقط ما طلبته، وتحقق من رابط commit/PR قبل إعلان النجاح. لا تفتح Chrome أو متصفح الجهاز الخارجي.'
+                'أريد التحكم في GitHub من خلال واجهة GitHub API داخل OneByte، بدون فتح أي متصفح. استخدم أدوات github_list_repositories وgithub_list_files وgithub_read_file وgithub_update_file وgithub_create_file حسب الحاجة. إذا لم يكن اتصال GitHub عبر API مضبوطًا، اطلب مني فتح شاشة GitHub Projects وإتمام الاتصال مرة واحدة، ولا تطلب التوكن داخل الشات. قبل التعديل اقرأ الملف والفرع الحاليين، حافظ على الكود غير المرتبط بالمهمة، وبعد التعديل تحقق من نتيجة الأداة وأرسل رابط الملف والـcommit الفعلي. لا تدّعِ النجاح إذا فشل الحفظ.'
               );
               router.push('/(tabs)');
             }}
@@ -318,9 +318,8 @@ export default function GithubProjectsScreen() {
                 primary
                 disabled={busy}
                 onPress={() => {
-                  const repoUrl = `https://github.com/${selectedRepo.full_name}`;
                   setPendingPrompt(
-                    `مهمة GitHub للمستودع ${selectedRepo.full_name} (الفرع الافتراضي: ${selectedRepo.default_branch || 'main'}). افتح ${repoUrl} داخل متصفح OneByte المدمج باستخدام أداة open_url، ولا تفتح متصفح الجهاز الخارجي. إذا لم أكن مسجّل الدخول، توقف واطلب مني تسجيل الدخول يدويًا داخل المتصفح المدمج، ولا تطلب PAT أو كلمة المرور ولا تتجاوز MFA/CAPTCHA. بعد تسجيل الدخول، اقرأ صفحة المستودع، افهم الطلب الذي سأكتبه بعد فتح الشات، عدّل الملفات من واجهة GitHub فقط، راجع diff، ثم احفظ التغييرات وأعد رابط commit أو Pull Request وتحقق أن GitHub أكد الحفظ. لا تدّعِ نجاح أي تعديل لم يتم التحقق منه.`,
+                    `مهمة GitHub عبر API للمستودع ${selectedRepo.full_name} (الفرع الافتراضي: ${selectedRepo.default_branch || 'main'}). لا تفتح أي متصفح. استخدم أدوات GitHub المخصصة في الشات: github_list_files لمعرفة الملفات، github_read_file لقراءة الملف قبل التعديل، ثم github_update_file مع expected_sha الحالي للحفظ الآمن، أو github_create_file للملف الجديد. استخدم الفرع ${selectedRepo.default_branch || 'main'}، وراجع النتيجة التي ترجعها الأداة، ثم أرسل رابط الملف ورابط الـcommit الفعلي. إذا لم يتوفر توكن GitHub في OneByte، اطلب مني الاتصال من شاشة GitHub Projects ولا تطلب التوكن داخل الشات. لا تدّعِ نجاح أي تعديل لم يتم التحقق منه.`,
                   );
                   router.push('/(tabs)');
                 }}

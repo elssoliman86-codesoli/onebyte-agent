@@ -100,12 +100,29 @@ export interface GhRepo {
 }
 
 export async function listRepos(token: string): Promise<GhRepo[]> {
-  const res = await fetch(API + '/user/repos?per_page=100&sort=updated&direction=desc&type=all', {
-    headers: headers(token),
-  });
+  const all: GhRepo[] = [];
+  // GitHub paginates repository lists. Keep paging so chat commands do not
+  // silently hide repositories beyond the first 100.
+  for (let page = 1; page <= 10; page += 1) {
+    const res = await fetch(
+      API + '/user/repos?per_page=100&page=' + page + '&sort=updated&direction=desc&type=all',
+      { headers: headers(token) },
+    );
+    if (!res.ok) throw new Error(apiError(res.status));
+    const data = (await res.json()) as GhRepo[];
+    if (!Array.isArray(data) || data.length === 0) break;
+    all.push(...data);
+    if (data.length < 100) break;
+  }
+  return all;
+}
+
+export async function getDefaultBranch(token: string, fullName: string): Promise<string> {
+  const res = await fetch(API + '/repos/' + apiRepo(fullName), { headers: headers(token) });
   if (!res.ok) throw new Error(apiError(res.status));
-  const data = (await res.json()) as GhRepo[];
-  return Array.isArray(data) ? data : [];
+  const data = (await res.json()) as { default_branch?: string };
+  if (!data.default_branch) throw new Error('GitHub لم يرجع الفرع الافتراضي للمستودع.');
+  return data.default_branch;
 }
 
 export interface GhTreeItem { path: string; type: 'blob' | 'tree'; size?: number; sha?: string }
@@ -115,14 +132,23 @@ export async function getRepoTree(
   fullName: string,
   branch: string,
 ): Promise<{ items: GhTreeItem[]; branch: string; truncated: boolean }> {
-  const url = API + '/repos/' + apiRepo(fullName) + '/git/trees/' +
-    encodeURIComponent(branch || 'HEAD') + '?recursive=1';
+  const repo = apiRepo(fullName);
+  let resolvedBranch = branch.trim();
+  if (!resolvedBranch || resolvedBranch.toUpperCase() === 'HEAD') {
+    const repoRes = await fetch(API + '/repos/' + repo, { headers: headers(token) });
+    if (!repoRes.ok) throw new Error(apiError(repoRes.status));
+    const repoData = (await repoRes.json()) as { default_branch?: string };
+    if (!repoData.default_branch) throw new Error('GitHub لم يرجع الفرع الافتراضي للمستودع.');
+    resolvedBranch = repoData.default_branch;
+  }
+  const url = API + '/repos/' + repo + '/git/trees/' +
+    encodeURIComponent(resolvedBranch) + '?recursive=1';
   const res = await fetch(url, { headers: headers(token) });
   if (!res.ok) throw new Error(apiError(res.status));
   const data = (await res.json()) as { tree?: GhTreeItem[]; truncated?: boolean };
   return {
     items: (data.tree ?? []).filter((item) => item.type === 'blob'),
-    branch: branch || 'HEAD',
+    branch: resolvedBranch,
     truncated: Boolean(data.truncated),
   };
 }
@@ -150,6 +176,46 @@ export async function readFileSnapshot(
     content: new TextDecoder('utf-8', { fatal: false }).decode(bytes),
     sha: data.sha,
     size: data.size ?? 0,
+  };
+}
+
+export async function createFile(
+  token: string,
+  fullName: string,
+  path: string,
+  content: string,
+  message: string,
+  branch: string,
+): Promise<{ ok: true; commitUrl: string; fileUrl: string }> {
+  if (!token.trim()) throw new Error('اتصل بـGitHub أولًا.');
+  if (!path.trim() || path.startsWith('/') || path.split('/').some((part) => !part || part === '.' || part === '..')) {
+    throw new Error('مسار الملف غير صالح.');
+  }
+  if (new TextEncoder().encode(content).byteLength > MAX_GITHUB_TEXT_FILE_BYTES) {
+    throw new Error('الملف أكبر من 250KB.');
+  }
+  const repo = apiRepo(fullName);
+  const filePath = apiPath(path);
+  const check = await fetch(API + '/repos/' + repo + '/contents/' + filePath + '?ref=' + encodeURIComponent(branch), {
+    headers: headers(token),
+  });
+  if (check.ok) throw new Error('الملف موجود بالفعل. استخدم أداة تعديل الملف بدل إنشاءه.');
+  if (check.status !== 404) throw new Error(apiError(check.status));
+  const res = await fetch(API + '/repos/' + repo + '/contents/' + filePath, {
+    method: 'PUT',
+    headers: { ...headers(token), 'Content-Type': 'application/json' },
+    body: JSON.stringify({
+      message: message.trim() || 'Create ' + path + ' via OneByte Agent',
+      content: encodeBase64(content),
+      branch,
+    }),
+  });
+  if (!res.ok) throw new Error(apiError(res.status));
+  const data = (await res.json()) as { content?: { html_url?: string }; commit?: { html_url?: string } };
+  return {
+    ok: true,
+    commitUrl: data.commit?.html_url ?? '',
+    fileUrl: data.content?.html_url ?? ('https://github.com/' + fullName + '/blob/' + encodeURIComponent(branch) + '/' + path.split('/').map(encodeURIComponent).join('/')),
   };
 }
 
