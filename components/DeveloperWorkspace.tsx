@@ -73,14 +73,14 @@ function preflightZip(archive: Uint8Array): void {
     const path = strFromU8(archive.subarray(nameStart, nameEnd));
     const isDirectory = path.endsWith('/');
     if (!path || path.startsWith('/') || path.includes('\\') || /^[a-zA-Z]:/.test(path) ||
-        path.split('/').some(part => part === '.' || part === '..')) throw new Error(\`مسار غير آمن داخل الأرشيف: \${path}\`);
+        path.split('/').some(part => part === '.' || part === '..')) throw new Error(`مسار غير آمن داخل الأرشيف: ${path}`);
     const unixMode = externalAttributes >>> 16;
     if ((unixMode & 0xf000) === 0xa000) throw new Error('الأرشيف يحتوي على رابط رمزي غير مسموح.');
     if (!isDirectory) {
       files++;
-      if (seen.has(path)) throw new Error(\`اسم ملف مكرر داخل الأرشيف: \${path}\`);
+      if (seen.has(path)) throw new Error(`اسم ملف مكرر داخل الأرشيف: ${path}`);
       seen.add(path);
-      if (uncompressed > 25 * 1024 * 1024) throw new Error(\`الملف \${path} يتجاوز حد 25MB.\`);
+      if (uncompressed > 25 * 1024 * 1024) throw new Error(`الملف ${path} يتجاوز حد 25MB.`);
       total += uncompressed;
       if (total > 80 * 1024 * 1024) throw new Error('الحجم بعد فك الضغط يتجاوز 80MB.');
       if (uncompressed > 1024 * 1024 && (compressed === 0 || uncompressed / compressed > 200)) {
