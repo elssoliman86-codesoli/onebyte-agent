@@ -152,11 +152,40 @@ export async function fetchModels(
     }
   }
   const endpoint = modelsEndpoint(normalizedBase);
-  let response = await fetchWithRetry(
-    endpoint,
-    { headers },
-    { timeout: 30_000, maxRetries: 2, baseDelay: 1_000, signal },
-  );
+  let response: Response;
+  try {
+    response = await fetchWithRetry(
+      endpoint,
+      { headers },
+      { timeout: 30_000, maxRetries: 2, baseDelay: 1_000, signal },
+    );
+  } catch (error) {
+    const message = error instanceof Error ? error.message : String(error);
+    let host = "";
+    try {
+      host = new URL(normalizedBase).hostname;
+    } catch {
+      // Keep the raw URL in the fallback message when the input is malformed.
+    }
+
+    if (/CLEARTEXT communication/i.test(message)) {
+      throw new Error(
+        `Android منع اتصال HTTP غير المشفّر إلى ${host || normalizedBase}. أضف عنوان المضيف إلى allowedHosts في app.json ثم أعد بناء APK؛ إعادة فتح التطبيق وحدها لا تكفي.`
+      );
+    }
+
+    if (
+      /fetch failed|Network request failed|UnknownServiceException|ECONNREFUSED|ENETUNREACH|ETIMEDOUT/i.test(
+        message
+      )
+    ) {
+      throw new Error(
+        `تعذّر الوصول إلى خدمة الموديلات على ${host || normalizedBase}. تأكد أن الهاتف والكمبيوتر على نفس شبكة Wi-Fi، وأن OmniRoute يستمع لاتصالات الشبكة المحلية وأن جدار حماية Windows يسمح بالمنفذ 20128.`
+      );
+    }
+
+    throw error;
+  }
   if ((response.status === 401 || response.status === 403) && apiKey && !normalizedBase.includes('generativelanguage.googleapis.com')) {
     response = await fetchWithRetry(
       endpoint,

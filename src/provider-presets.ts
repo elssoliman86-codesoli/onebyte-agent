@@ -28,7 +28,7 @@ export const PROVIDER_PRESETS: ProviderPreset[] = [
   {
     name: 'OmniRoute (سيرفر خاص)',
     baseUrl: 'http://192.168.1.10:20128/v1',
-    note: 'بوابة OmniRoute — شغّلها على أي جهاز (npm i -g omniroute ثم localhost:20128) وبدّلي الـ IP',
+    note: 'شغّلي OmniRoute على الكمبيوتر؛ استخدمي IP الكمبيوتر والمنفذ 20128. أضيفي IP نفسه إلى allowedHosts في app.json ثم أعيدي بناء APK.',
   },
   { name: 'OpenAI', baseUrl: 'https://api.openai.com/v1' },
   { name: 'DeepSeek', baseUrl: 'https://api.deepseek.com/v1', note: 'رخيص وقوي' },

@@ -16,7 +16,9 @@
         "foregroundImage": "./assets/images/icon.png",
         "backgroundColor": "#081610"
       },
-      "permissions": ["android.permission.RECORD_AUDIO"],
+      "permissions": [
+        "android.permission.RECORD_AUDIO"
+      ],
       "softwareKeyboardLayoutMode": "pan"
     },
     "web": {
@@ -24,7 +26,15 @@
     },
     "plugins": [
       "expo-router",
-      "expo-secure-store"
+      "expo-secure-store",
+      [
+        "./plugins/withAndroidLocalHttp",
+        {
+          "allowedHosts": [
+            "192.168.1.10"
+          ]
+        }
+      ]
     ],
     "experiments": {
       "typedRoutes": true,
