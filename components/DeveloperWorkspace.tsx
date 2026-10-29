@@ -2,7 +2,8 @@ import React, { useCallback, useEffect, useMemo, useState } from 'react';
 import { ActivityIndicator, Platform, Pressable, ScrollView, StyleSheet, Text, TextInput, View } from 'react-native';
 import * as FileSystem from 'expo-file-system/legacy';
 import * as Sharing from 'expo-sharing';
-import { zipSync, strToU8 } from 'fflate';
+import * as DocumentPicker from 'expo-document-picker';
+import { zipSync, unzipSync, strToU8, strFromU8 } from 'fflate';
 import { Feather } from '@expo/vector-icons';
 import { useColors } from '@/hooks/useColors';
 import { ScreenTopBar } from '@/components/PhoneDrawer';
@@ -18,6 +19,21 @@ import {
   replaceProjectPlan, saveProjectFile, setDeveloperCodeModel, updatePlanStep,
   type DeveloperProject, type DeveloperPlanStep,
 } from '@/src/developer-projects';
+
+function fromBase64(value: string): Uint8Array {
+  const alphabet = 'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/';
+  const clean = value.replace(/\\s/g, '').replace(/=+$/, '');
+  const output = new Uint8Array(Math.floor(clean.length * 3 / 4));
+  let buffer = 0, bits = 0, offset = 0;
+  for (const char of clean) {
+    const digit = alphabet.indexOf(char);
+    if (digit < 0) throw new Error('ملف ZIP غير صالح (Base64).');
+    buffer = (buffer << 6) | digit;
+    bits += 6;
+    if (bits >= 8) { bits -= 8; output[offset++] = (buffer >> bits) & 255; }
+  }
+  return output.slice(0, offset);
+}
 
 function toBase64(bytes: Uint8Array): string {
   const alphabet = 'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/';
@@ -130,14 +146,60 @@ export function DeveloperWorkspace() {
   async function exportZip() {
     if (!project?.files.length) { alertCompat('المشروع فارغ', 'أضف ملفات أولًا.'); return; }
     try {
+      if (project.files.length > 500) throw new Error('المشروع يتجاوز حد 500 ملف.');
       const entries: Record<string, Uint8Array> = {};
-      project.files.forEach(file => { entries[file.path] = strToU8(file.content); });
+      let totalBytes = 0;
+      for (const file of project.files) {
+        const bytes = strToU8(file.content);
+        if (bytes.length > 25 * 1024 * 1024) throw new Error(`الملف ${file.path} يتجاوز حد 25MB.`);
+        totalBytes += bytes.length;
+        if (totalBytes > 80 * 1024 * 1024) throw new Error('الحجم الإجمالي للمشروع يتجاوز 80MB.');
+        entries[file.path] = bytes;
+      }
       const encoded = toBase64(zipSync(entries, { level: 6 }));
       const uri = `${FileSystem.cacheDirectory ?? FileSystem.documentDirectory}onebyte-project-${project.sessionId}.zip`;
       await FileSystem.writeAsStringAsync(uri, encoded, { encoding: FileSystem.EncodingType.Base64 });
       if (Platform.OS !== 'web' && await Sharing.isAvailableAsync()) await Sharing.shareAsync(uri, { mimeType: 'application/zip', dialogTitle: 'تحميل المشروع ZIP' });
       else alertCompat('تم تجهيز ملف ZIP', uri);
     } catch (e) { alertCompat('فشل التصدير', e instanceof Error ? e.message : 'خطأ غير معروف'); }
+  }
+
+  async function importZip() {
+    if (!activeSession) { alertCompat('اختر محادثة مشروع أولًا', 'استورد الملفات داخل مشروع المحادثة النشطة.'); return; }
+    try {
+      const picked = await DocumentPicker.getDocumentAsync({ type: ['application/zip', 'application/x-zip-compressed'], copyToCacheDirectory: true, multiple: false });
+      if (picked.canceled || !picked.assets?.length) return;
+      const asset = picked.assets[0];
+      const info = await FileSystem.getInfoAsync(asset.uri);
+      const size = asset.size ?? (info.exists && 'size' in info ? info.size : 0);
+      if (size > 32 * 1024 * 1024) throw new Error('حجم ملف ZIP أكبر من 32MB على أندرويد. قسّم الأرشيف إلى أجزاء أصغر.');
+      const base64 = await FileSystem.readAsStringAsync(asset.uri, { encoding: FileSystem.EncodingType.Base64 });
+      const archive = fromBase64(base64);
+      const unpacked = unzipSync(archive);
+      const entries: Array<{path:string;content:string}> = [];
+      let totalBytes = 0;
+      const binaryExt = /\\.(png|jpe?g|gif|webp|ico|pdf|zip|gz|7z|rar|exe|dll|so|a|o|class|jar|mp4|mp3|woff2?|ttf|otf)$/i;
+      for (const [rawPath, bytes] of Object.entries(unpacked)) {
+        if (rawPath.endsWith('/')) continue;
+        const path = rawPath.replace(/\\\\/g, '/');
+        if (!path || path.startsWith('/') || /^[a-zA-Z]:/.test(path) ||
+          path.split('/').some(part => !part.trim() || part === '.' || part === '..')) {
+          throw new Error(`مسار غير آمن داخل الأرشيف: ${rawPath}`);
+        }
+        if (bytes.length > 25 * 1024 * 1024) throw new Error(`الملف ${path} يتجاوز حد 25MB.`);
+        totalBytes += bytes.length;
+        if (totalBytes > 80 * 1024 * 1024) throw new Error('الحجم بعد فك الضغط يتجاوز 80MB.');
+        if (binaryExt.test(path) || bytes.includes(0)) continue;
+        entries.push({ path, content: strFromU8(bytes) });
+        if (entries.length > 500) throw new Error('الأرشيف يحتوي على أكثر من 500 ملف.');
+      }
+      const { importProjectFiles } = await import('@/src/developer-projects');
+      const count = await importProjectFiles(activeSession.id, activeSession.title, entries);
+      await refresh();
+      const first = entries[0]?.path;
+      if (first) { setSelectedPath(first); setDraft(entries[0].content); }
+      alertCompat('اكتمل استيراد المشروع', `تم استيراد ${count} ملفًا نصيًا إلى هذه المحادثة. الملفات الثنائية تم تجاهلها.`);
+    } catch (e) { alertCompat('فشل استيراد ZIP', e instanceof Error ? e.message : 'ملف غير صالح أو كبير جدًا.'); }
   }
   async function generateFile() {
     if (!activeSession || !selectedPath || !goal.trim()) {
@@ -210,6 +272,7 @@ export function DeveloperWorkspace() {
       await replaceProjectPlan(activeSession.id,activeSession.title,normalized.map(f=>({title:f.path,detail:f.task})));
       if (activeSession.mode!=='developer') await patchSession(activeSession.id,{mode:'developer'});
       await refresh();
+      const generatedPaths: string[] = [];
       for (let i=0;i<normalized.length;i++) {
         const item=normalized[i];
         await updatePlanStep(activeSession.id,(await getDeveloperProject(activeSession.id,activeSession.title)).plan[i].id,'running');
@@ -223,13 +286,18 @@ export function DeveloperWorkspace() {
         const output=generated.replace(/^\`\`\`[a-zA-Z0-9_-]*\s*\n/,'').replace(/\n\`\`\`\s*$/,'');
         if(!output.trim()) throw new Error(`الموديل لم ينتج محتوى للملف ${item.path}`);
         await saveProjectFile(activeSession.id,activeSession.title,item.path,output);
+        generatedPaths.push(item.path);
         const after=await getDeveloperProject(activeSession.id,activeSession.title);
         const step=after.plan[i];
         if(step) await updatePlanStep(activeSession.id,step.id,'done');
         await refresh();
       }
       const finished=await getDeveloperProject(activeSession.id,activeSession.title);
-      for(const file of finished.files) {
+      const completedSteps = finished.plan.filter(step => step.status === 'done');
+      if (generatedPaths.length !== normalized.length || completedSteps.length !== normalized.length) {
+        throw new Error('لم يكتمل توليد جميع الملفات؛ تم إيقاف المراجعة حتى لا تُراجع نسخة ناقصة.');
+      }
+      for(const file of finished.files.filter(item => generatedPaths.includes(item.path))) {
         try {
           const review=await callModel([
             {role:'system',content:'Review the entire source file for correctness, security, logic bugs, and edge cases. Return ONLY JSON {"should_change":boolean,"reason":"short","proposed_code":"complete file contents"}. Never claim tests ran.'},
@@ -242,6 +310,12 @@ export function DeveloperWorkspace() {
       await refresh();
       alertCompat('انتهى البناء متعدد الملفات', `تم توليد ${normalized.length} ملفًا بالتتابع، ثم إنشاء اقتراحات المراجعة الممكنة. راجع اقتراحات الموافقة قبل تطبيقها. لم يتم تشغيل المشروع أو الاختبارات تلقائيًا.`);
     } catch(error) {
+      if (activeSession) {
+        const interrupted = await getDeveloperProject(activeSession.id, activeSession.title).catch(() => null);
+        for (const step of interrupted?.plan ?? []) {
+          if (step.status === 'running') await updatePlanStep(activeSession.id, step.id, 'error').catch(() => undefined);
+        }
+      }
       await refresh();
       alertCompat('توقف البناء متعدد الملفات',error instanceof Error?error.message:'خطأ غير معروف');
     } finally { setBusy(false); }
@@ -279,7 +353,10 @@ export function DeveloperWorkspace() {
         <Text style={[s.sectionTitle,{color:colors.foreground}]}> <Feather name="folder" size={14}/> ملفات المشروع</Text>
         <View style={s.inline}><TextInput value={newPath} onChangeText={setNewPath} placeholder="src/main.ts" placeholderTextColor={colors.mutedForeground} style={[s.path,{color:colors.foreground,borderColor:colors.border}]}/><Pressable onPress={()=>void createFile()} style={[s.plus,{backgroundColor:colors.primary}]}><Feather name="plus" size={15} color={colors.primaryForeground}/></Pressable></View>
         <ScrollView style={{maxHeight:240}}>{visibleOutline.map(item=><Pressable key={item.path} onPress={()=>{if(item.directory){setCollapsedFolders(prev=>({...prev,[item.path]:!prev[item.path]}));}else{setSelectedPath(item.path);setDraft(project?.files.find(f=>f.path===item.path)?.content??'');}}} style={[s.tree,{paddingLeft:7+item.depth*11,backgroundColor:selectedPath===item.path?colors.accentSubtle:'transparent'}]}><Feather name={item.directory?(collapsedFolders[item.path]?'chevron-right':'chevron-down'):'file-text'} size={13} color={colors.mutedForeground}/><Text numberOfLines={1} style={{color:colors.foreground,fontSize:12,flex:1}}>{item.path.split('/').pop()}</Text></Pressable>)}</ScrollView>
-        <Pressable onPress={()=>void exportZip()} style={[s.button,{borderColor:colors.border}]}><Feather name="download" size={14} color={colors.foreground}/><Text style={{color:colors.foreground,fontSize:11}}>تحميل المشروع ZIP</Text></Pressable>
+        <View style={s.inline}>
+          <Pressable onPress={()=>void exportZip()} style={[s.button,{borderColor:colors.border,flex:1}]}><Feather name="download" size={14} color={colors.foreground}/><Text style={{color:colors.foreground,fontSize:11}}>تصدير ZIP</Text></Pressable>
+          <Pressable onPress={()=>void importZip()} style={[s.button,{borderColor:colors.border,flex:1}]}><Feather name="upload" size={14} color={colors.foreground}/><Text style={{color:colors.foreground,fontSize:11}}>استيراد ZIP</Text></Pressable>
+        </View>
       </View>
       <View style={[s.editor,{borderColor:colors.border,backgroundColor:colors.card}]}>
         <View style={s.fileHeading}><View style={{flex:1}}><Text style={{color:colors.foreground,fontWeight:'700'}}>{selectedPath||'لا يوجد ملف مفتوح'}</Text><Text style={{color:colors.mutedForeground,fontSize:11}}>{selectedFile?.language??'اختر ملفًا من الشجرة'}</Text><Text style={{color:colors.mutedForeground,fontSize:10}}>موديل الكود: {project?.codeModelId || provider.model || 'غير محدد'}</Text></View><Pressable onPress={()=>setCodeModelPickerOpen(true)} style={{padding:5}}><Feather name="cpu" size={17} color={colors.primary}/></Pressable><Pressable onPress={()=>setPlanOpen(v=>!v)}><Feather name="help-circle" size={18} color={colors.primary}/></Pressable></View>
