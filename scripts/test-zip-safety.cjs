@@ -14,6 +14,7 @@ execFileSync(process.execPath, [
   '--target', 'ES2020',
   '--module', 'Node16',
   '--moduleResolution', 'Node16',
+  '--ignoreConfig',
   '--skipLibCheck',
   '--esModuleInterop',
   '--outDir', output,
