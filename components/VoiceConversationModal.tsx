@@ -197,6 +197,7 @@ export function VoiceConversationModal({
 
   function handleMainButton() {
     if (state === 'listening') {
+      // Stop recognition and immediately hand the captured transcript to the turn logic.
       void speechService.stopListening().catch(() => undefined);
       return;
     }
