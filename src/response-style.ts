@@ -23,7 +23,7 @@ export const DEFAULT_RESPONSE_STYLE: ResponseStyle = {
   title: 'auto',
   links: 'needed',
   diagram: 'ideas',
-  markdown: 'full',
+  markdown: 'light',
   length: 'balanced',
   tone: 'friendly',
 };
