@@ -129,9 +129,10 @@ function StepList({ steps }: { steps: ToolStep[] }) {
                 : colors.destructive;
         return (
           <View key={step.id} style={styles.stepRow}>
-            <Text numberOfLines={1} style={[styles.stepText, { color: colors.mutedForeground }]}>
-              {label}
-            </Text>
+            <View style={{ flex: 1, minWidth: 0, gap: 2 }}>
+              <Text numberOfLines={1} style={[styles.stepText, { color: colors.mutedForeground }]}>{label}</Text>
+              {typeof step.args.repository === 'string' ? <Text numberOfLines={1} style={[styles.stepText, { color: colors.mutedForeground, fontSize: 10 }]}>{step.args.repository}{typeof step.args.path === 'string' ? ' / ' + step.args.path : ''}</Text> : typeof step.args.path === 'string' ? <Text numberOfLines={1} style={[styles.stepText, { color: colors.mutedForeground, fontSize: 10 }]}>{step.args.path}</Text> : null}
+            </View>
             <Feather name={STEP_ICON[step.status]} size={13} color={tone} />
           </View>
         );
@@ -1852,7 +1853,7 @@ export default function ChatScreen() {
               blurOnSubmit={false}
               keyboardAppearance={Platform.OS === 'ios' ? 'light' : undefined}
               returnKeyType="default"
-              style={[styles.input, { color: colors.foreground }]}
+              style={[styles.input, { color: colors.foreground, minWidth: 0, paddingBottom: attachImages.length ? 64 : spacing.sm + 1 }]}
               textAlignVertical="top"
               accessibilityLabel="رسالتك للمساعد"
             />
@@ -2209,7 +2210,7 @@ const styles = StyleSheet.create({
   attachMenuItem: { flexDirection: 'row-reverse', alignItems: 'center', gap: spacing.sm, paddingVertical: 9, paddingHorizontal: spacing.sm + 4 },
   attachMenuItemText: { fontSize: typography.sm, fontWeight: typography.weightBold },
   bubbleImagesWrap: { flexDirection: 'row', flexWrap: 'wrap', gap: spacing.xs, marginBottom: spacing.xs },
-  attachPreviewItem: { position: 'relative' },
+  attachPreviewItem: { position: 'relative', flexShrink: 0 },
   userStack: { maxWidth: '85%', alignItems: 'flex-end' },
   iconAction: {
     width: 26,
@@ -2291,7 +2292,7 @@ const styles = StyleSheet.create({
     borderRadius: radius.sm,
   },
   shareDraftStart: { borderTopWidth: 0, marginTop: 0, paddingTop: 0 },
-  attachPreviewWrap: { flexDirection: 'row', flexWrap: 'wrap', gap: spacing.xs, paddingHorizontal: spacing.sm + 2, paddingTop: spacing.xs },
+  attachPreviewWrap: { position: 'absolute', left: spacing.sm, right: spacing.sm, bottom: 4, flexDirection: 'row', flexWrap: 'nowrap', gap: spacing.xs, paddingHorizontal: spacing.sm + 2, paddingTop: spacing.xs },
   composerButtons: { flexDirection: 'row-reverse', alignItems: 'flex-end', gap: spacing.xs + 2 },
   fileChipsRow: { flexDirection: 'row-reverse', flexWrap: 'wrap', gap: spacing.xs + 2, marginTop: spacing.sm },
   fileChip: {
@@ -2353,6 +2354,7 @@ const styles = StyleSheet.create({
     alignItems: 'flex-end',
     minHeight: 56,
     gap: spacing.sm,
+    position: 'relative',
     borderWidth: 1,
     borderRadius: radius.lg + 2,
     paddingLeft: spacing.xs + 3,
