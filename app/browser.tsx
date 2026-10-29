@@ -1,4 +1,4 @@
-import React, { useEffect, useRef, useState } from 'react';
+import React, { useEffect, useMemo, useRef, useState } from 'react';
 import {
   Linking,
   Platform,
@@ -119,6 +119,9 @@ export default function BrowserScreen() {
   const [scopeHost, setScopeHost] = useState('');
   const [browserError, setBrowserError] = useState('');
   const isWeb = Platform.OS === 'web';
+  // Keep the WebView source object stable across URL-label/network-log state updates;
+  // a fresh inline { uri } object can trigger unwanted navigations on some Android versions.
+  const webSource = useMemo(() => (sourceUrl ? { uri: sourceUrl } : undefined), [sourceUrl]);
   const webRef = useRef<React.ComponentRef<typeof WebView> | null>(null);
   const currentUrlRef = useRef(sourceUrl);
   const pageReadyRef = useRef(false);
@@ -466,7 +469,7 @@ export default function BrowserScreen() {
       {sourceUrl && !isWeb ? (
         <WebView
           ref={webRef}
-          source={{ uri: sourceUrl }}
+          source={webSource}
           style={styles.webview}
           originWhitelist={['http://*', 'https://*']}
           javaScriptEnabled
