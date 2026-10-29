@@ -115,9 +115,17 @@ export function PhoneDrawer({
     router.push(route as never);
   }
 
+  function routeForMode(mode?: string) {
+    if (mode === 'developer') return '/(tabs)/developer';
+    if (mode === 'hunter') return '/(tabs)/hunter';
+    if (mode === 'marketing') return '/(tabs)/marketing';
+    return '/(tabs)';
+  }
+
   function openSession(id: string) {
+    const session = sessions.find((item) => item.id === id);
     onClose();
-    void setActiveSession(id).then(() => router.push('/(tabs)'));
+    void setActiveSession(id).then(() => router.push(routeForMode(session?.mode) as never));
   }
 
   async function openStudio(mode: StudioMode) {
@@ -125,9 +133,10 @@ export function PhoneDrawer({
     try {
       const id = await createSession();
       await patchSession(id, { mode });
-      router.replace('/(tabs)');
+      await setActiveSession(id);
+      router.push(routeForMode(mode) as never);
     } catch {
-      alertCompat('تعذّر فتح الاستوديو', 'حاولي مرة أخرى.');
+      alertCompat('تعذّر فتح الاستوديو', 'حاول مرة أخرى.');
     }
   }
 
