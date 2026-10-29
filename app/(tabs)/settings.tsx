@@ -48,6 +48,8 @@ import {
   Surface,
 } from '@/components/Ui';
 
+type VoicePersona = 'friendly' | 'calm' | 'energetic' | 'formal';
+
 export default function SettingsScreen() {
   const colors = useColors();
   const {
