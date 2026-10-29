@@ -27,3 +27,5 @@ jobs:
           npx expo config --type public > /tmp/onebyte-expo-config.json
       - name: TypeScript typecheck
         run: npm run typecheck
+      - name: ZIP safety regression tests
+        run: npm run test:safety
