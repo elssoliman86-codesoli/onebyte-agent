@@ -702,26 +702,58 @@ export default function ChatScreen() {
    * injected automatically — no manual /skill invocation needed.
    */
   function autoMatchSkill(text: string): AssistantSkill | null {
-    const normalize = (s: string) =>
-      s
+    const normalize = (value: string) =>
+      value
         .toLowerCase()
-        .replace(/[^\p{L}\p{N}\s]/gu, ' ')
-        .split(/\s+/)
-        .filter((w) => w.length >= 3);
-    const words = new Set(normalize(text));
-    if (!words.size) return null;
+        .replace(/[أإآٱ]/g, 'ا')
+        .replace(/ى/g, 'ي')
+        .replace(/[ًٌٍَُِّْـ]/g, '')
+        .replace(/[^\\p{L}\\p{N}\\s]/gu, ' ')
+        .split(/\\s+/)
+        .filter((word) => word.length >= 3);
+    const stopWords = new Set([
+      'هذا', 'هذه', 'ذلك', 'تلك', 'علي', 'الى', 'من', 'في', 'عن', 'مع',
+      'بعد', 'قبل', 'عند', 'كل', 'كان', 'يكون', 'تكون', 'الذي', 'التي',
+      'the', 'and', 'for', 'with', 'that', 'this', 'from', 'your', 'you',
+      'are', 'use', 'when', 'then', 'into', 'about', 'will', 'have',
+    ]);
+    const queryTokens = new Set(normalize(text).filter((word) => !stopWords.has(word)));
+    if (!queryTokens.size) return null;
+
+    const request = normalize(text).join(' ');
+    const domains: Array<{ pattern: RegExp; terms: RegExp }> = [
+      { pattern: /(?:عدل|تعديل|صلح|اصلح|طور|برمج|كود|ملفات المشروع|المشروع|repository|repo|edit|modify|fix|refactor|implement|codebase)/i,
+        terms: /(?:برمج|كود|مطور|تطوير|مشروع|ملفات|github|repository|repo|coding|developer|software|implementation|refactor|bug fix)/i },
+      { pattern: /(?:ابحث|بحث|مصادر|معلومه|معلومات حديثه|research|search|latest|current)/i,
+        terms: /(?:بحث|بحث دقيق|مصادر|تحقق|research|search|web|source|citation)/i },
+      { pattern: /(?:ثغره|ثغرات|اختبر|افحص|امن سيبراني|bug bounty|pentest|security|vulnerability)/i,
+        terms: /(?:امن|سيبراني|ثغره|اختبار|اختراق|pentest|security|vulnerability|hackerone|bug bounty)/i },
+      { pattern: /(?:اكتب|صياغه|صيغ|لخص|اعاده صياغه|write|rewrite|summarize|draft)/i,
+        terms: /(?:كتابه|صياغه|كتابه محتوى|تحرير|تلخيص|writing|editor|copywriting|summarize|draft)/i },
+    ];
+
     let best: { skill: AssistantSkill; score: number } | null = null;
     for (const skill of skills) {
       if (!skill.active) continue;
-      const tokens = normalize(skill.name + ' ' + skill.description);
-      if (!tokens.length) continue;
-      const hits = tokens.filter((t) => words.has(t)).length;
-      const ratio = hits / tokens.length;
-      // Require a strong signal: ≥2 keyword hits, or most of the skill tokens.
-      const confident = hits >= 2 || (ratio >= 0.5 && hits >= 1);
-      if (confident && (!best || hits > best.score)) {
-        best = { skill, score: hits };
+      const nameTokens = [...new Set(normalize(skill.name).filter((word) => !stopWords.has(word)))];
+      const descriptionTokens = [...new Set(normalize(skill.description).filter((word) => !stopWords.has(word)))];
+      const instructionTokens = [...new Set(normalize(skill.instructions.slice(0, 5000)).filter((word) => !stopWords.has(word)))];
+      const nameHits = nameTokens.filter((word) => queryTokens.has(word)).length;
+      const descriptionHits = descriptionTokens.filter((word) => queryTokens.has(word)).length;
+      const instructionHits = instructionTokens.filter((word) => queryTokens.has(word)).length;
+      let score = nameHits * 4 + descriptionHits * 1.5 + Math.min(instructionHits, 5) * 0.35;
+
+      // Explicitly naming a skill is always a strong match.
+      if (request.includes(normalize(skill.name).join(' '))) score += 12;
+      // Respect trigger words documented in a skill's own description/instructions.
+      const searchableSkill = skill.name + ' ' + skill.description + ' ' + skill.instructions.slice(0, 1800);
+      for (const domain of domains) {
+        if (domain.pattern.test(request) && domain.terms.test(searchableSkill)) score += 3;
       }
+      // A direct skill-name hit or two meaningful weighted matches is enough;
+      // don't require two tokens when the skill is clearly the right one.
+      const confident = nameHits > 0 || score >= 3.2;
+      if (confident && (!best || score > best.score)) best = { skill, score };
     }
     return best?.skill ?? null;
   }
