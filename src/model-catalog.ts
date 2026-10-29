@@ -27,21 +27,21 @@ function asNumber(value: unknown): number | null {
 export function modelsEndpoint(baseUrl: string): string {
   let base = baseUrl.trim().replace(/\/+$/, '');
   if (!base) throw new Error('أضف رابط الخدمة أولًا.');
+  // Accept a root URL, an OpenAI API base, or a pasted full endpoint.
   base = base.replace(/\/chat\/completions$/, '');
+  if (base.endsWith('/v1/v1')) base = base.slice(0, -3);
   if (base.includes('generativelanguage.googleapis.com') && base.endsWith('/openai')) {
     return base.replace(/\/openai$/, '/models');
   }
   if (base === 'https://opencode.ai/inference/openai/v1') {
     return 'https://opencode.ai/inference/v1/models';
   }
-  // These provider-specific OpenAI adapters expose /models directly under /openai.
-  if (base.endsWith('/openai')) {
-    return `${base}/models`;
-  }
+  if (base.endsWith('/openai')) return `${base}/models`;
   if (base.endsWith('/models')) return base;
   if (base.endsWith('/v1')) return `${base}/models`;
   return `${base}/v1/models`;
 }
+
 
 /**
  * Providers disagree on units:
