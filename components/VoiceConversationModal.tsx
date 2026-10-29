@@ -85,50 +85,19 @@ export function VoiceConversationModal({
         setReply(answer.trim());
         setState('speaking');
 
-        // Listen while TTS is speaking so the user can interrupt naturally.
-        // A transcript that substantially matches the assistant reply is treated as speaker echo.
-        const speechPromise = speechService.speak(answer, {
+        // Strict turn-taking: microphone recognition is stopped before the
+        // model reply is spoken. Never run STT in parallel with TTS, otherwise
+        // the assistant hears its own voice and sends it back as a new prompt.
+        await speechService.cancelListening().catch(() => undefined);
+        await speechService.speak(answer, {
           language: speechLocale(language),
           rate: 0.96,
-        }).then(() => ({ kind: 'speech' as const }), (error: unknown) => ({ kind: 'speech-error' as const, error }));
-        const listenPromise = speechService.startListening({
-          language: speechLocale(language),
-          maxResults: 1,
-          partialResults: false,
-          prompt: 'يمكنك المقاطعة والتحدث',
-        }).then(
-          (results) => ({ kind: 'heard' as const, text: (results ?? []).join(' ').trim() }),
-          () => ({ kind: 'listen-error' as const }),
-        );
-
-        const duringReply = await Promise.race([speechPromise, listenPromise]);
+        });
         if (!visibleRef.current || cancelledRef.current) {
-          await speechService.cancelListening().catch(() => undefined);
           await speechService.stopSpeaking().catch(() => undefined);
           return;
         }
-
-        if (duringReply.kind === 'heard' && duringReply.text) {
-          const normalize = (value: string) => value.toLocaleLowerCase()
-            .replace(/[^\p{L}\p{N}\s]/gu, ' ')
-            .split(/\s+/).filter((word) => word.length > 1);
-          const heardWords = new Set(normalize(duringReply.text));
-          const replyWords = normalize(answer);
-          const overlap = replyWords.length
-            ? replyWords.filter((word) => heardWords.has(word)).length / Math.max(1, heardWords.size)
-            : 0;
-          if (overlap < 0.62 && heardWords.size >= 2) {
-            // Genuine user speech interrupts TTS and becomes the next turn.
-            await speechService.stopSpeaking().catch(() => undefined);
-            spoken = duringReply.text;
-            continue;
-          }
-        }
-
-        // TTS ended or recognition was only an echo/noise: stop the parallel recognizer,
-        // wait for TTS cleanup, then return to the normal always-listening loop.
-        await speechService.cancelListening().catch(() => undefined);
-        await speechPromise;
+        // Start a fresh recognition turn only after the full reply has finished.
         spoken = '';
       }
 
