@@ -206,7 +206,9 @@ export async function streamModelChat({
   if (contentType.includes('application/json')) {
     const result = (await response.json()) as {
       choices?: { message?: { content?: string } }[];
+      error?: { message?: string; type?: string; code?: string };
     };
+    if (result.error?.message) throw new Error('خطأ من مزود النموذج: ' + result.error.message.slice(0, 280));
     const text = result.choices?.[0]?.message?.content;
     if (typeof text === 'string' && text) onChunk(text);
     return;
