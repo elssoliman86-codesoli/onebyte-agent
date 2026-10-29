@@ -223,8 +223,26 @@ export default function GithubProjectsScreen() {
         </View>
 
         <View style={[styles.card, { backgroundColor: colors.card, borderColor: colors.border }]}>
+          <Text style={[styles.cardTitle, { color: fg }]}>تعديل بالمساعد دون توكن</Text>
+          <Text style={[styles.help, { color: muted }]}>
+            افتح GitHub داخل متصفح OneByte وسجّل الدخول بنفسك. المساعد يستخدم جلسة المتصفح؛ قد تحتاج لإكمال MFA أو CAPTCHA يدويًا.
+          </Text>
+          <Action
+            label="ابدأ جلسة GitHub مع الذكاء الاصطناعي"
+            icon="message-circle"
+            primary
+            onPress={() => {
+              setPendingPrompt(
+                'أريد تنفيذ مهمة على GitHub من خلال متصفح OneByte المدمج، دون طلب Personal Access Token. افتح https://github.com/ باستخدام أداة open_url داخل التطبيق فقط. إذا لم أكن مسجّل الدخول، توقف واطلب مني تسجيل الدخول داخل المتصفح المدمج بنفسي. لا تطلب كلمة المرور أو التوكن في الشات، ولا تتجاوز MFA/CAPTCHA. بعد تسجيل الدخول اقرأ واجهة GitHub، ثم اسألني عن المستودع والمهمة إن لم أذكرهما. نفّذ التعديلات من واجهة الموقع، افحص diff، احفظ فقط ما طلبته، وتحقق من رابط commit/PR قبل إعلان النجاح. لا تفتح Chrome أو متصفح الجهاز الخارجي.'
+              );
+              router.push('/(tabs)');
+            }}
+          />
+        </View>
+
+        <View style={[styles.card, { backgroundColor: colors.card, borderColor: colors.border }]}>
           <View style={styles.rowBetween}>
-            <Text style={[styles.cardTitle, { color: fg }]}>اتصال GitHub</Text>
+            <Text style={[styles.cardTitle, { color: fg }]}>اتصال GitHub عبر API (اختياري)</Text>
             {token ? <Text style={[styles.connected, { color: accent }]}>● متصل · @{account || 'GitHub'}</Text> : null}
           </View>
           {!token || editingToken ? (
