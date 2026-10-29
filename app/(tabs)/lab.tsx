@@ -1,6 +1,6 @@
 import React from 'react';
-import { DeveloperWorkspace } from '@/components/DeveloperWorkspace';
+import { StudioChatEntry } from '@/components/StudioChatEntry';
 
 export default function DeveloperLabScreen() {
-  return <DeveloperWorkspace />;
+  return <StudioChatEntry mode="developer" />;
 }
