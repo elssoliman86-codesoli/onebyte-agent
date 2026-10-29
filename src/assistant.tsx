@@ -861,6 +861,7 @@ export function AssistantProvider({
       createSession,
       deleteSession,
       appendMessage,
+      upsertMessage,
       replaceSessionMessages,
       saveProvider,
       removeApiKey,
