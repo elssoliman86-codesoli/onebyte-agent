@@ -491,7 +491,7 @@ export async function executeTool(
       const repository = str(args, 'repository').trim();
       const branch = typeof args.branch === 'string' && args.branch.trim() ? args.branch.trim() : 'HEAD';
       const tree = await getRepoTree(token, repository, branch);
-      return JSON.stringify({ repository, branch: tree.branch, count: tree.items.length, truncated: tree.truncated, files: tree.items.map((item) => ({ path: item.path, size: item.size ?? null, url: 'https://github.com/' + repository + '/blob/' + encodeURIComponent(branch) + '/' + item.path.split('/').map(encodeURIComponent).join('/') })) });
+      return JSON.stringify({ repository, branch: tree.branch, count: tree.items.length, truncated: tree.truncated, files: tree.items.map((item) => ({ path: item.path, size: item.size ?? null, url: 'https://github.com/' + repository + '/blob/' + encodeURIComponent(tree.branch) + '/' + item.path.split('/').map(encodeURIComponent).join('/') })) });
     }
     case 'github_read_file': {
       const token = await loadGithubToken();
