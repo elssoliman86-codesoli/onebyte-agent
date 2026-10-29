@@ -18,6 +18,23 @@ export interface EmbeddedBrowserSnapshot {
   elements: EmbeddedBrowserElement[];
 }
 
+export type EmbeddedBrowserNetworkSource = 'fetch' | 'xhr' | 'beacon' | 'navigation';
+
+export interface EmbeddedBrowserNetworkEntry {
+  id: string;
+  source: EmbeddedBrowserNetworkSource;
+  method: string;
+  url: string;
+  createdAt: string;
+  elapsedMs: number;
+  status: number | null;
+  statusText?: string;
+  requestHeaders: Record<string, string>;
+  requestBody: string;
+  responseHeaders?: Record<string, string>;
+  responsePreview?: string;
+  error?: string;
+}
 export interface EmbeddedBrowserRequestResult {
   url: string;
   status: number;
@@ -37,7 +54,9 @@ export interface EmbeddedBrowserDriver {
   typeText(index: number, text: string): Promise<string>;
   scroll(direction: 'up' | 'down'): Promise<string>;
   wait(ms: number): Promise<string>;
-  sendRequest(input: {
+  getNetworkLog(): Promise<EmbeddedBrowserNetworkEntry[]>;
+  clearNetworkLog(): Promise<void>;
+  sendRequest(input): {
     url: string;
     method: string;
     headers: Record<string, string>;

@@ -324,6 +324,10 @@ async function route(event: {
             name: data.provider.providerName,
             model: data.provider.model,
           },
+          appearance: {
+            theme: data.appearance?.theme ?? 'system',
+            accent: data.appearance?.accent ?? 'emerald',
+          },
         });
       }
       case '/api/select': {
@@ -429,6 +433,7 @@ async function runPcChat(text: string): Promise<void> {
       deviceControl: deviceOn,
       deviceAvailable: Device.isAvailable(),
       summary: session?.summary,
+      mode: session?.mode,
     });
     const budget = workingBudget(fresh.provider, fresh.agent.maxWorkingTokens);
     const plan = planContext(
@@ -514,6 +519,9 @@ async function runPcChat(text: string): Promise<void> {
       },
     });
     fullResponse = result.text || (steps.length ? 'تم تنفيذ الخطوات.' : '');
+    if (result.toolsWereUnsupported) {
+      fullResponse = [fullResponse.trim(), '⚠️ رفض الموديل/المزوّد استدعاء الأدوات؛ لم أعتبر أي فحص غير موثّق ناجحًا. اختر موديلًا يدعم Tool Calling ثم أعد المحاولة.'].filter(Boolean).join('\n\n');
+    }
     publish(fullResponse, result.steps);
     await ctx.appendMessage(sessionId, {
       id: responseId,
@@ -522,19 +530,19 @@ async function runPcChat(text: string): Promise<void> {
       createdAt: new Date().toISOString(),
       steps: result.steps,
     });
-  } catch {
-    const partial = fullResponse.trim() || 'توقفت المهمة.';
-    if (partial || steps.length) {
-      await ctx
-        .appendMessage(sessionId, {
-          id: responseId,
-          role: 'assistant',
-          content: partial,
-          createdAt: new Date().toISOString(),
-          steps,
-        })
-        .catch(() => undefined);
-    }
+  } catch (caught) {
+    const stopped = controller.signal.aborted;
+    const detail = stopped ? 'تم إيقاف المهمة.' : caught instanceof Error ? caught.message : String(caught || 'خطأ غير معروف');
+    const partial = fullResponse.trim();
+    const visibleError = partial ? partial + '\n\n⚠️ تعذّر إكمال المهمة: ' + detail : '⚠️ تعذّر إكمال المهمة: ' + detail;
+    publish(visibleError, steps);
+    await ctx.appendMessage(sessionId, {
+      id: responseId,
+      role: 'assistant',
+      content: visibleError,
+      createdAt: new Date().toISOString(),
+      steps,
+    }).catch(() => undefined);
   } finally {
     abortRef = null;
     approvalPending = false;
@@ -751,10 +759,12 @@ html.desktop-mode #login{
 </div>
 <script>
 (function(){
-  // The phone-linked PC server is separate from the Expo web shell. Honor the same desktop query here.
-  var desktopMode = false;
+  // Dedicated PC companion defaults to the full desktop workspace. ?desktop=0
+  // is retained only as an explicit mobile-layout preview on the root route.
+  var desktopMode = true;
   try {
-    desktopMode = new URLSearchParams(window.location.search).get('desktop') === '1' || window.location.pathname === '/desktop' || window.location.pathname === '/desktop/';
+    if (new URLSearchParams(window.location.search).get('desktop') === '0' &&
+        window.location.pathname !== '/desktop' && window.location.pathname !== '/desktop/') desktopMode = false;
   } catch (_) {}
   document.documentElement.classList.toggle('desktop-mode', desktopMode);
   var token = sessionStorage.getItem('ob_token') || '';

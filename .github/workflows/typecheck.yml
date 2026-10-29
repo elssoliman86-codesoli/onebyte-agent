@@ -1,6 +1,8 @@
 name: TypeScript validation
 
 on:
+  push:
+    branches: [main]
   pull_request:
     branches: [main]
   workflow_dispatch:
@@ -19,5 +21,9 @@ jobs:
           cache: npm
       - name: Install dependencies
         run: npm ci
+      - name: Validate Android config plugin
+        run: |
+          node --check plugins/withAndroidLocalHttp.js
+          npx expo config --type public > /tmp/onebyte-expo-config.json
       - name: TypeScript typecheck
         run: npm run typecheck

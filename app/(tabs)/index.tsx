@@ -1294,7 +1294,9 @@ export default function ChatScreen() {
       steps = result.steps;
       setPlanDone('ok');
       if (result.toolsWereUnsupported) {
-        setError('هذا الموديل لا يدعم الأدوات، لذلك رد كنص فقط. اختر موديلًا يدعم Tool calling للتحكم في الجهاز.');
+        const warning = '⚠️ لم يقبل الموديل/المزوّد استدعاء الأدوات؛ قد تكون بعض خطوات المتصفح أو الاختبار لم تُنفّذ. اختر موديلًا يدعم Tool Calling ثم أعد المحاولة.';
+        fullResponse = [fullResponse.trim(), warning].filter(Boolean).join('\n\n');
+        setError('الموديل/المزوّد لا يدعم أدوات Function Calling في هذا الطلب. لم أعتبر الفحص ناجحًا.');
       }
       if (!fullResponse.trim() && !steps.length) {
         throw new Error('الموديل أرجع ردًا فارغًا. راجع اسم الموديل وإعدادات المزود.');

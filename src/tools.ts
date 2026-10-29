@@ -190,6 +190,13 @@ export const TOOL_SPECS: ToolSpec[] = [
     parameters: obj({ ms: { type: 'integer' } }),
   },
   {
+    name: 'browser_list_requests',
+    group: 'browser',
+    label: 'عرض طلبات الشبكة الملتقطة',
+    description: 'Return the last captured fetch/XHR/sendBeacon requests and main-frame navigations from the current saved authorized scope. Sensitive headers and likely secrets are redacted. Use after browser_navigate and after interacting with the page. This is not a full HTTP proxy and does not capture every static browser resource.',
+    parameters: obj({}),
+  },
+  {
     name: 'browser_send_request',
     group: 'browser',
     label: 'إرسال طلب اختبار من المتصفح',
@@ -215,10 +222,16 @@ export const TOOL_SPECS: ToolSpec[] = [
 ];
 
 export function toolsForRequest(deviceEnabled: boolean): ToolSpec[] {
-  return TOOL_SPECS.filter(
-    (t) =>
-      deviceEnabled || t.group === 'local' || t.group === 'memory' || t.group === 'net' || (Platform.OS !== 'web' && t.group === 'browser'),
-  );
+  return TOOL_SPECS.filter((tool) => {
+    // Browser automation depends on the native WebView bridge. Keep it
+    // independent of the optional Accessibility switch, but never advertise
+    // it to the plain web build where the native driver cannot register.
+    if (tool.group === 'browser') return Platform.OS !== 'web';
+    if (tool.group === 'device_read' || tool.group === 'device_act') {
+      return deviceEnabled && Platform.OS !== 'web' && Device.isAvailable();
+    }
+    return true;
+  });
 }
 
 export function toOpenAITools(specs: ToolSpec[]) {
@@ -458,10 +471,15 @@ export async function executeTool(
     }
     case 'open_url': {
       const url = safeUrl(str(args, 'url'));
-      // Agent-requested browsing must stay inside the app so the model can read
-      // and interact with the same page. Never hand this action to Chrome/Edge.
+      // Keep agent browsing in-app and verify the page actually loaded.
+      if (Platform.OS === 'web') {
+        throw new Error('المتصفح القابل للتحكم متاح داخل تطبيق Android المثبت؛ نسخة الويب لا تحتوي على WebView bridge.');
+      }
       router.push({ pathname: '/browser', params: { url } });
-      return `تم فتح الرابط داخل متصفح OneByte المدمج: ${url}. استخدم browser_read_page لقراءة الصفحة والتفاعل معها؛ لا تفتح متصفح الجهاز الخارجي.`;
+      const browser = await waitForEmbeddedBrowser(15_000);
+      await browser.waitUntilReady(20_000);
+      const page = await browser.readPage();
+      return JSON.stringify({ message: 'تم فتح الرابط وقراءة الصفحة داخل متصفح OneByte المدمج.', url: page.url, title: page.title, text: page.text, elements: page.elements });
     }
     case 'browser_navigate': {
       const raw = str(args, 'url');
@@ -478,6 +496,16 @@ export async function executeTool(
     case 'browser_read_page': {
       const browser = await waitForEmbeddedBrowser();
       return JSON.stringify(await browser.readPage());
+    }
+    case 'browser_list_requests': {
+      const browser = await waitForEmbeddedBrowser();
+      const entries = await browser.getNetworkLog();
+      return JSON.stringify({
+        captured: entries.length,
+        currentUrl: browser.currentUrl(),
+        note: 'Captured JavaScript fetch/XHR/sendBeacon requests and main-frame navigations only; this is not a full proxy. Sensitive headers and likely secrets are redacted.',
+        entries: entries.slice(-40),
+      });
     }
     case 'browser_click': {
       const browser = await waitForEmbeddedBrowser();
