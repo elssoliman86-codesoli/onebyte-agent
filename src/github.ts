@@ -26,10 +26,10 @@ function apiPath(path: string): string {
 
 function apiError(status: number): string {
   if (status === 401) return 'التوكن مرفوض (401). راجع التوكن وصلاحيته.';
-  if (status === 403) return 'الصلاحيات غير كافية أو تم تجاوز حد الاستخدام (403).';
+  if (status === 403) return 'GitHub رفض العملية (403): قد يكون التوكن بلا صلاحية كتابة Contents، أو الحساب لا يملك صلاحية على هذا المستودع، أو تم تجاوز حد الاستخدام. للتعديل امنح Fine-grained token صلاحية Contents: Read and write للمستودع المقصود ثم أعد المحاولة.';
   if (status === 404) return 'المستودع أو الملف أو الفرع غير موجود (404).';
   if (status === 409) return 'تعارض في GitHub أثناء حفظ الملف.';
-  if (status === 422) return 'GitHub رفض التعديل؛ راجع صلاحيات المستودع ورسالة الـcommit.';
+  if (status === 422) return 'GitHub رفض حفظ التعديل (422). قد يكون التوكن بلا صلاحية Contents: Read and write، أو الفرع محميًا، أو بيانات التعديل غير صالحة. راجع إعدادات المستودع ورسالة الـcommit.';
   return 'GitHub رجع HTTP ' + status + '.';
 }
 
