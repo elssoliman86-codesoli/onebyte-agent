@@ -8,7 +8,7 @@
 
 **من تصميم سليمان**
 
-**OneByte Agent** وكيل Android يعمل بالشات والصوت والذاكرة والمهارات والمهام، ويتيح أدوات ويب وتحكمًا اختياريًا بالهاتف، ومركزًا لفتح حسابات التسويق، ومختبرًا يوجّه المتصفح المدمج لقراءة الصفحات والتفاعل معها وإجراء اختبارات HTTP محددة داخل نطاقات مصرح بها.
+**OneByte Agent** مساعد ووكيل ذكاء اصطناعي لنظام Android بواجهة Neon، يجمع الشات والصوت والذاكرة والمهارات والمهام وأدوات الويب والتحكم الاختياري بالهاتف، مع مختبر تطوير وأمن سيبراني لاختبار نطاقات مصرح بها. يدعم مزوّدي API المتوافقين مع OpenAI، ويضع موافقات واضحة قبل الإجراءات الحساسة. البيانات المحلية تُحفظ على الجهاز، بينما تُرسل الطلبات إلى مزوّد النموذج الذي تختاره عند استخدامه.
 
 [![Build Android APK](https://github.com/elssoliman86-codesoli/onebyte-agent/actions/workflows/build-apk.yml/badge.svg)](https://github.com/elssoliman86-codesoli/onebyte-agent/actions/workflows/build-apk.yml)
 [![Expo SDK 57](https://img.shields.io/badge/Expo_SDK-57-000020?style=for-the-badge&logo=expo&logoColor=white)](https://expo.dev)
@@ -17,9 +17,9 @@
 [![TypeScript 6](https://img.shields.io/badge/TypeScript-6-3178C6?style=for-the-badge&logo=typescript&logoColor=white)](https://www.typescriptlang.org/)
 [![Android](https://img.shields.io/badge/Platform-Android-3DDC84?style=for-the-badge&logo=android&logoColor=white)](https://github.com/elssoliman86-codesoli/onebyte-agent)
 [![License: MIT](https://img.shields.io/badge/License-MIT-f43f5e?style=for-the-badge)](./LICENSE)
-[![Version](https://img.shields.io/badge/Version-1.0.0-000000?style=for-the-badge)](https://github.com/elssoliman86-codesoli/onebyte-agent/releases)
+[![Latest Release](https://img.shields.io/github/v/release/elssoliman86-codesoli/onebyte-agent?style=for-the-badge&label=Latest%20Release)](https://github.com/elssoliman86-codesoli/onebyte-agent/releases/latest)
 
-**[⬇️ تنزيل APK — OneByte Agent](https://github.com/elssoliman86-codesoli/onebyte-agent/releases) · [📦 الإصدارات](https://github.com/elssoliman86-codesoli/onebyte-agent/releases) · [🧾 سجل التغييرات](https://github.com/elssoliman86-codesoli/onebyte-agent/commits/main) · [🐞 الإبلاغ عن مشكلة](https://github.com/elssoliman86-codesoli/onebyte-agent/issues)**
+**[⬇️ تنزيل APK — OneByte Agent](https://github.com/elssoliman86-codesoli/onebyte-agent/releases/latest) · [📦 الإصدارات](https://github.com/elssoliman86-codesoli/onebyte-agent/releases) · [🧾 سجل التغييرات](https://github.com/elssoliman86-codesoli/onebyte-agent/commits/main) · [🐞 الإبلاغ عن مشكلة](https://github.com/elssoliman86-codesoli/onebyte-agent/issues)**
 
 </div>
 
