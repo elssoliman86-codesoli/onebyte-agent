@@ -64,7 +64,7 @@ export function languageForPath(path: string): string {
   return map[ext] ?? 'Text';
 }
 export async function saveProjectFile(sessionId: string, title: string, path: string, content: string): Promise<DeveloperProjectFile> {
-  if (!path.trim() || path.startsWith('/') || path.includes('\\\\') || /^[a-zA-Z]:/.test(path) || path.split('/').some(part => part === '..' || part === '.' || part.trim() === '')) {
+  if (!path.trim() || path.startsWith('/') || path.includes(String.fromCharCode(92)) || /^[a-zA-Z]:/.test(path) || path.split('/').some(part => part === '..' || part === '.' || part.trim() === '')) {
     throw new Error('مسار الملف غير صالح.');
   }
   const project = await getDeveloperProject(sessionId, title);
