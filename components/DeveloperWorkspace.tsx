@@ -14,83 +14,12 @@ import { getStoredModelApiKey } from '@/src/assistant';
 import { ModelPicker } from '@/components/ModelPicker';
 import type { ModelInfo } from '@/src/model-catalog';
 import fetchWithRetry from '@/src/fetch-with-retry';
+import { base64ToBytes, preflightZip, ZIP_IMPORT_LIMITS } from '@/src/zip-safety';
 import {
   buildProjectOutline, decideCodeReview, getDeveloperProject, proposeCodeReview,
   replaceProjectPlan, saveProjectFile, setDeveloperCodeModel, updatePlanStep,
   type DeveloperProject, type DeveloperPlanStep,
 } from '@/src/developer-projects';
-
-function fromBase64(value: string): Uint8Array {
-  const alphabet = 'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/';
-  const clean = value.replace(/\s/g, '').replace(/=+$/, '');
-  const output = new Uint8Array(Math.floor(clean.length * 3 / 4));
-  let buffer = 0, bits = 0, offset = 0;
-  for (const char of clean) {
-    const digit = alphabet.indexOf(char);
-    if (digit < 0) throw new Error('ملف ZIP غير صالح (Base64).');
-    buffer = (buffer << 6) | digit;
-    bits += 6;
-    if (bits >= 8) { bits -= 8; output[offset++] = (buffer >> bits) & 255; }
-  }
-  return output.slice(0, offset);
-}
-
-function preflightZip(archive: Uint8Array): void {
-  const view = new DataView(archive.buffer, archive.byteOffset, archive.byteLength);
-  const min = Math.max(0, archive.length - 65557);
-  let eocd = -1;
-  for (let i = archive.length - 22; i >= min; i--) {
-    if (view.getUint32(i, true) === 0x06054b50) { eocd = i; break; }
-  }
-  if (eocd < 0) throw new Error('ملف ZIP لا يحتوي على نهاية مركزية سليمة.');
-  const disk = view.getUint16(eocd + 4, true);
-  const centralDisk = view.getUint16(eocd + 6, true);
-  const diskEntries = view.getUint16(eocd + 8, true);
-  const entriesCount = view.getUint16(eocd + 10, true);
-  const centralSize = view.getUint32(eocd + 12, true);
-  const centralOffset = view.getUint32(eocd + 16, true);
-  if (disk !== 0 || centralDisk !== 0 || diskEntries !== entriesCount || entriesCount === 0xffff ||
-      centralSize === 0xffffffff || centralOffset === 0xffffffff) {
-    throw new Error('الأرشيف متعدد الأجزاء أو ZIP64 غير مدعوم في استيراد الهاتف.');
-  }
-  if (entriesCount > 500 || centralOffset + centralSize > eocd) throw new Error('فهرس ZIP غير صالح أو يتجاوز حد 500 ملف.');
-  let cursor = centralOffset, total = 0, files = 0;
-  const seen = new Set<string>();
-  while (cursor < centralOffset + centralSize) {
-    if (view.getUint32(cursor, true) !== 0x02014b50) throw new Error('فهرس ZIP تالف.');
-    const flags = view.getUint16(cursor + 8, true);
-    const compressed = view.getUint32(cursor + 20, true);
-    const uncompressed = view.getUint32(cursor + 24, true);
-    const nameLength = view.getUint16(cursor + 28, true);
-    const extraLength = view.getUint16(cursor + 30, true);
-    const commentLength = view.getUint16(cursor + 32, true);
-    const externalAttributes = view.getUint32(cursor + 38, true);
-    if (flags & 1) throw new Error('الأرشيف المشفر بكلمة مرور غير مدعوم.');
-    if (compressed === 0xffffffff || uncompressed === 0xffffffff) throw new Error('ملفات ZIP64 غير مدعومة.');
-    const nameStart = cursor + 46;
-    const nameEnd = nameStart + nameLength;
-    if (nameEnd + extraLength + commentLength > centralOffset + centralSize) throw new Error('اسم ملف تالف داخل ZIP.');
-    const path = strFromU8(archive.subarray(nameStart, nameEnd));
-    const isDirectory = path.endsWith('/');
-    if (!path || path.startsWith('/') || path.includes('\\') || /^[a-zA-Z]:/.test(path) ||
-        path.split('/').some(part => part === '.' || part === '..')) throw new Error(`مسار غير آمن داخل الأرشيف: ${path}`);
-    const unixMode = externalAttributes >>> 16;
-    if ((unixMode & 0xf000) === 0xa000) throw new Error('الأرشيف يحتوي على رابط رمزي غير مسموح.');
-    if (!isDirectory) {
-      files++;
-      if (seen.has(path)) throw new Error(`اسم ملف مكرر داخل الأرشيف: ${path}`);
-      seen.add(path);
-      if (uncompressed > 25 * 1024 * 1024) throw new Error(`الملف ${path} يتجاوز حد 25MB.`);
-      total += uncompressed;
-      if (total > 80 * 1024 * 1024) throw new Error('الحجم بعد فك الضغط يتجاوز 80MB.');
-      if (uncompressed > 1024 * 1024 && (compressed === 0 || uncompressed / compressed > 200)) {
-        throw new Error('الأرشيف يحتوي على نسبة ضغط غير آمنة (احتمال ZIP bomb).');
-      }
-    }
-    cursor = nameEnd + extraLength + commentLength;
-  }
-  if (files === 0) throw new Error('الأرشيف لا يحتوي على ملفات.');
-}
 
 function toBase64(bytes: Uint8Array): string {
   const alphabet = 'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/';
@@ -291,9 +220,9 @@ export function DeveloperWorkspace() {
       const asset = picked.assets[0];
       const info = await FileSystem.getInfoAsync(asset.uri);
       const size = asset.size ?? (info.exists && 'size' in info ? info.size : 0);
-      if (size > 32 * 1024 * 1024) throw new Error('حجم ملف ZIP أكبر من 32MB على أندرويد. قسّم الأرشيف إلى أجزاء أصغر.');
+      if (size > ZIP_IMPORT_LIMITS.archiveBytes) throw new Error('حجم ملف ZIP أكبر من 32MB على أندرويد. قسّم الأرشيف إلى أجزاء أصغر.');
       const base64 = await FileSystem.readAsStringAsync(asset.uri, { encoding: FileSystem.EncodingType.Base64 });
-      const archive = fromBase64(base64);
+      const archive = base64ToBytes(base64);
       preflightZip(archive);
       const unpacked = unzipSync(archive);
       const entries: Array<{path:string;content:string}> = [];
