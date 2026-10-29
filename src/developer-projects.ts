@@ -81,6 +81,42 @@ export async function saveProjectFile(sessionId: string, title: string, path: st
   await putDeveloperProject({ ...project, files: previous ? project.files.map(f => f.id === previous.id ? file : f) : [...project.files, file] });
   return file;
 }
+/** Import a complete archive in one storage transaction; every file remains scoped to its chat session. */
+export async function importProjectFiles(
+  sessionId: string,
+  title: string,
+  entries: Array<{ path: string; content: string }>,
+): Promise<number> {
+  if (!entries.length) throw new Error('الأرشيف لا يحتوي على ملفات نصية.');
+  if (entries.length > 500) throw new Error('الأرشيف يحتوي على أكثر من 500 ملف.');
+  const normalized = new Map<string, string>();
+  let totalBytes = 0;
+  for (const entry of entries) {
+    const path = entry.path.trim().replace(/\\\\/g, '/').replace(/^\\.\\//, '');
+    if (!path || path.startsWith('/') || /^[a-zA-Z]:/.test(path) ||
+      path.split('/').some(part => !part.trim() || part === '.' || part === '..')) {
+      throw new Error('الأرشيف يحتوي على مسار ملف غير آمن.');
+    }
+    if (typeof entry.content !== 'string') throw new Error('محتوى ملف غير صالح.');
+    const bytes = new TextEncoder().encode(entry.content).length;
+    if (bytes > 25 * 1024 * 1024) throw new Error(`الملف ${path} يتجاوز حد 25MB.`);
+    totalBytes += bytes;
+    if (totalBytes > 80 * 1024 * 1024) throw new Error('الحجم الإجمالي للملفات يتجاوز 80MB.');
+    normalized.set(path, entry.content);
+  }
+  const project = await getDeveloperProject(sessionId, title);
+  const timestamp = now();
+  const existing = new Map(project.files.map(file => [file.path, file]));
+  for (const [path, content] of normalized) {
+    const previous = existing.get(path);
+    existing.set(path, previous
+      ? { ...previous, content, updatedAt: timestamp }
+      : { id: id('file'), sessionId, path, language: languageForPath(path), content, createdAt: timestamp, updatedAt: timestamp });
+  }
+  await putDeveloperProject({ ...project, files: [...existing.values()] });
+  return normalized.size;
+}
+
 export async function replaceProjectPlan(sessionId: string, title: string, steps: Array<{title:string;detail:string}>): Promise<void> {
   const project = await getDeveloperProject(sessionId, title);
   await putDeveloperProject({ ...project, plan: steps.map((step, index) => ({
