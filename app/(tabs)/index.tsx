@@ -1236,8 +1236,9 @@ export default function ChatScreen() {
       }
     };
     const publish = () => {
-      // The user may have switched to another chat while the run is in flight;
-      // keep streaming output out of that chat's local message list.
+      // Persist into the originating session even if the user switches chats;
+      // only the visible UI update is scoped to the currently open session.
+      if (fullResponse.trim() || steps.length) persistStreamingCheckpoint();
       if (visibleSessionIdRef.current !== sessionId) return;
       setStreamText(fullResponse);
       setMessages((current) => {
@@ -1248,7 +1249,6 @@ export default function ChatScreen() {
         updated[existing] = responseMessage;
         return updated;
       });
-      if (fullResponse.trim() || steps.length) persistStreamingCheckpoint();
     };
 
     try {
