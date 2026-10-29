@@ -371,6 +371,7 @@ export function DeveloperWorkspace() {
       const cleanPath=(path:string)=>path.trim().replace(/\\/g,'/').replace(/^\.\//,'');
       const normalized=files.map(f=>({path:cleanPath(f.path!),task:f.task!.trim()})).filter(f=>f.path&&!f.path.startsWith('/')&&!/^[a-zA-Z]:/.test(f.path)&&!f.path.split('/').some(p=>p==='..'||p==='.'||!p.trim()));
       if (!normalized.length) throw new Error('كل مسارات الملفات في الخطة غير صالحة.');
+      if (new Set(normalized.map(file => file.path)).size !== normalized.length) throw new Error('الخطة تحتوي على مسارات ملفات مكررة؛ أعد توليد الخطة قبل البناء.');
       await replaceProjectPlan(activeSession.id,activeSession.title,normalized.map(f=>({title:f.path,detail:f.task})));
       if (activeSession.mode!=='developer') await patchSession(activeSession.id,{mode:'developer'});
       await refresh();
