@@ -1755,6 +1755,28 @@ export default function ChatScreen() {
               </Pressable>
             </View>
           ) : null}
+            {(attachFiles.length > 0 || attachImages.length > 0) ? (
+              <ScrollView horizontal showsHorizontalScrollIndicator={false} style={styles.attachmentTrayScroll}
+                contentContainerStyle={styles.attachmentTray} keyboardShouldPersistTaps="handled">
+                {attachFiles.map((f, i) => (
+                  <View key={`file-${i}-${f.name}`} style={[styles.fileChip, { backgroundColor: colors.accentSubtle }]}>
+                    <Feather name="file-text" size={13} color={colors.primary} />
+                    <Text style={[styles.fileChipText, { color: colors.primary }]} numberOfLines={1}>{f.name}</Text>
+                    <Pressable accessibilityRole="button" accessibilityLabel={`إزالة ${f.name}`} onPress={() => setAttachFiles((cur) => cur.filter((_, idx) => idx !== i))} hitSlop={5}>
+                      <Feather name="x" size={13} color={colors.mutedForeground} />
+                    </Pressable>
+                  </View>
+                ))}
+                {attachImages.map((uri, i) => (
+                  <View key={`image-${i}-${uri.slice(24, 40)}`} style={styles.attachPreviewItem}>
+                    <RNImage source={{ uri }} style={styles.attachPreview} />
+                    <Pressable accessibilityRole="button" accessibilityLabel={`${t('remove')} ${i + 1}`} onPress={() => setAttachImages((cur) => cur.filter((_, idx) => idx !== i))} style={styles.attachRemove} hitSlop={4}>
+                      <Feather name="x-circle" size={16} color={colors.destructive} />
+                    </Pressable>
+                  </View>
+                ))}
+              </ScrollView>
+            ) : null}
           <View
             style={[
               styles.composer,
@@ -1857,28 +1879,6 @@ export default function ChatScreen() {
               textAlignVertical="top"
               accessibilityLabel="رسالتك للمساعد"
             />
-            {(attachFiles.length > 0 || attachImages.length > 0) ? (
-              <ScrollView horizontal showsHorizontalScrollIndicator={false} style={styles.attachmentTrayScroll}
-                contentContainerStyle={styles.attachmentTray} keyboardShouldPersistTaps="handled">
-                {attachFiles.map((f, i) => (
-                  <View key={`file-${i}-${f.name}`} style={[styles.fileChip, { backgroundColor: colors.accentSubtle }]}>
-                    <Feather name="file-text" size={13} color={colors.primary} />
-                    <Text style={[styles.fileChipText, { color: colors.primary }]} numberOfLines={1}>{f.name}</Text>
-                    <Pressable accessibilityRole="button" accessibilityLabel={`إزالة ${f.name}`} onPress={() => setAttachFiles((cur) => cur.filter((_, idx) => idx !== i))} hitSlop={5}>
-                      <Feather name="x" size={13} color={colors.mutedForeground} />
-                    </Pressable>
-                  </View>
-                ))}
-                {attachImages.map((uri, i) => (
-                  <View key={`image-${i}-${uri.slice(24, 40)}`} style={styles.attachPreviewItem}>
-                    <RNImage source={{ uri }} style={styles.attachPreview} />
-                    <Pressable accessibilityRole="button" accessibilityLabel={`${t('remove')} ${i + 1}`} onPress={() => setAttachImages((cur) => cur.filter((_, idx) => idx !== i))} style={styles.attachRemove} hitSlop={4}>
-                      <Feather name="x-circle" size={16} color={colors.destructive} />
-                    </Pressable>
-                  </View>
-                ))}
-              </ScrollView>
-            ) : null}
             <View style={styles.composerButtons}>
               <Pressable
                 accessibilityRole="button"
