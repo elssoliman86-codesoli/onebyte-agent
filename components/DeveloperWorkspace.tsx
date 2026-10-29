@@ -204,7 +204,9 @@ export function DeveloperWorkspace() {
         if (totalBytes > 80 * 1024 * 1024) throw new Error('الحجم الإجمالي للمشروع يتجاوز 80MB.');
         entries[file.path] = bytes;
       }
-      const encoded = toBase64(zipSync(entries, { level: 6 }));
+      const archive = zipSync(entries, { level: 6 });
+      if (archive.length > ZIP_IMPORT_LIMITS.archiveBytes) throw new Error('ملف ZIP الناتج أكبر من حد الاستيراد على الهاتف (32MB). قلّل حجم المشروع أو قسّمه.');
+      const encoded = toBase64(archive);
       const uri = `${FileSystem.cacheDirectory ?? FileSystem.documentDirectory}onebyte-project-${project.sessionId}.zip`;
       await FileSystem.writeAsStringAsync(uri, encoded, { encoding: FileSystem.EncodingType.Base64 });
       if (Platform.OS !== 'web' && await Sharing.isAvailableAsync()) await Sharing.shareAsync(uri, { mimeType: 'application/zip', dialogTitle: 'تحميل المشروع ZIP' });
