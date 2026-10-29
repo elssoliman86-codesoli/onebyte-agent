@@ -744,7 +744,7 @@ export default function ChatScreen() {
     try {
       const result = await ImagePicker.launchImageLibraryAsync({
         mediaTypes: ['images'],
-        quality: 0.55,
+        quality: 0.88,
         allowsMultipleSelection: true,
         base64: true,
       });
@@ -783,8 +783,8 @@ export default function ChatScreen() {
         img.onerror = () => reject(new Error('صورة غير قابلة للمعالجة.'));
         img.src = dataUrl;
       });
-      const maxW = 640;
-      if (loaded.width <= maxW && dataUrl.length <= 400_000) return dataUrl;
+      const maxW = 2048;
+      if (loaded.width <= maxW && dataUrl.length <= 2_000_000) return dataUrl;
       const scale = Math.min(1, maxW / Math.max(loaded.width, 1));
       const canvas = document.createElement('canvas');
       canvas.width = Math.max(1, Math.round(loaded.width * scale));
@@ -809,7 +809,7 @@ export default function ChatScreen() {
       const result = await DocumentPicker.getDocumentAsync({
         type: options?.zipsOnly
           ? ['application/zip', 'application/x-zip-compressed', 'application/octet-stream']
-          : ['text/*', 'text/markdown', 'text/plain', 'text/csv', 'application/json', 'application/xml', 'application/javascript', 'application/x-yaml', 'application/octet-stream', 'application/zip', 'application/x-zip-compressed'],
+          : '*/*',
         copyToCacheDirectory: true,
         multiple: true,
       });
