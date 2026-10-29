@@ -74,9 +74,9 @@ export const TOOL_SPECS: ToolSpec[] = [
   },
   {
     name: 'open_url',
-    group: 'device_act',
-    label: 'فتح رابط في المتصفح',
-    description: 'Open a URL in Chrome (default) or the default browser on the phone.',
+    group: 'browser',
+    label: 'فتح رابط في المتصفح المدمج',
+    description: 'Open a URL inside the OneByte embedded WebView so the assistant can read and interact with the page. Never launch Chrome, Edge, or the external device browser for an agent task.',
     parameters: obj(
       { url: { type: 'string' }, browser: { type: 'string', enum: ['chrome', 'default'] } },
       ['url'],
