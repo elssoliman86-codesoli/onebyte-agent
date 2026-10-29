@@ -14,7 +14,7 @@ import {
   type DeveloperProject, type DeveloperProjectFile, type DeveloperPlanStep,
 } from '@/src/developer-projects';
 
-function timeLabel(value?: string) {
+function toBase64(bytes: Uint8Array): string {\n  const alphabet = 'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/';\n  let out = '';\n  for (let i = 0; i < bytes.length; i += 3) {\n    const a = bytes[i]; const hasB = i + 1 < bytes.length; const hasC = i + 2 < bytes.length;\n    const b = hasB ? bytes[i + 1] : 0; const d = hasC ? bytes[i + 2] : 0;\n    out += alphabet[a >> 2] + alphabet[((a & 3) << 4) | (b >> 4)] + (hasB ? alphabet[((b & 15) << 2) | (d >> 6)] : '=') + (hasC ? alphabet[d & 63] : '=');\n  }\n  return out;\n}\n\nfunction timeLabel(value?: string) {
   if (!value) return 'بانتظار التنفيذ';
   const date = new Date(value);
   return Number.isNaN(date.getTime()) ? value : date.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
@@ -104,7 +104,7 @@ export function DeveloperWorkspace() {
     await refresh();
   }
 
-  async function exportZip() {\n    if (!project?.files.length) { alertCompat('المشروع فارغ', 'أضف ملفات أولًا.'); return; }\n    try {\n      const entries: Record<string, Uint8Array> = {};\n      for (const file of project.files) entries[file.path] = strToU8(file.content);\n      const zipped = zipSync(entries, { level: 6 });\n      const base64 = Array.from(zipped).map(b => String.fromCharCode(b)).join('');\n      const encoded = typeof btoa === 'function' ? btoa(base64) : base64;\n      const uri = `${FileSystem.cacheDirectory ?? FileSystem.documentDirectory}onebyte-project-${project.sessionId}.zip`;\n      await FileSystem.writeAsStringAsync(uri, encoded, { encoding: FileSystem.EncodingType.Base64 });\n      if (Platform.OS !== 'web' && await Sharing.isAvailableAsync()) await Sharing.shareAsync(uri, { mimeType: 'application/zip', dialogTitle: 'تحميل المشروع' });\n      else alertCompat('تم تجهيز ZIP', uri);\n    } catch (error) { alertCompat('فشل تصدير ZIP', error instanceof Error ? error.message : 'خطأ غير معروف'); }\n  }\n\n  async function openReview() {
+  async function exportZip() {\n    if (!project?.files.length) { alertCompat('المشروع فارغ', 'أضف ملفات أولًا.'); return; }\n    try {\n      const entries: Record<string, Uint8Array> = {};\n      for (const file of project.files) entries[file.path] = strToU8(file.content);\n      const zipped = zipSync(entries, { level: 6 });\n      const encoded = toBase64(zipped);\n      const uri = `${FileSystem.cacheDirectory ?? FileSystem.documentDirectory}onebyte-project-${project.sessionId}.zip`;\n      await FileSystem.writeAsStringAsync(uri, encoded, { encoding: FileSystem.EncodingType.Base64 });\n      if (Platform.OS !== 'web' && await Sharing.isAvailableAsync()) await Sharing.shareAsync(uri, { mimeType: 'application/zip', dialogTitle: 'تحميل المشروع' });\n      else alertCompat('تم تجهيز ZIP', uri);\n    } catch (error) { alertCompat('فشل تصدير ZIP', error instanceof Error ? error.message : 'خطأ غير معروف'); }\n  }\n\n  async function openReview() {
     if (!selectedFile) { alertCompat('اختار ملفًا', 'أنشئ ملفًا أو افتح ملفًا قبل طلب مراجعة.'); return; }
     setReviewPath(selectedFile.path);
     setReviewOriginal(selectedFile.content);
