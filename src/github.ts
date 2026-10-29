@@ -81,14 +81,15 @@ export async function deleteGithubToken(): Promise<void> {
   await SecureStore.deleteItemAsync(TOKEN_KEY).catch(() => undefined);
 }
 
-export interface GithubAccount { login: string; html_url: string }
+export interface GithubAccount { login: string; html_url: string; scopes: string[]; acceptedScopes: string[] }
 
 export async function verifyGithubToken(token: string): Promise<GithubAccount> {
   const res = await fetch(API + '/user', { headers: headers(token) });
   if (!res.ok) throw new Error(apiError(res.status));
   const data = (await res.json()) as Partial<GithubAccount>;
   if (!data.login) throw new Error('GitHub رجع معلومات حساب غير متوقعة.');
-  return { login: data.login, html_url: data.html_url ?? 'https://github.com/' + data.login };
+  const parseScopes = (value: string | null) => value ? value.split(',').map((s) => s.trim()).filter(Boolean) : [];
+  return { login: data.login, html_url: data.html_url ?? 'https://github.com/' + data.login, scopes: parseScopes(res.headers.get('X-OAuth-Scopes')), acceptedScopes: parseScopes(res.headers.get('X-Accepted-OAuth-Scopes')) };
 }
 
 export interface GhRepo {
@@ -97,6 +98,7 @@ export interface GhRepo {
   private: boolean;
   description?: string | null;
   html_url?: string;
+  permissions?: { admin?: boolean; maintain?: boolean; push?: boolean; triage?: boolean; pull?: boolean };
 }
 
 export async function listRepos(token: string): Promise<GhRepo[]> {
