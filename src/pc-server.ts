@@ -529,9 +529,6 @@ async function runPcChat(text: string): Promise<void> {
       },
     });
     fullResponse = result.text || (steps.length ? 'تم تنفيذ الخطوات.' : '');
-    if (result.toolsWereUnsupported) {
-      fullResponse = [fullResponse.trim(), '⚠️ رفض الموديل/المزوّد استدعاء الأدوات؛ لم أعتبر أي فحص غير موثّق ناجحًا. اختر موديلًا يدعم Tool Calling ثم أعد المحاولة.'].filter(Boolean).join('\n\n');
-    }
     publish(fullResponse, result.steps);
     await ctx.appendMessage(sessionId, {
       id: responseId,

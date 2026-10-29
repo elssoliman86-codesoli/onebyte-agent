@@ -355,6 +355,12 @@ export async function runAgent({
 
     if (result.text) finalText += result.text + (result.toolCalls.length ? '\n\n' : '');
     if (!result.toolCalls.length) {
+      // If the user explicitly asked us to perform an operation, a plain-text
+      // answer is not evidence that it was performed. Surface that distinction.
+      const actionIntent = typeof originalUserMessage === 'string' && /\b(scan|inspect|test|check|browse|navigate|open the (?:site|url|page|browser)|capture (?:the )?requests|replay (?:the )?request|send (?:the )?request|crawl|recon|hackerone|bug bounty)\b|(?:افحص|افحصها|فحص التارجت|فحص الموقع|اختبر التارجت|ابدأ الفحص|نفذ الفحص|افتح الموقع|افتح الرابط|افتح المتصفح|اقرأ الصفحة|التقط الطلبات|اعترض الريكويستات|أرسل الطلب)/i.test(originalUserMessage);
+      if (actionIntent && activeSpecs.length > 0 && steps.length === 0) {
+        toolsWereUnsupported = true;
+      }
       await saveCheckpoint(round + 1);
       break;
     }
@@ -491,6 +497,13 @@ export async function runAgent({
     // Clear checkpoint on completion (success or abort)
     // Don't await to avoid slowing down the response
     storage.clearCheckpoint().catch(() => undefined);
+  }
+  if (toolsWereUnsupported) {
+    const warning = '⚠️ لم تُنفَّذ أدوات فعلية في هذه المحاولة. قد يكون الموديل رفض Tool Calling أو أجاب نصيًا فقط؛ لا تعتبر المهمة مفحوصة ما لم تظهر نتائج أدوات ناجحة.';
+    if (!finalText.includes(warning)) {
+      finalText = [finalText.trim(), warning].filter(Boolean).join('\n\n');
+      onText(finalText);
+    }
   }
   return { text: finalText.trim(), thinking: finalThinking.trim(), steps, toolsWereUnsupported };
 }
