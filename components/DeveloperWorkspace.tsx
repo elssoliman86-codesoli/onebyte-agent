@@ -154,7 +154,7 @@ export function DeveloperWorkspace() {
     const apiKey = provider.keyless ? '' : await getStoredModelApiKey();
     const response = await fetchWithRetry(endpointFor(provider.baseUrl), {
       method: 'POST',
-      headers: { 'Content-Type': 'application/json', ...(apiKey ? { Authorization: \`Bearer \${apiKey}\` } : {}) },
+      headers: { 'Content-Type': 'application/json', ...(apiKey ? { Authorization: `Bearer ${apiKey}` } : {}) },
       body: JSON.stringify({
         model: project?.codeModelId || provider.model,
         temperature,
@@ -162,7 +162,7 @@ export function DeveloperWorkspace() {
         messages,
       }),
     }, { timeout: 180000, maxRetries: 1 });
-    if (!response.ok) throw new Error(\`Provider returned HTTP \${response.status}: \${(await response.text()).slice(0, 500)}\`);
+    if (!response.ok) throw new Error(`Provider returned HTTP ${response.status}: ${(await response.text()).slice(0, 500)}`);
 
     const readPayloadContent = (payload: any): string => {
       const value = payload?.choices?.[0]?.message?.content;
@@ -330,7 +330,6 @@ export function DeveloperWorkspace() {
     const plan = project?.plan ?? [];
     const step = plan.find(item => item.status === 'pending') ?? plan.find(item => item.status === 'running');
     try {
-      const apiKey = provider.keyless ? '' : await getStoredModelApiKey();
       if (!provider.baseUrl.trim() || !provider.model.trim()) throw new Error('اختار مزودًا وموديلًا من الإعدادات أولًا.');
       if (activeSession.mode !== 'developer') await patchSession(activeSession.id, { mode: 'developer' });
       if (step) await updatePlanStep(activeSession.id, step.id, 'running');
