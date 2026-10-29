@@ -74,9 +74,9 @@ export const TOOL_SPECS: ToolSpec[] = [
   },
   {
     name: 'open_url',
-    group: 'device_act',
-    label: 'فتح رابط في المتصفح',
-    description: 'Open a URL in Chrome (default) or the default browser on the phone.',
+    group: 'browser',
+    label: 'فتح رابط في المتصفح المدمج',
+    description: 'Open a URL inside the OneByte embedded WebView so the assistant can read and interact with the page. Never launch Chrome, Edge, or the external device browser for an agent task.',
     parameters: obj(
       { url: { type: 'string' }, browser: { type: 'string', enum: ['chrome', 'default'] } },
       ['url'],
@@ -458,12 +458,10 @@ export async function executeTool(
     }
     case 'open_url': {
       const url = safeUrl(str(args, 'url'));
-      if (Platform.OS === 'android' && args.browser !== 'default' && Device.isAvailable()) {
-        const ok = await Device.openUrl(url, 'com.android.chrome');
-        if (ok) return `فُتح الرابط في Chrome: ${url}`;
-      }
-      await Linking.openURL(url);
-      return `فُتح الرابط في المتصفح الافتراضي: ${url}`;
+      // Agent-requested browsing must stay inside the app so the model can read
+      // and interact with the same page. Never hand this action to Chrome/Edge.
+      router.push({ pathname: '/browser', params: { url } });
+      return `تم فتح الرابط داخل متصفح OneByte المدمج: ${url}. استخدم browser_read_page لقراءة الصفحة والتفاعل معها؛ لا تفتح متصفح الجهاز الخارجي.`;
     }
     case 'browser_navigate': {
       const raw = str(args, 'url');

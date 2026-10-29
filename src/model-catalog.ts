@@ -27,21 +27,21 @@ function asNumber(value: unknown): number | null {
 export function modelsEndpoint(baseUrl: string): string {
   let base = baseUrl.trim().replace(/\/+$/, '');
   if (!base) throw new Error('أضف رابط الخدمة أولًا.');
+  // Accept a root URL, an OpenAI API base, or a pasted full endpoint.
   base = base.replace(/\/chat\/completions$/, '');
+  if (base.endsWith('/v1/v1')) base = base.slice(0, -3);
   if (base.includes('generativelanguage.googleapis.com') && base.endsWith('/openai')) {
     return base.replace(/\/openai$/, '/models');
   }
   if (base === 'https://opencode.ai/inference/openai/v1') {
     return 'https://opencode.ai/inference/v1/models';
   }
-  // These provider-specific OpenAI adapters expose /models directly under /openai.
-  if (base.endsWith('/openai')) {
-    return `${base}/models`;
-  }
+  if (base.endsWith('/openai')) return `${base}/models`;
   if (base.endsWith('/models')) return base;
   if (base.endsWith('/v1')) return `${base}/models`;
   return `${base}/v1/models`;
 }
+
 
 /**
  * Providers disagree on units:
@@ -139,37 +139,43 @@ export async function fetchModels(
   apiKey: string,
   signal?: AbortSignal,
 ): Promise<ModelInfo[]> {
-  const headers: Record<string, string> = {};
+  const normalizedBase = baseUrl.trim();
+  if (/^https?:\/\/(localhost|127\.0\.0\.1)(:\d+)?\b/i.test(normalizedBase)) {
+    throw new Error('عنوان localhost يعمل على نفس الجهاز فقط. لو OmniRoute شغال على الكمبيوتر والموديل من موبايل Android، استخدم IP الكمبيوتر على الشبكة مثل http://192.168.1.10:20128/v1 وافتح المنفذ في الجدار الناري.');
+  }
+  const headers: Record<string, string> = { Accept: 'application/json' };
   if (apiKey) {
-    if (baseUrl.includes('generativelanguage.googleapis.com')) {
+    if (normalizedBase.includes('generativelanguage.googleapis.com')) {
       headers['x-goog-api-key'] = apiKey;
     } else {
       headers.Authorization = `Bearer ${apiKey}`;
     }
   }
-  const response = await fetchWithRetry(
-    modelsEndpoint(baseUrl),
+  const endpoint = modelsEndpoint(normalizedBase);
+  let response = await fetchWithRetry(
+    endpoint,
     { headers },
-    {
-      timeout: 30_000,
-      maxRetries: 2,
-      baseDelay: 1_000,
-      signal,
-    },
+    { timeout: 30_000, maxRetries: 2, baseDelay: 1_000, signal },
   );
+  if ((response.status === 401 || response.status === 403) && apiKey && !normalizedBase.includes('generativelanguage.googleapis.com')) {
+    response = await fetchWithRetry(
+      endpoint,
+      { headers: { Accept: 'application/json', 'x-api-key': apiKey } },
+      { timeout: 30_000, maxRetries: 0, baseDelay: 0, signal },
+    );
+  }
   if (response.status === 401 || response.status === 403) {
-    if (baseUrl.includes('text.pollinations.ai') && !apiKey) return FREE_ONEBYTE_MODELS;
+    if (normalizedBase.includes('text.pollinations.ai') && !apiKey) return FREE_ONEBYTE_MODELS;
     throw new Error('المزود رفض المفتاح. راجع المفتاح والصلاحيات.');
   }
   if (!response.ok) {
-    // Keyless free endpoint has no models list — fall back to known models.
-    if (baseUrl.includes('text.pollinations.ai')) return FREE_ONEBYTE_MODELS;
-    throw new Error(`تعذّر جلب قائمة الموديلات (HTTP ${response.status}). تأكد من الرابط.`);
+    if (normalizedBase.includes('text.pollinations.ai')) return FREE_ONEBYTE_MODELS;
+    throw new Error(`تعذّر جلب قائمة الموديلات (HTTP ${response.status}). تأكد من رابط /models ومن أن خادم OmniRoute متاح من الهاتف.`);
   }
   const models = parseModels(await response.json());
   if (models.length === 0) {
-    if (baseUrl.includes('pollinations.ai')) return FREE_ONEBYTE_MODELS;
-    throw new Error('المزود لم يرجع أي موديلات.');
+    if (normalizedBase.includes('pollinations.ai')) return FREE_ONEBYTE_MODELS;
+    throw new Error('المزود لم يرجع أي موديلات. تحقق من صيغة استجابة /models في الخادم.');
   }
   return models;
 }
