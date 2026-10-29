@@ -17,6 +17,7 @@
 [![TypeScript 6](https://img.shields.io/badge/TypeScript-6-3178C6?style=for-the-badge&logo=typescript&logoColor=white)](https://www.typescriptlang.org/)
 [![Android](https://img.shields.io/badge/Platform-Android-3DDC84?style=for-the-badge&logo=android&logoColor=white)](https://github.com/elssoliman86-codesoli/onebyte-agent)
 [![License: MIT](https://img.shields.io/badge/License-MIT-f43f5e?style=for-the-badge)](./LICENSE)
+[![Version](https://img.shields.io/badge/Version-1.0.0-000000?style=for-the-badge)](https://github.com/elssoliman86-codesoli/onebyte-agent/releases)
 
 **[⬇️ تنزيل APK — OneByte Agent](https://github.com/elssoliman86-codesoli/onebyte-agent/releases) · [📦 الإصدارات](https://github.com/elssoliman86-codesoli/onebyte-agent/releases) · [🧾 سجل التغييرات](https://github.com/elssoliman86-codesoli/onebyte-agent/commits/main) · [🐞 الإبلاغ عن مشكلة](https://github.com/elssoliman86-codesoli/onebyte-agent/issues)**
 
@@ -121,84 +122,62 @@
 - **Developer Lab:** مساحة لتجارب وتحرير المحتوى البرمجي وبعض أدوات المعاينة.
 - **Marketing Studio:** مركز سريع لفتح حسابات YouTube Studio وTikTok وFacebook وInstagram وWhatsApp Web/Desktop وTelegram Web، مع فتح مساعد التسويق لكتابة المحتوى وخطط الحملات.
 - **Cybersecurity Lab / Bug Hunter:** إدارة نطاقات الاختبار، وتحرير طلب HTTP (GET/POST/PUT/PATCH/DELETE/HEAD/OPTIONS)، وتعديل headers/body، وإرسال الطلب أو إلغاؤه، وقراءة status/الوقت/مقتطف الاستجابة، والرجوع إلى سجل الطلبات.
-- **اختبار ويب من المتصفح المدمج:** عند طلب اختبار هدف مصرح به في Cybersecurity Lab، يفتح الوكيل الهدف داخل WebView، يقرأ الصفحة، يتفاعل مع العناصر (نقر، كتابة، تمرير)، ويرسل طلبات HTTP محددة من سياق الصفحة لتحليل الاستجابة — كل ذلك داخل النطاق المصرح به فقط.
+- **اختبار ويب من المتصفح المدمج:**
+  - فتح URL داخل WebView المدمج (يتطلب نطاقًا محفوظًا في Cybersecurity Lab).
+  - قراءة الصفحة: عنوان، نص، عناصر تفاعلية مفهرسة.
+  - التفاعل: نقرة، كتابة، تمرير، انتظار.
+  - تحليل حركة الشبكة: طلبات `fetch`/`XHR`/`sendBeacon` الملتقطة داخل النطاق.
+  - إرسال طلبات HTTP مخصصة (GET/POST/PUT/PATCH/DELETE/HEAD/OPTIONS) مع headers/body معدّلة، وقراءة الاستجابة.
+  - توثيق الأدلة: لقطات صفحة، استجابات، طلبات مرسلة.
 
-### 🧪 Cybersecurity Lab — تفاصيل
+### 🤖 المهارات والوكلاء
 
-- إضافة نطاق اختبار وحفظه مع إثبات الإذن (نطاق Bug Bounty، نطاق خاص، أو بيئة محلية).
-- فتح النطاق داخل WebView المدمج لقراءة DOM، والتفاعل مع النماذج، والتقاط حركة الشبكة.
-- محرّر طلبات HTTP متكامل لتعديل headers/body وإرسال الطلب، مع عرض status/headers/مقتطف الجسم/الوقت.
-- قائمة النطاقات المحفوظة، والتحقق من أن الهدف داخل النطاق قبل أي طلب.
-- سجل طلبات محلي يمكن تصديره أو حذفه.
+- **نظام مهارات مدمج:** مهارات جاهزة للتحليل الأمني، الهندسة العكسية، التطوير، والكتابة.
+- **سوق مهارات:** تثبيت مهارات من GitHub أو ملفات محلية، مع التحقق من السلامة.
+- **وكلاء متخصصون:** إنشاء وكلاء بمهام محددة، وسياق ومهارات مخصصة.
 
-> جميع الوظائف في Cybersecurity Lab **دفاعية ومرخصة فقط**. لا يُستخدم للاختراق غير المصرح به، أو سرقة بيانات، أو تعطيل خدمات. أي استخدام خارج النطاق المصرح به مخالفة لشروط الاستخدام.
+</div>
 
-## 🏗️ طريقة تنظيم المشروع
+## 📁 طريقة تنظيم المشروع
 
 ```
 onebyte-agent/
-├── app/                    # Expo Router — المسارات والشاشات
-│   ├── (auth)/            # شاشات المصادقة (PIN، الإعداد الأول)
-│   ├── (tabs)/            # تبويبات التطبيق الرئيسية
-│   ├── developer/         # Developer Lab
-│   ├── marketing/         # Marketing Studio
-│   ├── security/          # Cybersecurity Lab
-│   └── _layout.tsx        # جذر التنقل
-├── components/            # مكونات UI مشتركة
-│   ├── ui/                # مكونات أساسية (Button, Card, Input, ...)
-│   ├── chat/              # فقاعات الشات، إجراءات الرسائل، تدفق البث
-│   ├── markdown/          # عرض Markdown، Mermaid، كود
-│   ├── webview/           # WebView مدمج، عناصر تفاعلية
-│   └── ...
-├── hooks/                 # خطافات React مخصصة
-├── services/              # خدمات منطقية (API، تخزين، أدوات، ...)
-│   ├── ai/                # عملاء الموديلات، حلقة الأدوات
-│   ├── android/           # جسر Android الأصلي (Accessibility، ...)
-│   ├── storage/           # تخزين محلي (MMKV، SQLite، ملفات)
-│   ├── web/               # بحث ويب، جلب صفحات، طلبات HTTP
-│   └── ...
-├── store/                 # Zustand stores للواجهة والحالة
-├── utils/                 # دوال مساعدة
-├── types/                 # تعريفات TypeScript مشتركة
-├── assets/                # خطوط، أيقونات، صور
-├── .github/               # سير عمل CI/CD، أصول README
-├── app.json               # إعدادات Expo
-├── package.json
-├── tsconfig.json
+├── app/                    # Expo Router — مسارات الشاشات
+│   ├── (tabs)/             # تبويبات رئيسية: الشات، المختبرات، الإعدادات
+│   ├── labs/               # شاشات Cybersecurity Lab، Developer Lab، Marketing Studio
+│   ├── settings/           # إعدادات الموديل، API، الثيم، PC Server، المهارات
+│   └── _layout.tsx         # التخطيط الجذري مع موفري السياق
+├── src/
+│   ├── agents/             # حلقة الوكيل، قائمة الأدوات، وكلاء متخصصون
+│   ├── components/         # مكونات UI مشتركة
+│   ├── context/            # React Context: Chat، Settings، Skills، Memory، Tasks، Theme، PC Server
+│   ├── hooks/              # خطافات مخصصة
+│   ├── services/           # خدمات: API، Storage، TTS، STT، Network، PC Server
+│   ├── skills/             # مهارات مدمجة + محمل مهارات ديناميكي
+│   ├── utils/              # مساعدات: تنسيق، تحقق، تشفير، إلخ
+│   └── types/              # تعريفات TypeScript المشتركة
+├── android/                # مشروع Android الأصلي (وحدة Accessibility، Foreground Service)
+├── .github/
+│   ├── workflows/          # CI/CD: بناء APK، فحوصات
+│   └── assets/             # أصول مشتركة (الشعار، spiderweb)
+├── app.json                # إعدادات Expo (الإصدار 1.0.0، SDK 57)
+├── package.json            # تبعيات (React 19، RN 0.86، TS 6، Expo Router)
+├── tsconfig.json           # إعدادات TypeScript صارمة
+├── metro.config.js         # إعداد Metro مع React Compiler
+├── babel.config.js         # Babel مع React Compiler plugin
 └── README.md
 ```
-
-### التقنيات الأساسية
-
-| التقنية | الإصدار | المصدر |
-|-----------|---------|--------|
-| Expo SDK | 57 | `app.json` |
-| React Native | 0.86 | `package.json` |
-| React | 19 | `package.json` |
-| TypeScript | 6 | `package.json` |
-| Expo Router | 4 | `package.json` |
-| Zustand | 5 | `package.json` |
-| MMKV | 3 | `package.json` |
-| React Compiler | Beta | `babel.config.js` |
-| ESLint | 9 (flat) | `eslint.config.js` |
-
-### المترجم (Compiler)
-
-- **React Compiler (Beta)** مفعل عبر `babel.config.js` — يحسّن إعادة العرض تلقائيًا.
-- **Typed Routes** عبر `expo-router` — سلامة مسارات التنقل في TypeScript.
-- **Config Plugin مخصص** `withCompilerConfig` — يضبط إعدادات المترجم للبناء.
 
 ## 🚀 التثبيت والتشغيل
 
 ### المتطلبات
-
-- Node.js 20+
-- pnpm 9+ (أو npm/yarn)
-- Android Studio + SDK (للبناء على Android)
-- جهاز Android أو محاكي (API 24+)
+- Node.js ≥ 20
+- pnpm ≥ 9 (أو npm/yarn)
+- Expo CLI: `pnpm add -g expo-cli`
+- Android Studio + SDK (للبناء الأصلي)
+- Git
 
 ### خطوات سريعة
-
 ```bash
 # استنساخ المستودع
 git clone https://github.com/elssoliman86-codesoli/onebyte-agent.git
@@ -208,102 +187,99 @@ cd onebyte-agent
 pnpm install
 
 # تشغيل خادم التطوير (Expo)
-pnpm start
+pnpm expo start
 
-# فتح على Android (يتطلب جهاز/محاكي متصل)
-pnpm android
+# بناء APK للاختبار المحلي (يتطلب EAS CLI)
+pnpm add -g eas-cli
+eas build --platform android --profile preview
 ```
 
-### بناء APK محليًا
-
-```bash
-# بناء حزمة تطوير
-pnpm expo run:android --variant debug
-
-# بناء حزمة إنتاج (يتطلب إعداد Keystore)
-pnpm expo run:android --variant release
-```
-
-> البناء عبر GitHub Actions متاح عبر workflow `build-apk.yml` ويرفع الـ APK كقطعة أثرية (Artifact) في كل تشغيل.
+### تشغيل على جهاز/محاكي
+1. افتح `expo start` واضغط `a` لفتح محاكي Android، أو امسح الكود بـ Expo Go.
+2. للنسخة الكاملة مع أدوات الهاتف: ثبّت APK المبني عبر EAS، ثم فعّل **خدمة إمكانية الوصول (Accessibility)** من إعدادات النظام > إمكانية الوصول > OneByte Agent.
 
 ## ⚙️ الإعداد الأول
 
-عند التشغيل الأول، يطلب التطبيق:
-
-1. **PIN محلي** — لحماية الوصول للتطبيق وبياناته.
-2. **مزوّد الذكاء الاصطناعي** — عنوان API، مفتاح، اسم الموديل (قوالب جاهزة لمزوّدين شائعين).
-3. **صلاحية إمكانية الوصول (اختياري)** — لتفعيل أدوات الهاتف.
-4. **إعدادات الواجهة** — الثيم، اللغة، إعدادات الشات.
-
-البيانات الحساسة (مفاتيح API، PIN) تخزّن مشفّرة عبر `react-native-mmkv` مع تشفير الجهاز.
+1. **الموديل ومفتاح API:** الإعدادات > الموديل > أدخل `API Base URL` و `Model Name` و `API Key`. يدعم قوالب لمزوّدين متعددين (OpenAI، OpenRouter، Ollama، LM Studio، إلخ).
+2. **فحص الاتصال:** اضغط "فحص الاتصال" للتأكد من صحة الإعدادات.
+3. **الثيم:** اختر فاتح/داكن/تلقائي من الإعدادات > المظهر.
+4. **PC Server (اختياري):** فعّله من الإعدادات > PC Server، ثم افتح العنوان الظاهر من متصفح كمبيوتر على نفس الشبكة.
+5. **المهارات:** فعّل المهارات المدمجة أو ثبّت مهارات جديدة من سوق المهارات.
 
 ## 🛠️ الأدوات والأوامر
 
-### أوامر NPM الرئيسية
+| الأداة | الوصف | تتطلب موافقة؟ |
+|---------|---------|----------------|
+| `web_search` | بحث DuckDuckGo | لا |
+| `web_fetch` | قراءة صفحة ويب عامة | لا |
+| `open_url` | فتح رابط في WebView مدمج | لا |
+| `browser_navigate` | فتح URL في نطاق مصرح (Cybersecurity Lab) | نعم |
+| `browser_click` / `browser_type_text` / `browser_scroll` | التفاعل مع الصفحة | نعم |
+| `browser_send_request` | إرسال طلب HTTP مخصص من سياق الصفحة | نعم |
+| `save_memory` / `search_history` | ذاكرة محلية وبحث محادثات | لا |
+| `create_task` | إنشاء تذكير يومي | لا |
+| `github_*` | عمليات GitHub (قراءة/كتابة ملفات، مستودعات) | نعم |
+| `telegram_send_message` | إرسال رسالة تليجرام | نعم |
+| أدوات الهاتف (Accessibility) | قراءة الشاشة، فتح تطبيق، نقرة، كتابة، مفاتيح | نعم |
 
-| الأمر | الوصف |
-|-------|-------|
-| `pnpm start` | تشغيل خادم Expo |
-| `pnpm android` | فتح على Android |
-| `pnpm ios` | فتح على iOS (غير مدعوم رسميًا حاليًا) |
-| `pnpm web` | تشغيل نسخة الويب |
-| `pnpm lint` | فحص ESLint |
-| `pnpm typecheck` | فحص TypeScript |
-| `pnpm test` | تشغيل الاختبارات (Jest) |
-
-### متغيرات بيئة مفيدة
-
-| المتغير | الوصف |
-|----------|-------|
-| `EXPO_PUBLIC_API_BASE` | عنوان API افتراضي للموديل |
-| `EXPO_PUBLIC_DEFAULT_MODEL` | اسم الموديل الافتراضي |
-| `EXPO_PUBLIC_ENABLE_ANDROID_TOOLS` | تفعيل أدوات Android (`true/false`) |
+> **قاعدة الموافقة:** أي أداة تقرأ الجهاز أو تؤثر عليه تعرض مطالبة موافقة قبل التنفيذ. المستخدم يقرر قبول أو رفض كل طلب على حدة.
 
 ## 🔒 الخصوصية والأمان
 
-- **Local-first:** المحادثات، الذاكرة، المهارات، المهام — مخزنة على الجهاز.
-- **مفاتيح API و PIN** — مشفرة محليًا، لا تُرفع لأي خادم تابع للمشروع.
-- **طلبات الموديل** — تذهب مباشرة إلى مزوّد الذكاء الاصطناعي الذي تختاره.
-- **أدوات الويب** — تتصل بالخدمات المستهدفة (DuckDuckGo، المواقع التي تفتحها) فقط عند طلبك.
-- **Cybersecurity Lab** — يعمل فقط على نطاقات أضفتها أنت مع إثبات إذن. لا يُرسل بيانات لأي جهة خارجية.
-- **لا تتبع، لا تحليلات، لا تقارير أخطاء تلقائية.**
+- **محليًا أولاً:** المحادثات، المهارات، الذاكرة، المهام — مخزنة في `AsyncStorage`/`MMKV` على الجهاز.
+- **الموديل:** نصوص المحادثات المرسلة للموديل تذهب إلى مزوّد API الذي تختاره. لا نملك وصولًا لها.
+- **أدوات الويب:** `web_search`/`web_fetch` تذهب إلى DuckDuckGo والموقع المستهدف مباشرة.
+- **المتصفح المدمج:** يعمل داخل WebView على الجهاز؛ الكوكيز وتخزين الموقع قد يستمران للجلسات التي تفتحها.
+- **لا جمع بيانات:** لا يوجد تتبع، تحليلات، أو إرسال بيانات لمخدومات المشروع.
+- **الترخيص:** MIT — راجع [LICENSE](./LICENSE).
 
 ## ⚠️ القيود المعروفة
 
-- **Expo Go:** أدوات Android الأصلية (Accessibility) لا تعمل داخل Expo Go؛ تحتاج بناء مخصص (`expo run:android` أو EAS Build).
-- **iOS:** غير مختبر حاليًا، وبعض وحدات Android الأصلية لا تعمل عليه.
-- **React Compiler (Beta):** قد يواجه مشاكل مع بعض أنماط الكود؛ يمكن تعطيله من `babel.config.js`.
-- **الويب:** WebView المدمج وأدوات Android الأصلية غير متاحة على الويب.
-- **سياق الموديل:** المحادثات الطويلة قد تتجاوز حد السياق؛ يستخدم التلخيص التلقائي عند الحاجة.
-- **CORS في WebView:** طلبات `browser_send_request` من سياق الصفحة تخضع لسياسات المتصفح؛ استخدم HTTP Lab للطلبات المباشرة.
+- أدوات الهاتف (Accessibility) لا تعمل في Expo Go؛ تحتاج بناء APK مخصص وتفعيل الخدمة يدويًا.
+- React Compiler في وضع تجريبي (beta)؛ قد تظهر مشاكل مع مكتبات معينة.
+- `browser_send_request` خاضع لـ CORS وسياسات المتصفح؛ للطلبات المباشرة استخدم HTTP Lab.
+- التقاط حركة الشبكة ليس Proxy كاملًا؛ لا يسجل كل الموارد الثابتة أو WebSocket.
+- PC Server مخصص للشبكة المحلية الموثوقة فقط؛ لا تفتحه للإنترنت العام.
 
-## ✅ البناء والتحقق
+## 🏗️ البناء والتحقق
 
-### GitHub Actions
-
-- **Build Android APK** — يبني APK Debug/Release ويرفعها كقطعة أثرية.
-- **Lint & Typecheck** — يفحص الكود في كل Push/PR.
-
-### فحص محلي قبل الـ Push
-
+### بناء APK (EAS)
 ```bash
-pnpm lint
-pnpm typecheck
+eas build --platform android --profile production
+```
+- الملف الناتج: `.apk` قابل للتثبيت على Android 8+.
+- يتضمن وحدة Accessibility الأصلية للتحكم في الهاتف.
+
+### فحوصات محلية
+```bash
+# فحص الأنواع
+pnpm tsc --noEmit
+
+# تنسيق الكود
+pnpm prettier --check .
+
+# تشغيل الاختبارات (إن وجدت)
 pnpm test
 ```
 
+### CI/CD
+- **GitHub Actions:** `.github/workflows/build-apk.yml` يبني APK عند كل push للفرع `main` وعند إنشاء 태غ إصدار.
+- يمكن تنزيل artifact من صفحة Actions أو من صفحة الإصدارات (Releases).
+
 ## 🤝 المساهمة والترخيص
 
-- **الترخيص:** MIT — راجع [LICENSE](./LICENSE).
-- **المساهمات:** مرحب بها عبر Issues و Pull Requests.
-- **كود السلوك:** كن محترمًا، بلّغ عن مشاكل الأمان بمسؤولية.
+- **الترخيص:** [MIT](./LICENSE) — حر للاستخدام والتعديل والتوزيع.
+- **المساهمات:** مرحب بـ PRs لإصلاح أخطاء، تحسين وثائق، أو إضافة مهارات.
+- **قواعد المساهمة:**
+  1. افتح Issue للمناقشة قبل تغييرات كبيرة.
+  2. اتبع تنسيق الكود (`prettier`، `eslint`، `tsc` نظيف).
+  3. أضف اختبارات للمنطق الجديد إن أمكن.
+  4. حدّث README عند إضافة ميزة مرئية.
 
 ---
 
-<div align="center">
+<div align="center" dir="rtl">
 
 **OneByte Agent** — صُنع بـ ⚡ و 💙 بواسطة **سليمان**
-
-[⬆️ العودة للأعلى](#-onebyte-agent)
 
 </div>
