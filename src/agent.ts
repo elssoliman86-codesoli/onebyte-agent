@@ -275,6 +275,9 @@ export async function runAgent({
   let finalThinking = '';
   const allowedForTurn = new Set<string>();
   const repeatedDeviceActions = new Set<string>();
+  const repeatedWebReads = new Map<string, number>();
+  let webReadActions = 0;
+  let stopForWebLoop = false;
   let deviceActionsExecuted = 0;
   let lastScreenSnapshot: string | null = null;
   let screenNeedsRefresh = false;
@@ -378,6 +381,21 @@ export async function runAgent({
     for (const call of result.toolCalls) {
       if (signal?.aborted) throw new Error('تم إيقاف المهمة.');
       const spec = specs.find((s) => s.name === call.name);
+      const isWebReadTool = ['web_search', 'open_url', 'browser_navigate', 'browser_read_page'].includes(call.name);
+      let webLoopMessage = '';
+      if (isWebReadTool) {
+        webReadActions += 1;
+        const signature = call.name + ':' + (call.arguments || '{}').replace(/\s+/g, '');
+        const repeated = (repeatedWebReads.get(signature) ?? 0) + 1;
+        repeatedWebReads.set(signature, repeated);
+        if (repeated >= 2) {
+          webLoopMessage = 'توقفت عن تكرار نفس عملية البحث/قراءة الصفحة. استخدم النتائج التي تم جمعها بالفعل وقدّم إجابة مباشرة للمستخدم.';
+          stopForWebLoop = true;
+        } else if (webReadActions > 8) {
+          webLoopMessage = 'وصلت إلى حد 8 عمليات بحث/قراءة ويب في هذه المهمة لتجنب الدوران. لخّص النتائج المتاحة الآن.';
+          stopForWebLoop = true;
+        }
+      }
       let args: Record<string, unknown> = {};
       let output = '';
       let status: ToolStep['status'] = 'done';
@@ -390,7 +408,10 @@ export async function runAgent({
       steps.push(step);
       onStep([...steps]);
 
-      if (!spec) {
+      if (webLoopMessage) {
+        output = webLoopMessage;
+        status = 'denied';
+      } else if (!spec) {
         output = `خطأ: الأداة ${call.name} غير متاحة.`;
         status = 'error';
       } else {
@@ -467,6 +488,15 @@ export async function runAgent({
       });
       // Save checkpoint after each tool execution
       await saveCheckpoint(round);
+      if (stopForWebLoop) break;
+    }
+
+    if (stopForWebLoop) {
+      const message = 'أوقفت تكرار البحث حتى لا تظل المهمة معلّقة. هذه هي النتائج المتاحة حتى الآن؛ إذا كانت غير كافية، حدّد ما الذي ينقص بدل إعادة فتح الروابط نفسها.';
+      finalText = [finalText.trim(), message].filter(Boolean).join('\n\n');
+      onText(finalText);
+      await saveCheckpoint(maxSteps + 1);
+      break;
     }
 
     if (stopForDeviceActionLimit) {
