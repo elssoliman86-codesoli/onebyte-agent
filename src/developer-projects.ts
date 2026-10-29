@@ -92,7 +92,7 @@ export async function importProjectFiles(
   const normalized = new Map<string, string>();
   let totalBytes = 0;
   for (const entry of entries) {
-    const path = entry.path.trim().replace(/\\\\/g, '/').replace(/^\\.\\//, '');
+    const path = entry.path.trim();
     if (!path || path.startsWith('/') || /^[a-zA-Z]:/.test(path) ||
       path.split('/').some(part => !part.trim() || part === '.' || part === '..')) {
       throw new Error('الأرشيف يحتوي على مسار ملف غير آمن.');
