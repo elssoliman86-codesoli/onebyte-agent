@@ -1,4 +1,5 @@
 import { storage } from './storage';
+import { strToU8 } from 'fflate';
 
 export type RunStepStatus = 'pending' | 'running' | 'done' | 'error' | 'waiting-approval';
 export interface DeveloperProjectFile {
@@ -93,12 +94,12 @@ export async function importProjectFiles(
   let totalBytes = 0;
   for (const entry of entries) {
     const path = entry.path.trim();
-    if (!path || path.startsWith('/') || path.includes('\\\\') || /^[a-zA-Z]:/.test(path) ||
+    if (!path || path.startsWith('/') || path.includes('\\') || /^[a-zA-Z]:/.test(path) ||
       path.split('/').some(part => !part.trim() || part === '.' || part === '..')) {
       throw new Error('الأرشيف يحتوي على مسار ملف غير آمن.');
     }
     if (typeof entry.content !== 'string') throw new Error('محتوى ملف غير صالح.');
-    const bytes = new TextEncoder().encode(entry.content).length;
+    const bytes = strToU8(entry.content).length;
     if (bytes > 25 * 1024 * 1024) throw new Error(`الملف ${path} يتجاوز حد 25MB.`);
     totalBytes += bytes;
     if (totalBytes > 80 * 1024 * 1024) throw new Error('الحجم الإجمالي للملفات يتجاوز 80MB.');
