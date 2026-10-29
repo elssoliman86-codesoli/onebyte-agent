@@ -87,10 +87,46 @@ export function DeveloperWorkspace() {
   async function saveFile() {
     if (!activeSession || !selectedPath) return;
     setBusy(true);
-    try { await saveProjectFile(activeSession.id, activeSession.title, selectedPath, draft); await refresh(); alertCompat('تم الحفظ', 'تم حفظ الملف في مشروع المحادثة الحالية.'); }
-    catch (e) { alertCompat('فشل الحفظ', e instanceof Error ? e.message : 'خطأ غير معروف'); }
-    finally { setBusy(false); }
+    const savedContent = draft;
+    const filePath = selectedPath;
+    try {
+      await saveProjectFile(activeSession.id, activeSession.title, filePath, savedContent);
+      try {
+        const apiKey = provider.keyless ? '' : await getStoredModelApiKey();
+        if (!provider.baseUrl.trim() || !(project?.codeModelId || provider.model).trim()) throw new Error('لا يوجد موديل مراجعة مضبوط.');
+        const response = await fetchWithRetry(endpointFor(provider.baseUrl), {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json', ...(apiKey ? { Authorization: `Bearer ${apiKey}` } : {}) },
+          body: JSON.stringify({
+            model: project?.codeModelId || provider.model,
+            temperature: 0.1,
+            messages: [
+              { role: 'system', content: 'Review the complete source file for correctness, logic bugs, security, maintainability, and edge cases. Return ONLY a JSON object with keys "should_change" (boolean), "reason" (short string), and "proposed_code" (complete source file). Never claim tests were run. If no meaningful improvement is needed, set should_change false and proposed_code to the original file.' },
+              { role: 'user', content: `Review this entire file. Path: ${filePath}\n\n${savedContent}\n\nReturn JSON only.` },
+            ],
+          }),
+        }, { timeout: 120000, maxRetries: 1 });
+        if (!response.ok) throw new Error(`HTTP ${response.status}`);
+        const payload = await response.json() as { choices?: Array<{message?:{content?:string}}> };
+        const raw = payload.choices?.[0]?.message?.content ?? '';
+        const parsed = JSON.parse(raw.replace(/^\`\`\`(?:json)?\s*/i, '').replace(/\s*\`\`\`$/, '')) as {should_change?:boolean;reason?:string;proposed_code?:string};
+        if (parsed.should_change && typeof parsed.proposed_code === 'string' && parsed.proposed_code.trim() && parsed.proposed_code !== savedContent) {
+          await proposeCodeReview(activeSession.id, filePath, savedContent, parsed.proposed_code, parsed.reason || 'مراجعة تلقائية للملف بعد الحفظ');
+          await refresh();
+          alertCompat('تم حفظ الملف وظهرت مراجعة', 'الموديل اقترح تحسينًا. لم يُطبّق أي تغيير حتى توافق عليه.');
+        } else {
+          await refresh();
+          alertCompat('تم الحفظ والمراجعة', 'لم يقترح الموديل تغييرًا جوهريًا. لم يتم تشغيل الاختبارات تلقائيًا.');
+        }
+      } catch (reviewError) {
+        await refresh();
+        alertCompat('تم الحفظ؛ تعذّرت المراجعة الآلية', reviewError instanceof Error ? reviewError.message : 'خطأ غير معروف');
+      }
+    } catch (error) {
+      alertCompat('فشل الحفظ', error instanceof Error ? error.message : 'خطأ غير معروف');
+    } finally { setBusy(false); }
   }
+
   async function exportZip() {
     if (!project?.files.length) { alertCompat('المشروع فارغ', 'أضف ملفات أولًا.'); return; }
     try {
