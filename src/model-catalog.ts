@@ -93,6 +93,20 @@ function readTools(item: Json): boolean | null {
   return null;
 }
 
+function readImageSupport(item: Json): boolean | null {
+  const architecture = item.architecture && typeof item.architecture === 'object'
+    ? item.architecture as Json : null;
+  const candidates = [item.input_modalities, item.modalities, architecture?.input_modalities];
+  for (const value of candidates) {
+    if (Array.isArray(value) && value.every(v => typeof v === 'string')) {
+      return value.some(v => /image|vision|photo/i.test(v as string));
+    }
+  }
+  const modality = architecture?.modality;
+  if (typeof modality === 'string' && modality.trim()) return /image|vision/i.test(modality);
+  return null;
+}
+
 export function parseModels(payload: unknown): ModelInfo[] {
   const list: unknown[] = Array.isArray(payload)
     ? payload
@@ -120,6 +134,7 @@ export function parseModels(payload: unknown): ModelInfo[] {
       completionPrice: completion,
       free,
       supportsTools: readTools(item),
+      supportsImages: readImageSupport(item),
     });
   }
   return out.sort((a, b) => Number(b.free) - Number(a.free) || a.id.localeCompare(b.id));
