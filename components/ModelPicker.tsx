@@ -244,7 +244,8 @@ export function ModelPicker({
                   ) : null}
                   <Text style={[styles.cardMeta, { color: colors.mutedForeground }]} numberOfLines={2}>
                     {formatPrice(item)} · {formatContext(item.contextLength)}
-                    {item.supportsTools === false ? ' · بدون أدوات' : ''}
+                    {' · صور: '}{item.supportsImages === true ? 'نعم' : item.supportsImages === false ? 'لا' : 'غير معروف'}
+                    {' · أدوات: '}{item.supportsTools === true ? 'نعم' : item.supportsTools === false ? 'لا' : 'غير معروف'}
                     {probe === 200 ? ' · 200 ✓' : probe && probe > 0 ? ` · ${probe} ✗` : ''}
                   </Text>
                   {isCurrent ? (
