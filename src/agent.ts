@@ -357,7 +357,7 @@ export async function runAgent({
     if (!result.toolCalls.length) {
       // If the user explicitly asked us to perform an operation, a plain-text
       // answer is not evidence that it was performed. Surface that distinction.
-      const actionIntent = typeof originalUserMessage === 'string' && /\b(scan|inspect|test|check|browse|navigate|open the (?:site|url|page|browser)|capture (?:the )?requests|replay (?:the )?request|send (?:the )?request|crawl|recon|hackerone|bug bounty)\b|(?:افحص|افحصها|فحص التارجت|فحص الموقع|اختبر التارجت|ابدأ الفحص|نفذ الفحص|افتح الموقع|افتح الرابط|افتح المتصفح|اقرأ الصفحة|التقط الطلبات|اعترض الريكويستات|أرسل الطلب)/i.test(originalUserMessage);
+      const actionIntent = typeof originalUserMessage === 'string' && /\b(scan|inspect|test|check|browse|navigate|open the (?:site|url|page|browser)|capture (?:the )?requests|replay (?:the )?request|send (?:the )?request|crawl|recon|hackerone|bug bounty)\b|(?:افحص(?:ها|ه)?|يفحص(?:ها|ه)?|فحص(?: التارجت| الموقع| الهدف)?|اختبر(?: التارجت| الموقع| الهدف)?|اختبار(?: التارجت| الموقع)?|ابدأ الفحص|نفذ الفحص|نفّذ الفحص|افتح (?:الموقع|الرابط|المتصفح)|اقرأ الصفحة|التقط الطلبات|اعترض الريكويستات|أرسل الطلب|ارسل الطلب|هاكر وان)/i.test(originalUserMessage);
       if (actionIntent && activeSpecs.length > 0 && steps.length === 0) {
         toolsWereUnsupported = true;
       }
