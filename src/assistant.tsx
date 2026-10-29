@@ -91,6 +91,8 @@ export interface AgentSettings {
 
 export type ThemePreference = 'system' | 'light' | 'dark';
 
+export type VoicePersona = 'friendly' | 'calm' | 'energetic' | 'formal';
+
 export interface AppearanceSettings {
   theme: ThemePreference;
   /** Accent color theme (default emerald; also blue/red/purple/amber). */
@@ -99,6 +101,8 @@ export interface AppearanceSettings {
   language: string;
   /** Font color for the app UI (hex). */
   fontColor: string;
+  voicePersona: VoicePersona;
+  voiceId: string;
 }
 
 export interface SkillVersion {
@@ -240,7 +244,9 @@ const DEFAULT_APPEARANCE: AppearanceSettings = {
   language: 'ar',
   // Empty means use a contrast-safe color from the selected theme.
   fontColor: '',
-};
+  voicePersona: 'friendly',
+  voiceId: '',
+}
 
 let idCounter = 0;
 function makeId(prefix: string): string {
