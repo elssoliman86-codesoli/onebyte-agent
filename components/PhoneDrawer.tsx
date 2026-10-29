@@ -108,7 +108,7 @@ export function PhoneDrawer({
   } = useAssistant();
   const { approvals } = useWorkspace();
   const pendingApprovals = approvals.filter((a) => a.status === 'pending').length;
-  const recent = sessions.slice(0, 6);
+  const recent = sessions.filter((session) => !['developer', 'marketing', 'hunter'].includes(session.mode ?? '')).slice(0, 6);
 
   function go(route: string) {
     onClose();
