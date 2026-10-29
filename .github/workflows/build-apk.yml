@@ -4,6 +4,8 @@ on:
   workflow_dispatch:
   push:
     branches: [main]
+  pull_request:
+    branches: [main]
 
 jobs:
   build:
@@ -23,6 +25,9 @@ jobs:
 
       - name: Install dependencies
         run: npm ci
+
+      - name: TypeScript typecheck
+        run: npm run typecheck
 
       - name: Generate native Android project
         run: npx expo prebuild -p android --clean
