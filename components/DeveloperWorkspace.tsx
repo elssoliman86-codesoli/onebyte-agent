@@ -1,5 +1,8 @@
 import React, { useCallback, useEffect, useMemo, useState } from 'react';
-import { ActivityIndicator, Pressable, ScrollView, StyleSheet, Text, TextInput, View } from 'react-native';
+import { Pressable, ScrollView, StyleSheet, Text, TextInput, View, Platform } from 'react-native';
+import * as FileSystem from 'expo-file-system/legacy';
+import * as Sharing from 'expo-sharing';
+import { zipSync, strToU8 } from 'fflate';
 import { Feather } from '@expo/vector-icons';
 import { useColors } from '@/hooks/useColors';
 import { ScreenTopBar } from '@/components/PhoneDrawer';
@@ -101,7 +104,7 @@ export function DeveloperWorkspace() {
     await refresh();
   }
 
-  async function openReview() {
+  async function exportZip() {\n    if (!project?.files.length) { alertCompat('المشروع فارغ', 'أضف ملفات أولًا.'); return; }\n    try {\n      const entries: Record<string, Uint8Array> = {};\n      for (const file of project.files) entries[file.path] = strToU8(file.content);\n      const zipped = zipSync(entries, { level: 6 });\n      const base64 = Array.from(zipped).map(b => String.fromCharCode(b)).join('');\n      const encoded = typeof btoa === 'function' ? btoa(base64) : base64;\n      const uri = `${FileSystem.cacheDirectory ?? FileSystem.documentDirectory}onebyte-project-${project.sessionId}.zip`;\n      await FileSystem.writeAsStringAsync(uri, encoded, { encoding: FileSystem.EncodingType.Base64 });\n      if (Platform.OS !== 'web' && await Sharing.isAvailableAsync()) await Sharing.shareAsync(uri, { mimeType: 'application/zip', dialogTitle: 'تحميل المشروع' });\n      else alertCompat('تم تجهيز ZIP', uri);\n    } catch (error) { alertCompat('فشل تصدير ZIP', error instanceof Error ? error.message : 'خطأ غير معروف'); }\n  }\n\n  async function openReview() {
     if (!selectedFile) { alertCompat('اختار ملفًا', 'أنشئ ملفًا أو افتح ملفًا قبل طلب مراجعة.'); return; }
     setReviewPath(selectedFile.path);
     setReviewOriginal(selectedFile.content);
@@ -151,12 +154,12 @@ export function DeveloperWorkspace() {
             {outline.map(item => <Pressable key={item.path} disabled={item.directory} onPress={() => {setSelectedPath(item.path);setDraft(project?.files.find(f=>f.path===item.path)?.content ?? '');}} style={[styles.treeRow,{paddingLeft:8+item.depth*12,backgroundColor:selectedPath===item.path?colors.accentSubtle:'transparent'}]}><Feather name={item.directory?'folder':'file-text'} size={13} color={item.directory?colors.warning:colors.mutedForeground}/><Text numberOfLines={1} style={{fontSize:12,color:colors.foreground,flex:1}}>{item.path.split('/').pop()}</Text></Pressable>)}
             {!outline.length ? <Text style={[styles.empty,{color:colors.mutedForeground}]}>أنشئ أول ملف للمشروع.</Text> : null}
           </ScrollView>
-          <Pressable onPress={() => { if (!project?.files.length) { alertCompat('المشروع فارغ','أضف ملفات أولًا.'); return; } alertCompat('تصدير ZIP','التصدير كملف ZIP لم يتم توصيله بعد.'); }} style={[styles.exportButton,{borderColor:colors.border}]}><Feather name="download" size={14} color={colors.foreground}/><Text style={{fontSize:11,color:colors.foreground}}>تحميل المشروع ZIP</Text></Pressable>
+          <Pressable onPress={() => void exportZip()} style={[styles.exportButton,{borderColor:colors.border}]}><Feather name="download" size={14} color={colors.foreground}/><Text style={{fontSize:11,color:colors.foreground}}>تحميل المشروع ZIP</Text></Pressable>
         </View>
         <View style={[styles.editor,{borderColor:colors.border,backgroundColor:colors.card}]}>
           <View style={[styles.editorHead,{borderBottomColor:colors.border}]}><View style={{flex:1}}><Text style={{color:colors.foreground,fontWeight:'700'}}>{selectedFile?.path ?? 'لا يوجد ملف مفتوح'}</Text><Text style={{color:colors.mutedForeground,fontSize:11}}>{selectedFile?.language ?? 'اختر ملفًا من الشجرة'}</Text></View><Pressable onPress={() => setPlanOpen(v=>!v)} style={styles.headerIcon}><Feather name="git-branch" size={16} color={colors.primary}/></Pressable></View>
           <TextInput value={draft} onChangeText={setDraft} editable={!!selectedFile} multiline autoCapitalize="none" autoCorrect={false} spellCheck={false} textAlignVertical="top" placeholder="اكتب الكود هنا..." placeholderTextColor={colors.mutedForeground} style={[styles.codeInput,{color:colors.foreground,borderColor:colors.border}]} />
-          <View style={styles.editorActions}><Pressable disabled={!selectedFile||busy} onPress={() => void saveFile()} style={[styles.actionButton,{backgroundColor:colors.primary,opacity:busy?.6:1}]}><Feather name="save" size={14} color={colors.primaryForeground}/><Text style={{color:colors.primaryForeground,fontSize:12}}>حفظ الملف</Text></Pressable><Pressable disabled={!selectedFile} onPress={() => void openReview()} style={[styles.actionButton,{borderColor:colors.border,borderWidth:1}]}><Feather name="git-pull-request" size={14} color={colors.foreground}/><Text style={{color:colors.foreground,fontSize:12}}>مراجعة تعديل</Text></Pressable></View>
+          <View style={styles.editorActions}><Pressable disabled={!selectedFile||busy} onPress={() => void saveFile()} style={[styles.actionButton,{backgroundColor:colors.primary,opacity:busy ? 0.6 : 1}]}><Feather name="save" size={14} color={colors.primaryForeground}/><Text style={{color:colors.primaryForeground,fontSize:12}}>حفظ الملف</Text></Pressable><Pressable disabled={!selectedFile} onPress={() => void openReview()} style={[styles.actionButton,{borderColor:colors.border,borderWidth:1}]}><Feather name="git-pull-request" size={14} color={colors.foreground}/><Text style={{color:colors.foreground,fontSize:12}}>مراجعة تعديل</Text></Pressable></View>
         </View>
       </View>
       <View style={[styles.timelinePanel,{borderColor:colors.border,backgroundColor:colors.card}]}>
