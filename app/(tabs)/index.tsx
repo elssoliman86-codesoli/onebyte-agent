@@ -1199,6 +1199,10 @@ export default function ChatScreen() {
     abortRef.current = controller;
     runSessionIdRef.current = sessionId;
     const responseId = messageId();
+    const responseCreatedAt = new Date().toISOString();
+    let persistTimer: ReturnType<typeof setTimeout> | null = null;
+    let lastPersistAt = 0;
+    let persistQueue: Promise<void> = Promise.resolve();
     let steps: ToolStep[] = [];
     let fullResponse = '';
     let assistantPersisted = false;
