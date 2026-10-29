@@ -803,7 +803,7 @@ export default function ChatScreen() {
     setTerminalOpen(true);
   }
 
-  /** Read text/code files and inspect supported text entries in ZIPs in memory. */
+  /** Import text/code files from ZIPs. Safety ceilings prevent decompression bombs and device OOM. */
   async function attachFilesPicker(options?: { zipsOnly?: boolean }) {
     try {
       const result = await DocumentPicker.getDocumentAsync({
@@ -821,8 +821,8 @@ export default function ChatScreen() {
         const isZip = /\.zip$/i.test(file.name) || /zip/i.test(file.mimeType ?? '');
         if (isZip) {
           logTerminal(`فتح الأرشيف: ${file.name}`);
-          if ((file.size ?? 0) > 20 * 1024 * 1024) {
-            logTerminal(`تخطّي ${file.name}: الحجم أكبر من 20MB.`);
+          if ((file.size ?? 0) > 250 * 1024 * 1024) {
+            logTerminal(`تخطّي ${file.name}: حجم الأرشيف يتجاوز حد حماية الجهاز 250MB.`);
             continue;
           }
           try {
@@ -834,7 +834,7 @@ export default function ChatScreen() {
             const entries = unzipSync(bytes, {
               filter: (entry) => {
                 if (!entry.name || entry.name.endsWith('/') || !supportedText.test(entry.name) || /(^|\/)\.\.(\/|$)/.test(entry.name)) return false;
-                if (entry.originalSize > 200_000 || acceptedCount >= 40 || acceptedBytes + entry.originalSize > 900_000) return false;
+                if (entry.originalSize > 5 * 1024 * 1024 || acceptedCount >= 1000 || acceptedBytes + entry.originalSize > 80 * 1024 * 1024) return false;
                 acceptedCount++; acceptedBytes += entry.originalSize; return true;
               },
             });
@@ -846,9 +846,9 @@ export default function ChatScreen() {
                 logTerminal(`تخطّي ملف غير نصي: ${entryPath}`);
                 continue;
               }
-              const remaining = 800_000 - promptChars;
+              const remaining = 4_000_000 - promptChars;
               if (remaining <= 0) { logTerminal('وصلت إلى حد النص المسموح للأرشيف.'); break; }
-              if (content.length > Math.min(30_000, remaining)) content = content.slice(0, Math.min(30_000, remaining)) + '\n…(مقتطع)';
+              if (content.length > Math.min(120_000, remaining)) content = content.slice(0, Math.min(30_000, remaining)) + '\n…(مقتطع)';
               promptChars += content.length;
               loaded.push({ name: `${file.name} / ${entryPath}`, content });
               count++;
@@ -861,16 +861,16 @@ export default function ChatScreen() {
           }
           continue;
         }
-        if ((file.size ?? 0) > 400_000) {
-          logTerminal(`تخطّي ${file.name}: أكبر من 400KB.`);
-          alertCompat('ملف كبير', `"${file.name}" أكبر من 400KB — تم تجاهله.`);
+        if ((file.size ?? 0) > 25 * 1024 * 1024) {
+          logTerminal(`تخطّي ${file.name}: الملف النصي يتجاوز حد حماية الجهاز 25MB.`);
+          alertCompat('ملف كبير', `"${file.name}" أكبر من 25MB — تم تجاهله.`);
           continue;
         }
         try {
           const response = await fetch(file.uri);
           let content = await response.text();
           if (content.includes('\u0000')) { logTerminal(`تخطّي ${file.name}: ملف ثنائي.`); continue; }
-          if (content.length > 30_000) content = content.slice(0, 30_000) + '\n…(مقتطع)';
+          if (content.length > 500_000) content = content.slice(0, 500_000) + '\n…(مقتطع بعد 500,000 حرف لحماية الذاكرة والسياق)';
           loaded.push({ name: file.name, content });
           logTerminal(`تم فتح الملف النصي: ${file.name}`);
         } catch {
