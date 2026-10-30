@@ -231,6 +231,8 @@ export function DeveloperWorkspace() {
     setBusy(true);
     try {
       const source = draft;
+      await saveProjectFile(activeSession.id, activeSession.title, selectedPath, source);
+      await refresh(selectedPath);
       const raw = await callCodeModel([
         { role: 'system', content: 'Review the complete source file for correctness, logic bugs, security, maintainability, and edge cases. Return ONLY JSON with keys should_change (boolean), reason (short string), and proposed_code (complete source file). Never claim tests were run. If no meaningful improvement is needed, set should_change false.' },
         { role: 'user', content: `Review this file. Path: ${selectedPath}\n\n${source}\n\nReturn JSON only.` },
@@ -486,6 +488,7 @@ export function DeveloperWorkspace() {
     try {
       const file = project?.files.find(f => f.path === reviewPath);
       const original = reviewPath === selectedPath ? draft : (file?.content ?? '');
+      if (reviewPath === selectedPath && selectedFile && draft !== selectedFile.content) await saveProjectFile(activeSession.id, activeSession.title, reviewPath, draft);
       await proposeCodeReview(activeSession.id, reviewPath, original, reviewProposed, reviewReason);
       setReviewOpen(false); await refresh();
       alertCompat('الاقتراح بانتظار موافقتك', 'لم يتم تطبيق أي تغيير تلقائيًا.');
