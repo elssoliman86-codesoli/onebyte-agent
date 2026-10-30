@@ -201,7 +201,7 @@ export function DeveloperWorkspace() {
       ]);
       return;
     }
-    void setActiveSession(sessionId);
+    void setActiveSession(sessionId).catch((error) => alertCompat('تعذّر فتح المشروع', error instanceof Error ? error.message : 'خطأ غير معروف.'));
   }
 
   async function createFile() {
@@ -301,6 +301,7 @@ export function DeveloperWorkspace() {
   }
 
   async function exportZip() {
+    if (selectedFile && draft !== selectedFile.content) { alertCompat('احفظ التعديلات أولًا', 'احفظ الملف المفتوح قبل تصدير ZIP حتى يتضمن آخر نسخة.'); return; }
     if (!project?.files.length) { alertCompat('المشروع فارغ', 'أضف ملفات أولًا.'); return; }
     try {
       if (project.files.length > 500) throw new Error('المشروع يتجاوز حد 500 ملف.');
@@ -324,6 +325,7 @@ export function DeveloperWorkspace() {
   }
 
   async function importZip() {
+    if (selectedFile && draft !== selectedFile.content) { alertCompat('احفظ التعديلات أولًا', 'احفظ الملف المفتوح قبل استيراد ZIP حتى لا تفقد تغييراتك.'); return; }
     if (!activeSession) { alertCompat('اختر محادثة مشروع أولًا', 'استورد الملفات داخل مشروع المحادثة النشطة.'); return; }
     try {
       const picked = await DocumentPicker.getDocumentAsync({ type: ['application/zip', 'application/x-zip-compressed'], copyToCacheDirectory: true, multiple: false });
@@ -395,6 +397,7 @@ export function DeveloperWorkspace() {
   }
 
   async function buildProjectAutomatically() {
+    if (selectedFile && draft !== selectedFile.content) { alertCompat('احفظ التعديلات أولًا', 'احفظ الملف المفتوح قبل البناء التلقائي حتى لا يستبدل محتوى غير محفوظ.'); return; }
     if (!activeSession || !goal.trim()) { alertCompat('اكتب وصف المشروع أولًا', 'اكتب المطلوب في حقل المهمة ثم ابدأ البناء التلقائي.'); return; }
     if (!provider.baseUrl.trim() || !provider.model.trim()) { alertCompat('الموديل غير مضبوط', 'اختار مزودًا وموديلًا من إعدادات التطبيق.'); return; }
     setBusy(true);
@@ -467,20 +470,26 @@ export function DeveloperWorkspace() {
 
   async function savePlan() {
     if (!activeSession || !goal.trim()) return;
-    const lines = goal.split(/\n+/).map(x => x.trim()).filter(Boolean);
-    await replaceProjectPlan(activeSession.id, activeSession.title, lines.map(line => ({title: line.slice(0,70), detail: line})));
-    await refresh(); setPlanOpen(true);
+    try {
+      const lines = goal.split(/\n+/).map(x => x.trim()).filter(Boolean);
+      await replaceProjectPlan(activeSession.id, activeSession.title, lines.map(line => ({title: line.slice(0,70), detail: line})));
+      await refresh(); setPlanOpen(true);
+    } catch (error) { alertCompat('تعذّر حفظ الخطة', error instanceof Error ? error.message : 'خطأ غير معروف.'); }
   }
   async function markStep(step: DeveloperPlanStep, status: DeveloperPlanStep['status']) {
     if (!activeSession) return;
-    await updatePlanStep(activeSession.id, step.id, status); await refresh();
+    try { await updatePlanStep(activeSession.id, step.id, status); await refresh(); }
+    catch (error) { alertCompat('تعذّر تحديث الخطوة', error instanceof Error ? error.message : 'خطأ غير معروف.'); }
   }
   async function submitReview() {
     if (!activeSession || !reviewPath.trim()) return;
-    const file = project?.files.find(f => f.path === reviewPath);
-    await proposeCodeReview(activeSession.id, reviewPath, file?.content ?? '', reviewProposed, reviewReason);
-    setReviewOpen(false); await refresh();
-    alertCompat('الاقتراح بانتظار موافقتك', 'لم يتم تطبيق أي تغيير تلقائيًا.');
+    try {
+      const file = project?.files.find(f => f.path === reviewPath);
+      const original = reviewPath === selectedPath ? draft : (file?.content ?? '');
+      await proposeCodeReview(activeSession.id, reviewPath, original, reviewProposed, reviewReason);
+      setReviewOpen(false); await refresh();
+      alertCompat('الاقتراح بانتظار موافقتك', 'لم يتم تطبيق أي تغيير تلقائيًا.');
+    } catch (error) { alertCompat('تعذّر إنشاء المراجعة', error instanceof Error ? error.message : 'خطأ غير معروف.'); }
   }
   async function decideReview(id: string, approve: boolean) {
     if (!activeSession) return;
