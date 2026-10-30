@@ -268,6 +268,8 @@ export interface RunAgentOptions {
   apiKey: string;
   messages: ProviderChatMessage[];
   specs: ToolSpec[];
+  /** Provider catalogue explicitly says this model cannot call tools. */
+  toolsUnavailableHint?: boolean;
   maxSteps: number;
   /** Run Android device tools without per-step prompts after the user enabled device control. */
   autoApproveDeviceTools?: boolean;
@@ -292,6 +294,7 @@ export async function runAgent({
   apiKey,
   messages,
   specs,
+  toolsUnavailableHint = false,
   maxSteps,
   autoApproveDeviceTools = false,
   execute,
@@ -317,7 +320,8 @@ export async function runAgent({
   let screenNeedsRefresh = false;
   let lastScreenReadRound = -1;
   let stopForDeviceActionLimit = false;
-  let activeSpecs = specs;
+  let toolsUnavailable = toolsUnavailableHint;
+  let activeSpecs = toolsUnavailable ? [] : specs;
   let toolsWereUnsupported = false;
   let startRound = 0;
 
@@ -329,8 +333,9 @@ export async function runAgent({
     finalThinking = checkpoint.finalThinking;
     checkpoint.allowedForTurn.forEach((name) => allowedForTurn.add(name));
     // Restore activeSpecs by matching names
-    activeSpecs = specs.filter((s) => checkpoint.activeSpecsNames.includes(s.name));
     toolsWereUnsupported = checkpoint.toolsWereUnsupported;
+    toolsUnavailable = toolsUnavailable || toolsWereUnsupported;
+    activeSpecs = toolsUnavailable ? [] : specs.filter((s) => checkpoint.activeSpecsNames.includes(s.name));
     startRound = checkpoint.round;
     console.log(`[runAgent] Resumed from checkpoint at round ${startRound}`);
   } else {
@@ -383,7 +388,7 @@ export async function runAgent({
       } catch (error) {
         if (error instanceof ToolsUnsupportedError && activeSpecs.length) {
           activeSpecs = [];
-          toolsWereUnsupported = true;
+          toolsUnavailable = true;
           round -= 1;
           continue;
         }
@@ -412,7 +417,7 @@ export async function runAgent({
       // If the user explicitly asked us to perform an operation, a plain-text
       // answer is not evidence that it was performed. Surface that distinction.
       const actionIntent = typeof originalUserMessage === 'string' && /\b(scan|inspect|test|check|browse|navigate|open the (?:site|url|page|browser)|capture (?:the )?requests|replay (?:the )?request|send (?:the )?request|crawl|recon|hackerone|bug bounty)\b|(?:افحص(?:ها|ه)?|يفحص(?:ها|ه)?|فحص(?: التارجت| الموقع| الهدف)?|اختبر(?: التارجت| الموقع| الهدف)?|اختبار(?: التارجت| الموقع)?|ابدأ الفحص|نفذ الفحص|نفّذ الفحص|افتح (?:الموقع|الرابط|المتصفح)|اقرأ الصفحة|التقط الطلبات|اعترض الريكويستات|أرسل الطلب|ارسل الطلب|هاكر وان)/i.test(originalUserMessage);
-      if (actionIntent && activeSpecs.length > 0 && steps.length === 0) {
+      if (actionIntent && (activeSpecs.length > 0 || toolsUnavailable) && steps.length === 0) {
         toolsWereUnsupported = true;
       }
       await saveCheckpoint(round + 1);
