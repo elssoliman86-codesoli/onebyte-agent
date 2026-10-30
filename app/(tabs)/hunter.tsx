@@ -213,7 +213,6 @@ export default function CyberSecurityScreen() {
     const controller = new AbortController();
     abortRef.current = controller;
     setRunning(true);
-    setActivePanel('activity');
     const started = Date.now();
     try {
       const response = await runRequest(request, controller.signal);
@@ -234,6 +233,7 @@ export default function CyberSecurityScreen() {
       if (aliveRef.current) {
         setResult(entry);
         setLog(next);
+        setActivePanel('activity');
         if (controller.signal.aborted) setError('تم طلب إيقاف الطلب. راجع حالة الاستجابة أدناه.');
       }
     } catch (e) {
