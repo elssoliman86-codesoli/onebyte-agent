@@ -36,7 +36,8 @@ assert(endpoints.includes('https://example.com/about'), 'absolute same-scope pag
 assert(endpoints.includes('https://example.com/api/v2/users'), 'quoted API path from source should be collected');
 assert(endpoints.includes('https://example.com/docs'), 'relative DOM link should be resolved');
 assert(endpoints.includes('https://example.com/api/me'), 'captured same-scope network URL should be collected');
-assert(!endpoints.some((url) => url.includes('evil.example.net') || url.includes('outside.invalid') || url.includes('api.example.com')), 'out-of-scope hosts must be excluded');
+assert(!endpoints.some((url) => url.includes('evil.example.net') || url.includes('outside.invalid')), 'unrelated external hosts must be excluded');
+assert(endpoints.includes('https://api.example.com/graphql'), 'saved root-domain scope includes its subdomains');
 assert.equal(new Set(endpoints).size, endpoints.length, 'endpoint results should be deduplicated');
 
 const js = collectJavaScriptAssets([
