@@ -101,6 +101,7 @@ export default function HunterToolsScreen() {
               <Text style={[s.toolName, { color: colors.foreground }]}>{tool.name}</Text>
               <Text style={[s.muted, { color: colors.mutedForeground }]}>{tool.description}</Text>
               <Text style={[s.meta, { color: colors.mutedForeground }]}>{tool.kind.toUpperCase()} · v{tool.version} · {tool.useCount} استخدام · {tool.status}</Text>
+              <Text style={[s.meta,{color:colors.mutedForeground}]} numberOfLines={2}>المدخلات المطلوبة: {Array.isArray(tool.inputSchema.required) ? (tool.inputSchema.required as string[]).join('، ') || 'لا توجد' : 'غير محددة'} · المخرجات: {tool.outputDescription}</Text>
               {tool.kind === 'python' && tool.status === 'draft' ? (
                 <View style={s.row}>
                   {tool.reviewedVersion === tool.version ? (
