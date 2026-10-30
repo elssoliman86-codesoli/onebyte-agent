@@ -30,6 +30,8 @@ assert.throws(() => preflightZip(new Uint8Array(32 * 1024 * 1024 + 1)), /32MB/, 
 
 const traversal = zipSync({ '../escape.py': strToU8('print(1)') });
 assert.throws(() => preflightZip(traversal), /مسار غير آمن/, 'parent traversal path should be rejected');
+const emptySegment = zipSync({ 'src//main.py': strToU8('print(1)') });
+assert.throws(() => preflightZip(emptySegment), /مسار غير آمن/, 'empty path segments should be rejected');
 
 const zipBomb = zipSync({ 'large.txt': strToU8('A'.repeat(3 * 1024 * 1024)) }, { level: 9 });
 assert.throws(() => preflightZip(zipBomb), /نسبة ضغط غير آمنة/, 'high compression-ratio archive should be rejected');
