@@ -265,11 +265,12 @@ export const TOOL_SPECS: ToolSpec[] = [
     name: 'hunter_save_python_tool',
     group: 'browser',
     label: 'حفظ أداة Python في Hunter',
-    description: 'Save a generated Python helper into the persistent Hunter registry as a DRAFT. It must define run(args), analyze only supplied evidence, use no network or filesystem, and will not execute until the user runs a smoke test and explicitly approves it.',
+    description: 'Save a generated Python helper into the persistent Hunter registry as a DRAFT. Include input_schema (JSON Schema object), outputDescription, and source defining run(args). Analyze only supplied evidence; no network or filesystem. The user must review the exact source version, run its smoke test, and explicitly approve it.',
     parameters: obj({
       name: { type: 'string' },
       description: { type: 'string' },
       source: { type: 'string' },
+      input_schema: { type: 'object', additionalProperties: true },
       outputDescription: { type: 'string' },
     }, ['name', 'description', 'source']),
   },
@@ -688,6 +689,7 @@ export async function executeTool(
         name: str(args, 'name'),
         description: str(args, 'description'),
         source: str(args, 'source'),
+        inputSchema: args.input_schema && typeof args.input_schema === 'object' && !Array.isArray(args.input_schema) ? args.input_schema as Record<string, unknown> : undefined,
         outputDescription: typeof args.outputDescription === 'string' ? args.outputDescription : undefined,
         tags: ['agent-generated'],
       });
