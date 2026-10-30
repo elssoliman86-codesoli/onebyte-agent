@@ -95,6 +95,7 @@ export function PhoneDrawer({
   /** Starts a new chat (undefined elsewhere — the bottom button hides). */
   onNewChat?: () => void;
 }) {
+  const [expandedStudios, setExpandedStudios] = useState<Record<string, boolean>>({});
   const colors = useColors();
   const {
     sessions,
