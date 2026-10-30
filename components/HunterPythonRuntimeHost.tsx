@@ -39,8 +39,7 @@ const HTML = `<!doctype html>
       "   '__hunter_stdout = __hunter_out.getvalue()\\n__hunter_json = _json.dumps(__hunter_result, ensure_ascii=False)\\nif len(__hunter_json) > 64000: raise ValueError(\\\"Tool output exceeds 64KB\\\")';",
       "  await pyodide.runPythonAsync(wrapper);",
       "  const result = pyodide.globals.get('__hunter_json');",
-      "  const stdout = pyodide.globals.get('__hunter_stdout');
-  const output = String(stdout || '') + (self.__stdout || '') + (self.__stderr || '') + String(result || 'null');",
+      "  const stdout = pyodide.globals.get('__hunter_stdout'); const output = String(stdout || '') + (self.__stdout || '') + (self.__stderr || '') + String(result || 'null');",
       "  self.postMessage({ id: data.id, ok: true, output: output.slice(0, 64000), value: String(result || 'null') });",
       " } catch(error) { self.postMessage({ id: data.id, ok: false, error: String(error && error.message || error).slice(0, 4000) }); }",
       "};"
