@@ -335,6 +335,17 @@ export function AssistantProvider({
   });
   const dataRef = useRef(data);
   const messagePersistQueueRef = useRef<Promise<void>>(Promise.resolve());
+
+  // Every session-list write shares one queue. A create/rename/summary update
+  // must not race an assistant streaming checkpoint and overwrite newer chat
+  // messages with an older AsyncStorage snapshot.
+  const persistSessionsQueue = useCallback(async () => {
+    const write = messagePersistQueueRef.current
+      .catch(() => undefined)
+      .then(() => storage.setSessions(dataRef.current.sessions));
+    messagePersistQueueRef.current = write.catch(() => undefined);
+    await write;
+  }, []);
   const [loading, setLoading] = useState(true);
   const [storageError, setStorageError] = useState<string | null>(null);
   const [apiKeyConfigured, setApiKeyConfigured] = useState(false);
@@ -432,7 +443,7 @@ export function AssistantProvider({
     setData(next);
     try {
       await Promise.all([
-        patch.sessions !== undefined ? storage.setSessions(next.sessions) : Promise.resolve(),
+        patch.sessions !== undefined ? persistSessionsQueue() : Promise.resolve(),
         patch.activeSessionId !== undefined ? storage.setActiveSessionId(next.activeSessionId) : Promise.resolve(),
         patch.provider !== undefined ? storage.setProvider(next.provider) : Promise.resolve(),
         patch.skills !== undefined ? storage.setSkills(next.skills) : Promise.resolve(),
@@ -447,7 +458,7 @@ export function AssistantProvider({
       setStorageError('لم يتم حفظ التغيير على هذا الجهاز. حاولي مرة أخرى.');
       throw new Error('تعذّر حفظ البيانات محليًا.');
     }
-  }, []);
+  }, [persistSessionsQueue]);
 
   const setActiveSession = useCallback(
     async (id: string) => {
@@ -474,7 +485,7 @@ export function AssistantProvider({
     setData(dataRef.current);
     try {
       await Promise.all([
-        storage.setSessions(sessions),
+        persistSessionsQueue(),
         storage.setActiveSessionId(session.id),
       ]);
       return session.id;
@@ -495,7 +506,7 @@ export function AssistantProvider({
       setData(dataRef.current);
       try {
         await Promise.all([
-          storage.setSessions(sessions),
+          persistSessionsQueue(),
           storage.setActiveSessionId(activeSessionId),
         ]);
       } catch {
@@ -503,7 +514,7 @@ export function AssistantProvider({
         throw new Error('تعذّر حذف الجلسة.');
       }
     },
-    [],
+    [persistSessionsQueue],
   );
 
   const appendMessage = useCallback(
@@ -524,18 +535,14 @@ export function AssistantProvider({
       });
       dataRef.current = { ...current, sessions };
       setData(dataRef.current);
-      const write = messagePersistQueueRef.current
-        .catch(() => undefined)
-        .then(() => storage.setSessions(dataRef.current.sessions));
-      messagePersistQueueRef.current = write.catch(() => undefined);
       try {
-        await write;
+        await persistSessionsQueue();
       } catch {
         setStorageError('لم يتم حفظ الرسالة. حاولي مرة أخرى.');
         throw new Error('تعذّر حفظ الرسالة.');
       }
     },
-    [],
+    [persistSessionsQueue],
   );
 
   const upsertMessage = useCallback(
@@ -569,7 +576,7 @@ export function AssistantProvider({
         throw new Error('تعذّر حفظ التقدم الحالي للرد.');
       }
     },
-    [],
+    [persistSessionsQueue],
   );
 
   const replaceSessionMessages = useCallback(
@@ -590,13 +597,13 @@ export function AssistantProvider({
       dataRef.current = { ...dataRef.current, sessions };
       setData(dataRef.current);
       try {
-        await storage.setSessions(sessions);
+        await persistSessionsQueue();
       } catch {
         setStorageError('لم يتم حفظ تعديل الرسالة. حاول مرة أخرى.');
         throw new Error('تعذّر حفظ تعديل الرسالة.');
       }
     },
-    [],
+    [persistSessionsQueue],
   );
 
   const saveProvider = useCallback(
@@ -811,9 +818,9 @@ export function AssistantProvider({
       );
       dataRef.current = { ...dataRef.current, sessions };
       setData(dataRef.current);
-      await storage.setSessions(sessions);
+      await persistSessionsQueue();
     },
-    [],
+    [persistSessionsQueue],
   );
 
   const saveAgentSettings = useCallback(
