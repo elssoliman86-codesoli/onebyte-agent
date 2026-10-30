@@ -80,7 +80,7 @@ export function HunterPythonRuntimeHost() {
       pending.current.delete(id);
       webRef.current?.injectJavaScript('window.__hunterPythonCancel(' + JSON.stringify(id) + '); true;');
       reject(new Error('انتهت مهلة تشغيل Python وتم إنهاء Worker.'));
-    }, Math.min(Math.max(input.timeoutMs, 1000), 8000));
+    }, 90_000);
     pending.current.set(id, { resolve, reject, timer });
     const message = JSON.stringify({ id, source: input.source, args: input.args });
     webRef.current.injectJavaScript('window.__hunterPythonRun(' + message.replace(/</g, '\\u003c') + '); true;');
