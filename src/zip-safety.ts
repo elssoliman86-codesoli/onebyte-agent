@@ -12,6 +12,7 @@ export const ZIP_IMPORT_LIMITS = {
 export function base64ToBytes(value: string): Uint8Array {
   const alphabet = 'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/';
   const clean = value.replace(/\s/g, '').replace(/=+$/, '');
+  if (clean.length > Math.ceil(ZIP_IMPORT_LIMITS.archiveBytes * 4 / 3) + 8) throw new Error('ملف ZIP يتجاوز حد 32MB.');
   const output = new Uint8Array(Math.floor(clean.length * 3 / 4));
   let buffer = 0, bits = 0, offset = 0;
   for (const char of clean) {
@@ -30,6 +31,7 @@ export function base64ToBytes(value: string): Uint8Array {
  * and high-ratio ZIP bombs before fflate allocates extracted buffers.
  */
 export function preflightZip(archive: Uint8Array): void {
+  if (archive.length > ZIP_IMPORT_LIMITS.archiveBytes) throw new Error('ملف ZIP يتجاوز حد 32MB.');
   if (archive.length < 22) throw new Error('ملف ZIP أقصر من الحد الأدنى.');
   const view = new DataView(archive.buffer, archive.byteOffset, archive.byteLength);
   const min = Math.max(0, archive.length - 65557);
