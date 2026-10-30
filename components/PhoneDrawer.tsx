@@ -24,7 +24,7 @@ const NAV: { key: string; label: string; icon: string; route: string }[] = [
   { key: 'skills', label: 'المهارات', icon: 'zap', route: '/(tabs)/skills' },
   { key: 'memory', label: 'الذاكرة', icon: 'database', route: '/(tabs)/memory' },
   { key: 'github', label: 'مشاريع GitHub', icon: 'github', route: '/(tabs)/github' },
-  { key: 'lab', label: 'Cybersecurity Lab', icon: 'shield', route: '/(tabs)/lab' },
+  { key: 'hunter', label: 'مختبر الأمن السيبراني', icon: 'shield', route: '/(tabs)/hunter' },
   { key: 'approvals', label: 'الموافقات', icon: 'shield', route: '/(tabs)/approvals' },
   { key: 'settings', label: 'الإعدادات', icon: 'settings', route: '/(tabs)/settings' },
 ];
