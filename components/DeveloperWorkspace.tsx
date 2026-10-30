@@ -173,7 +173,8 @@ export function DeveloperWorkspace() {
         { role: 'system', content: 'Review the complete source file for correctness, logic bugs, security, maintainability, and edge cases. Return ONLY JSON with keys should_change (boolean), reason (short string), and proposed_code (complete source file). Never claim tests were run. If no meaningful improvement is needed, set should_change false.' },
         { role: 'user', content: `Review this file. Path: ${selectedPath}\n\n${source}\n\nReturn JSON only.` },
       ], 0.1);
-      const parsed = JSON.parse(raw.replace(/^\`\`\`(?:json)?\\s*/i, '').replace(/\\s*\`\`\`$/, '')) as { should_change?: boolean; reason?: string; proposed_code?: string };
+      const jsonText = raw.trim().replace(/^```(?:json)?\s*/i, '').replace(/\s*```$/, '');
+      const parsed = JSON.parse(jsonText) as { should_change?: boolean; reason?: string; proposed_code?: string };
       if (parsed.should_change && typeof parsed.proposed_code === 'string' && parsed.proposed_code.trim() && parsed.proposed_code !== source) {
         await proposeCodeReview(activeSession.id, selectedPath, source, parsed.proposed_code, parsed.reason || 'مراجعة AI');
         await refresh(selectedPath);
