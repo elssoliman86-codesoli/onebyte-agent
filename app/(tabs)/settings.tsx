@@ -337,6 +337,8 @@ export default function SettingsScreen() {
             picked && picked.id === model.trim() ? picked.completionPrice : provider.model === model.trim() ? provider.completionPrice : null,
           free: picked && picked.id === model.trim() ? picked.free : provider.model === model.trim() ? provider.free : false,
           keyless,
+          supportsTools: picked && picked.id === model.trim() ? picked.supportsTools : provider.model === model.trim() ? provider.supportsTools : null,
+          supportsImages: picked && picked.id === model.trim() ? picked.supportsImages : provider.model === model.trim() ? provider.supportsImages : null,
         },
         apiKey,
       );
