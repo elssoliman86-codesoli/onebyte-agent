@@ -278,13 +278,15 @@ export default function BrowserScreen() {
         const started = Date.now();
         try {
           const raw = await evaluate(
-            '(async()=>{const r=await fetch(' + JSON.stringify(target.toString()) + ',{method:' + JSON.stringify(method) + ',headers:' + JSON.stringify(input.headers) +
+            '(async()=>{const r=await fetch(' + JSON.stringify(target.toString()) + ',{method:' + JSON.stringify(method) + ',redirect:"manual",headers:' + JSON.stringify(input.headers) +
             (['GET', 'HEAD'].includes(method) ? '' : ',body:' + JSON.stringify(input.body)) +
             ',credentials:"same-origin"});const h={};r.headers.forEach((v,k)=>h[k]=/^(set-cookie|www-authenticate)$/i.test(k)?"[REDACTED]":v);const b=' +
             JSON.stringify(method) + '==="HEAD"?"":await r.text();return JSON.stringify({url:r.url,status:r.status,statusText:r.statusText,ok:r.ok,headers:h,body:b.slice(0,40000)})})()',
             45_000,
           );
           const result = JSON.parse(raw) as Omit<EmbeddedBrowserRequestResult, 'elapsedMs'>;
+          if (result.status >= 300 && result.status < 400) throw new Error('تم إيقاف إعادة التوجيه؛ راجع Location يدويًا وتأكد أنه داخل النطاق قبل المتابعة.');
+          if (!isHostInScope(result.url, scopeHostRef.current)) throw new Error('تم رفض استجابة خارج النطاق.');
           return { ...result, url: redactUrl(result.url), headers: result.headers, body: redactText(result.body), elapsedMs: Date.now() - started };
         } catch (error) {
           const message = error instanceof Error ? error.message : String(error);
