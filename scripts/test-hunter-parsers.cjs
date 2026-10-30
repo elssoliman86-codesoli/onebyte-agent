@@ -19,7 +19,12 @@ execFileSync(process.execPath, [
 ], { stdio: 'inherit' });
 
 const { collectEndpointCandidates, collectJavaScriptAssets } = require(join(output, 'hunter-parsers.js'));
-const { targetMatchesHost, isHttpUrlInScope } = require(join(output, 'hunter-scope.js'));
+const { targetMatchesHost, isHttpUrlInScope, normalizeTargetPattern } = require(join(output, 'hunter-scope.js'));
+assert.equal(normalizeTargetPattern('example.com'), 'example.com');
+assert.equal(normalizeTargetPattern('*.example.com'), '*.example.com');
+assert.equal(normalizeTargetPattern('https://example.com/path'), null, 'target patterns must not include paths or schemes');
+assert.equal(normalizeTargetPattern('example.com:8443'), null, 'target patterns must not include ports');
+assert.equal(normalizeTargetPattern('*.example.com/'), null, 'wildcards must not include paths');
 assert.equal(targetMatchesHost('example.com', 'example.com'), true, 'exact scope should match its host');
 assert.equal(targetMatchesHost('example.com', 'api.example.com'), false, 'exact scope must not silently include subdomains');
 assert.equal(targetMatchesHost('*.example.com', 'api.example.com'), true, 'explicit wildcard should include subdomains');
