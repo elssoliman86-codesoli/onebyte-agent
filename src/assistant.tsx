@@ -524,9 +524,12 @@ export function AssistantProvider({
       });
       dataRef.current = { ...current, sessions };
       setData(dataRef.current);
+      const write = messagePersistQueueRef.current
+        .catch(() => undefined)
+        .then(() => storage.setSessions(dataRef.current.sessions));
+      messagePersistQueueRef.current = write.catch(() => undefined);
       try {
-        // Only sessions key is rewritten — O(1) for the most frequent operation
-        await storage.appendMessage(sessionId, message);
+        await write;
       } catch {
         setStorageError('لم يتم حفظ الرسالة. حاولي مرة أخرى.');
         throw new Error('تعذّر حفظ الرسالة.');
