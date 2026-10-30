@@ -6,7 +6,7 @@ import { registerHunterPythonRuntime, type PythonRuntime } from '@/src/hunter-to
 const PYODIDE_VERSION = '0.29.5';
 const HTML = `<!doctype html>
 <html><head><meta name="viewport" content="width=device-width,initial-scale=1">
-<meta http-equiv="Content-Security-Policy" content="default-src 'none'; script-src 'unsafe-inline'; worker-src blob:; connect-src 'none'; style-src 'unsafe-inline';">
+<meta http-equiv="Content-Security-Policy" content="default-src 'none'; script-src 'unsafe-inline' https://cdn.jsdelivr.net blob:; worker-src blob:; connect-src https://cdn.jsdelivr.net; style-src 'unsafe-inline';">
 </head><body><script>
 (function(){
   var workers = Object.create(null);
@@ -20,21 +20,21 @@ const HTML = `<!doctype html>
       "  importScripts('https://cdn.jsdelivr.net/pyodide/v${PYODIDE_VERSION}/full/pyodide.js');",
       "  pyodide = await loadPyodide({ indexURL: 'https://cdn.jsdelivr.net/pyodide/v${PYODIDE_VERSION}/full/' });",
       "  const blocked = function(){ throw new Error('Network access is disabled in the Python tool runtime.'); };",
-      "  self.fetch = blocked; self.XMLHttpRequest = function(){ blocked(); }; self.WebSocket = function(){ blocked(); };",
-      "  pyodide.setStdout({ batched: function(s){ self.__stdout = (self.__stdout || '') + s; } });",
-      "  pyodide.setStderr({ batched: function(s){ self.__stderr = (self.__stderr || '') + s; } });",
+      "  self.fetch = blocked; self.XMLHttpRequest = function(){ blocked(); }; self.WebSocket = function(){ blocked(); }; self.importScripts = blocked;",
+      "  pyodide.setStdout({ batched: function(s){ self.__stdout = ((self.__stdout || '') + s).slice(0, 32000); } });",
+      "  pyodide.setStderr({ batched: function(s){ self.__stderr = ((self.__stderr || '') + s).slice(0, 32000); } });",
       "  pyodide.globals.set('__hunter_args_json', JSON.stringify(data.args || {}));",
-      "  pyodide.globals.set('__hunter_source', data.source);",
       "  const wrapper = 'import json, io, contextlib, inspect, sys\\n' +",
       "   'for _name in (\\\"socket\\\", \\\"subprocess\\\", \\\"urllib\\\", \\\"http\\\", \\\"ftplib\\\", \\\"telnetlib\\\"):\\n sys.modules.pop(_name, None)\\n' +",
       "   'import json as _json\\n__hunter_args = _json.loads(__hunter_args_json)\\n' +",
       "   '__hunter_out = io.StringIO()\\n' +",
-      "   'exec(compile(__hunter_source, \\\"<hunter-tool>\\\", \\\"exec\\\"), globals())\\n' +",
+      "   'if not callable(globals().get(\\\"run\\\")): raise TypeError(\\\"Tool must define run(args)\\\")\\n' +",
       "   'if not callable(globals().get(\\\"run\\\")): raise TypeError(\\\"Tool must define run(args)\\\")\\n' +",
       "   'with contextlib.redirect_stdout(__hunter_out):\\n __hunter_result = run(__hunter_args)\\n' +",
       "   'if inspect.isawaitable(__hunter_result): __hunter_result = await __hunter_result\\n' +",
       "   'if not isinstance(__hunter_result, (dict, list, str, int, float, bool, type(None))): raise TypeError(\\\"Tool result must be JSON-compatible\\\")\\n' +",
       "   '__hunter_json = _json.dumps(__hunter_result, ensure_ascii=False)';",
+      "  await pyodide.runPythonAsync(data.source);",
       "  await pyodide.runPythonAsync(wrapper);",
       "  const result = pyodide.globals.get('__hunter_json');",
       "  const output = (self.__stdout || '') + (self.__stderr || '') + String(result || 'null');",
@@ -121,7 +121,7 @@ export function HunterPythonRuntimeHost() {
       <WebView
         ref={webRef}
         source={{ html: HTML }}
-        originWhitelist={['about:blank']}
+        originWhitelist={['*']}
         javaScriptEnabled
         domStorageEnabled={false}
         cacheEnabled
