@@ -82,11 +82,14 @@ export async function setDeveloperCodeModel(sessionId: string, modelId: string |
 }
 export async function saveProjectFile(sessionId: string, title: string, rawPath: string, content: string): Promise<DeveloperProjectFile> {
   const path = safeProjectPath(rawPath);
-  if (typeof content !== 'string' || strToU8(content).length > 25 * 1024 * 1024) {
-    throw new Error('محتوى الملف غير صالح أو يتجاوز حد 25MB.');
-  }
+  if (typeof content !== 'string') throw new Error('محتوى الملف غير صالح.');
+  const contentBytes = strToU8(content).length;
+  if (contentBytes > 25 * 1024 * 1024) throw new Error('محتوى الملف يتجاوز حد 25MB.');
   const project = await getDeveloperProject(sessionId, title);
   const previous = project.files.find(f => f.path === path);
+  if (!previous && project.files.length >= 500) throw new Error('المشروع وصل إلى الحد الأقصى البالغ 500 ملف.');
+  const totalBytes = project.files.reduce((sum, file) => sum + strToU8(file.content).length, 0) - (previous ? strToU8(previous.content).length : 0) + contentBytes;
+  if (totalBytes > 80 * 1024 * 1024) throw new Error('الحجم الإجمالي للمشروع يتجاوز 80MB.');
   const file: DeveloperProjectFile = previous
     ? { ...previous, content, updatedAt: now() }
     : { id: id('file'), sessionId, path, language: languageForPath(path), content, createdAt: now(), updatedAt: now() };
