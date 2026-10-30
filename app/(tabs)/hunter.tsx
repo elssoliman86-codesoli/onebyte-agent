@@ -307,7 +307,7 @@ export default function CyberSecurityScreen() {
         </Pressable>
         {targets.length ? targets.map((target) => (
           <View key={target.id} style={[styles.scopeRow, { borderColor: colors.border }]}>
-            <Feather name={target.authorizationConfirmedAt ? 'shield-check' : 'alert-triangle'} size={16} color={target.authorizationConfirmedAt ? colors.success : colors.warning} />
+            <Feather name={target.authorizationConfirmedAt ? 'check-circle' : 'alert-triangle'} size={16} color={target.authorizationConfirmedAt ? colors.success : colors.warning} />
             <View style={{ flex: 1, gap: 3 }}>
               <Text style={[styles.scopeHost, { color: colors.foreground }]}>{target.host}</Text>
               <Text style={[styles.muted, { color: colors.mutedForeground }]}>{target.authorization}</Text>
