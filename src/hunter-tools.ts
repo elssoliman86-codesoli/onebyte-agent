@@ -237,8 +237,6 @@ export async function saveHunterTool(input: {
 }): Promise<HunterTool> {
   const name = input.name.trim();
   const source = input.source;
-  const inputSchema = input.inputSchema ?? DEFAULT_PYTHON_INPUT_SCHEMA;
-  assertToolInputSchema(inputSchema);
   if (name.length < 3 || name.length > 64) throw new Error('اسم الأداة يجب أن يكون بين 3 و64 حرفًا.');
   if (!source.trim() || source.length > MAX_SOURCE_LENGTH) throw new Error('كود الأداة فارغ أو أكبر من الحد المسموح (64KB).');
   if (!/^([a-zA-Z_][a-zA-Z0-9_]*\s*)/.test(source)) {
@@ -247,6 +245,8 @@ export async function saveHunterTool(input: {
   }
   const tools = await loadHunterTools();
   const existing = input.id ? tools.find((tool) => tool.id === input.id) : undefined;
+  const inputSchema = input.inputSchema ?? existing?.inputSchema ?? DEFAULT_PYTHON_INPUT_SCHEMA;
+  assertToolInputSchema(inputSchema);
   if (!input.id && tools.some((tool) => tool.name.toLowerCase() === name.toLowerCase())) throw new Error('يوجد اسم أداة مطابق بالفعل؛ افتح الأداة الموجودة لإنشاء إصدار جديد.');
   const timestamp = now();
   if (existing) {
