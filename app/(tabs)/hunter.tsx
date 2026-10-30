@@ -447,7 +447,7 @@ export default function CyberSecurityScreen() {
           <Text style={[styles.sectionTitle, { color: colors.foreground }]}>لا يوجد طلب مفتوح</Text>
           <Text style={[styles.muted, { color: colors.mutedForeground }]}>ارجع إلى «النطاق والاستطلاع»، واختر تارجتًا مؤكد التصريح، ثم اضغط «فتح المختبر» لبدء إعداد طلب HTTP.</Text>
         </Surface>
-        )}
+        )
       ) : null}
 
       {activePanel === 'activity' ? (
