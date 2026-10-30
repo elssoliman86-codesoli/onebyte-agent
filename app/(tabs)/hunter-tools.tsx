@@ -23,7 +23,9 @@ export default function HunterToolsScreen() {
   const [selected, setSelected] = useState<HunterTool | null>(null);
   const [name, setName] = useState('');
   const [description, setDescription] = useState('');
-  const [source, setSource] = useState('def run(target: str) -> dict:\n    """Return structured findings for an authorized target."""\n    return {"target": target, "findings": []}');
+  const [source, setSource] = useState('def run(args: dict) -> dict:
+    """Analyze supplied evidence and return structured findings."""
+    return {"target": args.get("target", ""), "findings": []}');
   const [busy, setBusy] = useState(false);
   const [testingId, setTestingId] = useState<string | null>(null);
 
@@ -57,7 +59,7 @@ export default function HunterToolsScreen() {
       setDescription('');
       setSource('');
       await refresh();
-      alertCompat('تم حفظ الأداة', 'حُفظ الكود في مكتبة الأدوات كإصدار Draft. الأدوات المولدة تلقائيًا لا تُعتمد إلا بعد اجتياز بوابة المصدر المحدود واختبار Python؛ الأدوات التي لا تجتازها تظل Draft للمراجعة اليدوية.');
+      alertCompat('تم حفظ الأداة', 'حُفظ الكود كإصدار Draft. لا يتم اختبار الأداة أو اعتمادها تلقائيًا؛ راجع المصدر بنفسك، ثم شغّل اختبار Python يدويًا، وبعد نجاحه اضغط اعتماد الإصدار.');
     } catch (error) {
       alertCompat('تعذّر حفظ الأداة', error instanceof Error ? error.message : 'خطأ غير معروف');
     } finally { setBusy(false); }
@@ -118,7 +120,7 @@ export default function HunterToolsScreen() {
           </View>
         ))}
         <Text style={[s.note, { color: colors.mutedForeground }]}>
-          Python يعمل على الجهاز داخل WebAssembly Worker مستقل. أول تشغيل يحتاج تنزيل Runtime الرسمي من jsDelivr؛ بعد تحميله يعمل التنفيذ محليًا. الاعتماد التلقائي مقصور على كود Python خالص بلا imports أو وصول للنظام أو الشبكة، مع اختبار تشغيل فعلي. الأكواد التي لا تجتاز البوابة تظل Draft للمراجعة.
+          Python يعمل على الجهاز داخل WebAssembly Worker مستقل. أول تشغيل يحتاج تنزيل Runtime الرسمي من jsDelivr. كل أداة مولدة تبقى Draft؛ راجع الكود، اختبره يدويًا داخل بيئة معزولة، ثم اعتمده بنفسك. الاختبار ليس مراجعة أمنية كاملة ولا ضمانًا لسلامة الكود.
         </Text>
       </Surface>
 
