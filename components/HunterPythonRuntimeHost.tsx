@@ -24,7 +24,8 @@ const HTML = `<!doctype html>
       "  pyodide.setStdout({ batched: function(s){ self.__stdout = ((self.__stdout || '') + s).slice(0, 32000); } });",
       "  pyodide.setStderr({ batched: function(s){ self.__stderr = ((self.__stderr || '') + s).slice(0, 32000); } });",
       "  pyodide.globals.set('__hunter_args_json', JSON.stringify(data.args || {}));",
-      "  const setup = 'import sys, time\\n__hunter_deadline = time.monotonic() + 8\\ndef __hunter_trace(frame, event, arg):\\n if time.monotonic() > __hunter_deadline: raise TimeoutError(\\\"Python tool exceeded 8 seconds\\\")\\n return __hunter_trace\\nsys.settrace(__hunter_trace)';",
+      "  pyodide.globals.set('__hunter_max_output', Math.max(1024, Math.min(64000, Number(data.maxOutputBytes) || 64000)));",
+      "  const setup = 'import sys, time\\n__hunter_deadline = time.monotonic() + ' + str(Math.max(1, Math.min(30000, Number(data.timeoutMs) || 8000)) / 1000) + '\\ndef __hunter_trace(frame, event, arg):\\n if time.monotonic() > __hunter_deadline: raise TimeoutError(\\\"Python tool execution timed out\\\")\\n return __hunter_trace\\nsys.settrace(__hunter_trace)';",
       "  await pyodide.runPythonAsync(setup);",
       "  await pyodide.runPythonAsync(data.source);",
       "  const wrapper = 'import json, io, contextlib, inspect, sys\\n' +",
@@ -84,7 +85,7 @@ export function HunterPythonRuntimeHost() {
       reject(new Error('انتهت مهلة تشغيل Python وتم إنهاء Worker.'));
     }, 90_000);
     pending.current.set(id, { resolve, reject, timer });
-    const message = JSON.stringify({ id, source: input.source, args: input.args });
+    const message = JSON.stringify({ id, source: input.source, args: input.args, timeoutMs: input.timeoutMs, maxOutputBytes: input.maxOutputBytes });
     webRef.current.injectJavaScript('window.__hunterPythonRun(' + message.replace(/</g, '\\u003c') + '); true;');
   }), []);
 
