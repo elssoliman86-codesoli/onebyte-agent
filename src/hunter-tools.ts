@@ -220,8 +220,13 @@ async function persistTools(tools: HunterTool[]): Promise<void> {
   await storage.writeRawJSON(REGISTRY_KEY, tools.filter((tool) => !tool.id.startsWith('hunter.')));
 }
 
-export async function setHunterToolStatus(id: string, status: HunterToolStatus, testSummary?: string): Promise<void> {
+export async function setHunterToolStatus(id: string, status: HunterToolStatus, testSummary?: string, expectedVersion?: number): Promise<void> {
   const tools = await loadHunterTools();
+  const current = tools.find((tool) => tool.id === id);
+  if (!current) throw new Error('الأداة لم تعد موجودة.');
+  if (expectedVersion !== undefined && current.version !== expectedVersion) {
+    throw new Error('تغيّر إصدار الأداة أثناء العملية. أعد المراجعة والاختبار للإصدار الحالي.');
+  }
   const next = tools.map((tool) => tool.id !== id ? tool : ({
     ...tool,
     status,
@@ -240,10 +245,10 @@ export async function deleteHunterTool(id: string): Promise<void> {
 }
 
 export async function markHunterToolReviewed(id: string): Promise<void> {
-  const tool = (await loadHunterTools()).find((item) => item.id === id);
-  if (!tool || tool.kind !== 'python' || tool.status !== 'draft') throw new Error('افتح أداة Python في حالة Draft لمراجعة مصدرها أولًا.');
   const tools = await loadHunterTools();
-  await persistTools(tools.map((item) => item.id === id ? { ...item, reviewedVersion: item.version, testSummary: 'Source explicitly reviewed by user; awaiting manual smoke test.' } : item));
+  const tool = tools.find((item) => item.id === id);
+  if (!tool || tool.kind !== 'python' || tool.status !== 'draft') throw new Error('افتح أداة Python في حالة Draft لمراجعة مصدرها أولًا.');
+  await persistTools(tools.map((item) => item.id === id ? { ...item, reviewedVersion: tool.version, testSummary: 'Source explicitly reviewed by user; awaiting manual smoke test.' } : item));
 }
 
 export async function smokeTestHunterPythonTool(id: string): Promise<string> {
@@ -254,14 +259,16 @@ export async function smokeTestHunterPythonTool(id: string): Promise<string> {
   const result = await pythonRuntime.execute({ source: tool.source, args: { target: 'example.invalid', evidence: [], urls: [] }, timeoutMs: 8_000, maxOutputBytes: 64_000, network: 'disabled' });
   if (!result.value || typeof result.value !== 'object') throw new Error('الأداة لم تُرجع نتيجة JSON منظمة.');
   const summary = 'Smoke test passed: run(args) returned JSON-compatible output; network disabled.';
-  await setHunterToolStatus(id, 'smoke-tested', summary);
+  const latest = (await loadHunterTools()).find((item) => item.id === id);
+  if (!latest || latest.version !== tool.version || latest.reviewedVersion !== tool.version) throw new Error('تغيّر مصدر الأداة أثناء الاختبار؛ لم يتم تسجيل النتيجة على إصدار آخر.');
+  await setHunterToolStatus(id, 'smoke-tested', summary, tool.version);
   return result.output;
 }
 
 export async function approveHunterPythonTool(id: string): Promise<void> {
   const tool = (await loadHunterTools()).find((item) => item.id === id);
   if (!tool || tool.kind !== 'python' || tool.status !== 'smoke-tested' || tool.reviewedVersion !== tool.version) throw new Error('يجب مراجعة مصدر الإصدار الحالي واختباره يدويًا قبل الاعتماد.');
-  await setHunterToolStatus(id, 'verified', 'User reviewed source and approved after smoke test.');
+  await setHunterToolStatus(id, 'verified', 'User reviewed source and approved after smoke test.', tool.version);
 }
 
 async function discoverPassiveSubdomains(targetHost: string): Promise<string[]> {
