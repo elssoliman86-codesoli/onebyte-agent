@@ -31,7 +31,7 @@ const HTML = `<!doctype html>
       "  const wrapper = 'import json, io, contextlib, inspect, sys\\n' +",
       "   'for _name in (\\\"socket\\\", \\\"subprocess\\\", \\\"urllib\\\", \\\"http\\\", \\\"ftplib\\\", \\\"telnetlib\\\"):\\n sys.modules.pop(_name, None)\\n' +",
       "   'import json as _json\\n__hunter_args = _json.loads(__hunter_args_json)\\n' +",
-      "   '__hunter_out = io.StringIO()\\n' +",
+      "   'class __HunterCappedIO(io.StringIO):\\n def write(self, value):\\n  remaining = max(0, __hunter_max_output - self.tell())\\n  if remaining: super().write(value[:remaining])\\n  return len(value)\\n__hunter_out = __HunterCappedIO()\\n' +",
       "   'if not callable(globals().get(\\\"run\\\")): raise TypeError(\\\"Tool must define run(args)\\\")\\n' +",
       "   'with contextlib.redirect_stdout(__hunter_out):\\n __hunter_result = run(__hunter_args)\\n' +",
       "   'if inspect.isawaitable(__hunter_result): __hunter_result = await __hunter_result\\n' +",
