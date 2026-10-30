@@ -149,33 +149,33 @@
 
 ```
 onebyte-agent/
-├── app/                    # Expo Router — مسارات الشاشات
-│   ├── (tabs)/             # تبويبات رئيسية: الشات، المختبرات، الإعدادات
-│   ├── labs/               # شاشات Cybersecurity Lab، Developer Lab، Marketing Studio
-│   ├── settings/           # إعدادات الموديل، API، الثيم، PC Server، المهارات
-│   └── _layout.tsx         # التخطيط الجذري مع موفري السياق
-├── src/
-│   ├── agents/             # حلقة الوكيل، قائمة الأدوات، وكلاء متخصصون
-│   ├── components/         # مكونات منطقية مشتركة
-│   └── hunter-scope.ts     # مطابقة النطاقات الدقيقة وWildcard
+├── app/
+│   ├── (tabs)/             # شاشات التطبيق ومسارات الاستوديوهات
+│   ├── assessment/         # تفاصيل التقييم
+│   ├── browser.tsx         # المتصفح المدمج والتقاط DOM/Network
+│   └── _layout.tsx         # Providers والتنقل الجذري
 ├── components/
-│   └── HunterPythonRuntimeHost.tsx # On-device Pyodide WebAssembly Worker host
-│   ├── context/            # React Context: Chat، Settings، Skills، Memory، Tasks، Theme، PC Server
-│   ├── hooks/              # خطافات مخصصة
-│   ├── services/           # خدمات: API، Storage، TTS، STT، Network، PC Server
-│   ├── skills/             # مهارات مدمجة + محمل مهارات ديناميكي
-│   ├── utils/              # مساعدات: تنسيق، تحقق، تشفير، إلخ
-│   └── types/              # تعريفات TypeScript المشتركة
-├── android/                # مشروع Android الأصلي (وحدة Accessibility، Foreground Service)
-├── .github/
-│   ├── workflows/          # CI/CD: بناء APK، فحوصات
-│   └── assets/             # أصول مشتركة (الشعار، spiderweb)
-├── app.json                # إعدادات Expo (الإصدار 1.0.0، SDK 57)
-├── package.json            # تبعيات (React 19، RN 0.86، TS 6، Expo Router)
-├── tsconfig.json           # إعدادات TypeScript صارمة
-├── metro.config.js         # إعداد Metro مع React Compiler
-├── babel.config.js         # Babel مع React Compiler plugin
-└── README.md
+│   ├── DeveloperWorkspace.tsx
+│   ├── HunterPythonRuntimeHost.tsx
+│   ├── PhoneDrawer.tsx
+│   └── Ui.tsx
+├── src/
+│   ├── agent.ts            # حلقة الوكيل والموافقات
+│   ├── assistant.tsx       # حالة الشات والإعدادات
+│   ├── developer-projects.ts
+│   ├── hunter.ts           # Targets والتصريحات وHTTP scope
+│   ├── hunter-scope.ts     # مطابقة Exact/Wildcard
+│   ├── hunter-tools.ts     # Hunting engine وTool Registry
+│   ├── hunter-parsers.ts
+│   ├── tools.ts            # تعريف وتنفيذ أدوات الوكيل
+│   ├── storage.ts
+│   └── workspace.tsx
+├── modules/                # وحدات Android الأصلية
+├── scripts/                # اختبارات السلامة والبناء
+├── server/                 # خادم PC الاختياري
+├── .github/workflows/      # CI وبناء APK
+├── app.json
+└── package.json
 ```
 
 ## 🚀 التثبيت والتشغيل
