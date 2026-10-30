@@ -493,7 +493,7 @@ export function AssistantProvider({
       setStorageError('لم يتم حفظ الجلسة الجديدة. حاولي مرة أخرى.');
       throw new Error('تعذّر إنشاء جلسة جديدة.');
     }
-  }, []);
+  }, [persistSessionsQueue]);
 
   const deleteSession = useCallback(
     async (id: string) => {
@@ -565,12 +565,8 @@ export function AssistantProvider({
 
       // Serialize snapshot writes so two chats streaming at once cannot let an
       // older AsyncStorage write overwrite a newer session list.
-      const write = messagePersistQueueRef.current
-        .catch(() => undefined)
-        .then(() => storage.setSessions(dataRef.current.sessions));
-      messagePersistQueueRef.current = write.catch(() => undefined);
       try {
-        await write;
+        await persistSessionsQueue();
       } catch {
         setStorageError('تعذّر حفظ التقدم الحالي للرد. سيظل النص ظاهرًا حتى إعادة المحاولة.');
         throw new Error('تعذّر حفظ التقدم الحالي للرد.');
