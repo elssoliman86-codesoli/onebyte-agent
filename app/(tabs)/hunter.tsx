@@ -233,7 +233,7 @@ export default function CyberSecurityScreen() {
     <AppScreen
       title="مختبر الأمن السيبراني"
       eyebrow="Authorized HTTP testing"
-      subtitle="عدّل الطلبات وأرسلها وأوقفها واقرأ الاستجابة. أضف نطاقًا مصرحًا به أولًا؛ لا يتم إرسال طلبات خارج النطاق."
+      subtitle="سجّل الهدف ومصدر التصريح وحدود النطاق، ثم ابدأ الاستطلاع. طلبات HTTP والاختبارات الإضافية منفصلة وتتطلب اختيارك الصريح."
       topBar={<ScreenTopBar active="hunter" />}
     >
       <View style={styles.panelTabs}>
@@ -250,11 +250,30 @@ export default function CyberSecurityScreen() {
       </View>
       {activePanel === 'overview' ? (
         <>
+      {activePanel === 'overview' ? (
+        <Surface style={styles.metricsCard}>
+          <View style={styles.metricItem}>
+            <Text style={[styles.metricValue, { color: colors.foreground }]}>{targets.length}</Text>
+            <Text style={[styles.metricLabel, { color: colors.mutedForeground }]}>Targets محفوظة</Text>
+          </View>
+          <View style={[styles.metricDivider, { backgroundColor: colors.border }]} />
+          <View style={styles.metricItem}>
+            <Text style={[styles.metricValue, { color: colors.success }]}>{eligibleTargets.length}</Text>
+            <Text style={[styles.metricLabel, { color: colors.mutedForeground }]}>إقرار تصريح مسجل</Text>
+          </View>
+          <View style={[styles.metricDivider, { backgroundColor: colors.border }]} />
+          <View style={styles.metricItem}>
+            <Text style={[styles.metricValue, { color: colors.foreground }]}>{lastHunt?.discoveredUrls.length ?? 0}</Text>
+            <Text style={[styles.metricLabel, { color: colors.mutedForeground }]}>روابط آخر استطلاع</Text>
+          </View>
+        </Surface>
+      ) : null}
       <Surface style={styles.scopeCard}>
         <View style={styles.sectionHeading}>
           <Feather name="shield" size={18} color={colors.primary} />
           <Text style={[styles.sectionTitle, { color: colors.foreground }]}>نطاقات الاختبار المصرّح بها</Text>
         </View>
+        <Text style={[styles.fieldLabel, { color: colors.foreground }]}>اسم المضيف / النطاق</Text>
         <TextInput
           value={targetHost}
           onChangeText={setTargetHost}
@@ -264,6 +283,7 @@ export default function CyberSecurityScreen() {
           placeholderTextColor={colors.mutedForeground}
           style={[styles.input, { color: colors.foreground, borderColor: colors.border, backgroundColor: colors.background }]}
         />
+        <Text style={[styles.fieldLabel, { color: colors.foreground }]}>مصدر التصريح وحدوده</Text>
         <TextInput
           value={authorization}
           onChangeText={setAuthorization}
@@ -513,6 +533,11 @@ function URLSafePath(url: string): string {
 }
 
 const styles = StyleSheet.create({
+  metricsCard: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-around', paddingVertical: 13, gap: 6 },
+  metricItem: { flex: 1, alignItems: 'center', gap: 3 },
+  metricValue: { fontSize: 21, fontWeight: '900', fontVariant: ['tabular-nums'] },
+  metricLabel: { fontSize: 10, fontWeight: '600', textAlign: 'center' },
+  metricDivider: { width: 1, height: 32 },
   panelTabs: { flexDirection: 'row-reverse', gap: 6, paddingHorizontal: 1 },
   panelTab: { flex: 1, minWidth: 0, minHeight: 42, borderWidth: 1, borderRadius: 11, paddingHorizontal: 5, flexDirection: 'row-reverse', alignItems: 'center', justifyContent: 'center', gap: 5 },
   panelTabText: { fontSize: 10, fontWeight: '800' },
