@@ -59,6 +59,7 @@ export interface HunterRunRecord {
   pageTitle?: string;
   pageUrl?: string;
   pageTextPreview?: string;
+  pageSourcePreview?: string;
   discoveredUrls: string[];
   networkRequests: number;
   notes: string[];
@@ -385,6 +386,7 @@ export async function runBrowserRecon(target: HunterTarget, signal?: AbortSignal
     record.pageTitle = page.title;
     record.pageUrl = page.url;
     record.pageTextPreview = page.text.slice(0, 12_000);
+    record.pageSourcePreview = (page.source ?? '').slice(0, 16_000);
     const network = (await browser.getNetworkLog()).filter((entry) => {
       try {
         const host = new URL(entry.url).hostname.toLowerCase();
