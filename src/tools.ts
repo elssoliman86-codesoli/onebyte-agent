@@ -318,7 +318,20 @@ export function toOpenAITools(specs: ToolSpec[]) {
 }
 
 export function needsApproval(spec: ToolSpec): boolean {
-  return spec.group === 'device_read' || spec.group === 'device_act';
+  if (spec.group === 'device_read' || spec.group === 'device_act') return true;
+
+  // External or state-changing operations must never run silently. Read-only
+  // local/web tools remain approval-free; these calls require an explicit
+  // user decision before their handler is invoked.
+  const approvalRequired = new Set([
+    'telegram_send_message',
+    'github_update_file',
+    'github_create_file',
+    'browser_click',
+    'browser_type_text',
+    'browser_send_request',
+  ]);
+  return approvalRequired.has(spec.name);
 }
 
 function str(args: Record<string, unknown>, key: string): string {
