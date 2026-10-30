@@ -17,6 +17,8 @@ import {
   type HunterTool,
 } from '@/src/hunter-tools';
 
+const DEFAULT_INPUT_SCHEMA = JSON.stringify({ type: 'object', properties: {}, required: [], additionalProperties: false }, null, 2);
+
 export default function HunterToolsScreen() {
   const colors = useColors();
   const [tools, setTools] = useState<HunterTool[]>([]);
@@ -24,6 +26,8 @@ export default function HunterToolsScreen() {
   const [selected, setSelected] = useState<HunterTool | null>(null);
   const [name, setName] = useState('');
   const [description, setDescription] = useState('');
+  const [inputSchemaText, setInputSchemaText] = useState(DEFAULT_INPUT_SCHEMA);
+  const [outputDescription, setOutputDescription] = useState('JSON structured result');
   const [source, setSource] = useState('def run(args: dict) -> dict:\n    """Analyze supplied evidence and return structured findings."""\n    return {"target": args.get("target", ""), "findings": []}');
   const [busy, setBusy] = useState(false);
   const [testingId, setTestingId] = useState<string | null>(null);
@@ -39,23 +43,30 @@ export default function HunterToolsScreen() {
     setSelected(tool);
     setName(tool.name);
     setDescription(tool.description);
+    setInputSchemaText(JSON.stringify(tool.inputSchema ?? {}, null, 2));
+    setOutputDescription(tool.outputDescription ?? 'JSON structured result');
     setSource(tool.source);
   }
 
   async function save() {
     try {
       setBusy(true);
+      const parsedSchema = JSON.parse(inputSchemaText) as Record<string, unknown>;
+      if (!parsedSchema || typeof parsedSchema !== 'object' || Array.isArray(parsedSchema)) throw new Error('مخطط المدخلات يجب أن يكون JSON object.');
       await saveHunterTool({
         id: selected?.id,
         name,
         description,
         source,
-        outputDescription: 'JSON structured result',
+        inputSchema: parsedSchema,
+        outputDescription,
         tags: ['custom', 'hunting'],
       });
       setSelected(null);
       setName('');
       setDescription('');
+      setInputSchemaText(DEFAULT_INPUT_SCHEMA);
+      setOutputDescription('JSON structured result');
       setSource('');
       await refresh();
       alertCompat('تم حفظ الأداة', 'حُفظ الكود كإصدار Draft. لا يتم اختبار الأداة أو اعتمادها تلقائيًا؛ راجع المصدر بنفسك، ثم شغّل اختبار Python يدويًا، وبعد نجاحه اضغط اعتماد الإصدار.');
@@ -134,6 +145,9 @@ export default function HunterToolsScreen() {
         <TextInput value={name} onChangeText={setName} placeholder="اسم الأداة" placeholderTextColor={colors.mutedForeground} style={[s.input, { color: colors.foreground, borderColor: colors.border }]} />
         <TextInput value={description} onChangeText={setDescription} placeholder="وظيفة الأداة والمدخلات والمخرجات" placeholderTextColor={colors.mutedForeground} style={[s.input, { color: colors.foreground, borderColor: colors.border }]} />
         <TextInput value={source} onChangeText={setSource} multiline autoCapitalize="none" autoCorrect={false} spellCheck={false} textAlignVertical="top" placeholder="Python source..." placeholderTextColor={colors.mutedForeground} style={[s.code, { color: colors.foreground, borderColor: colors.border, backgroundColor: colors.background }]} />
+        <Text style={[s.meta,{color:colors.mutedForeground}]}>Input schema — JSON</Text>
+        <TextInput value={inputSchemaText} onChangeText={setInputSchemaText} multiline autoCapitalize="none" autoCorrect={false} spellCheck={false} textAlignVertical="top" placeholder="JSON schema للمدخلات" placeholderTextColor={colors.mutedForeground} style={[s.code,{color:colors.foreground,borderColor:colors.border,backgroundColor:colors.background,minHeight:110}]} />
+        <TextInput value={outputDescription} onChangeText={setOutputDescription} placeholder="وصف شكل المخرجات" placeholderTextColor={colors.mutedForeground} style={[s.input,{color:colors.foreground,borderColor:colors.border}]} />
         {selected?.kind === 'python' && selected.status === 'draft' ? (
           <Pressable disabled={source !== selected.source} onPress={() => {
             void markHunterToolReviewed(selected.id).then(async () => {
