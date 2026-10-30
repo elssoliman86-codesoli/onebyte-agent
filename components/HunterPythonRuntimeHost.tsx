@@ -21,8 +21,8 @@ const HTML = `<!doctype html>
       "  pyodide = await loadPyodide({ indexURL: 'https://cdn.jsdelivr.net/pyodide/v${PYODIDE_VERSION}/full/' });",
       "  const blocked = function(){ throw new Error('Network access is disabled in the Python tool runtime.'); };",
       "  self.fetch = blocked; self.XMLHttpRequest = function(){ blocked(); }; self.WebSocket = function(){ blocked(); }; self.importScripts = blocked;",
-      "  pyodide.setStdout({ batched: function(s){ self.__stdout = ((self.__stdout || '') + s).slice(0, 32000); } });",
-      "  pyodide.setStderr({ batched: function(s){ self.__stderr = ((self.__stderr || '') + s).slice(0, 32000); } });",
+      "  pyodide.setStdout({ batched: function(s){ self.__stdout = ((self.__stdout || '') + s).slice(0, Math.max(1024, Math.min(64000, Number(data.maxOutputBytes) || 64000))); } });",
+      "  pyodide.setStderr({ batched: function(s){ self.__stderr = ((self.__stderr || '') + s).slice(0, Math.max(1024, Math.min(64000, Number(data.maxOutputBytes) || 64000))); } });",
       "  pyodide.globals.set('__hunter_args_json', JSON.stringify(data.args || {}));",
       "  pyodide.globals.set('__hunter_max_output', Math.max(1024, Math.min(64000, Number(data.maxOutputBytes) || 64000)));",
       "  const setup = 'import sys, time\\n__hunter_deadline = time.monotonic() + ' + String(Math.max(1, Math.min(30000, Number(data.timeoutMs) || 8000)) / 1000) + '\\ndef __hunter_trace(frame, event, arg):\\n if time.monotonic() > __hunter_deadline: raise TimeoutError(\\\"Python tool execution timed out\\\")\\n return __hunter_trace\\nsys.settrace(__hunter_trace)';",
@@ -41,7 +41,7 @@ const HTML = `<!doctype html>
       "  await pyodide.runPythonAsync(wrapper);",
       "  const result = pyodide.globals.get('__hunter_json');",
       "  const stdout = pyodide.globals.get('__hunter_stdout'); const output = String(stdout || '') + (self.__stdout || '') + (self.__stderr || '') + String(result || 'null');",
-      "  self.postMessage({ id: data.id, ok: true, output: output.slice(0, 64000), value: String(result || 'null') });",
+      "  self.postMessage({ id: data.id, ok: true, output: output.slice(0, Math.max(1024, Math.min(64000, Number(data.maxOutputBytes) || 64000))), value: String(result || 'null') });",
       " } catch(error) { self.postMessage({ id: data.id, ok: false, error: String(error && error.message || error).slice(0, 4000) }); }",
       "};"
     ].join('\\n');
