@@ -386,6 +386,23 @@ export async function runAgent({
       }
 
     if (result.text) finalText += result.text + (result.toolCalls.length ? '\n\n' : '');
+
+    // A provider's length stop is not a complete answer. Continue from the
+    // exact last text in a fresh round while preserving the accumulated reply.
+    if (!result.toolCalls.length && result.finishReason === 'length' && round < maxSteps) {
+      wire.push({ role: 'assistant', content: result.text });
+      wire.push({ role: 'user', content: 'أكمل من آخر كلمة توقفت عندها دون إعادة ما سبق. أنهِ الرد كاملًا، وإذا لم يعد هناك المزيد فاكتب الخلاصة النهائية.' });
+      await saveCheckpoint(round + 1);
+      continue;
+    }
+    if (!result.toolCalls.length && result.finishReason === 'length' && round >= maxSteps) {
+      finalText += '\n\n[تنبيه: وصل الموديل إلى حد طول الرد قبل إكماله. أرسل «أكمل» للمتابعة.]';
+      onText(finalText);
+    }
+    if (!result.toolCalls.length && !result.streamComplete && result.text.trim()) {
+      finalText += '\n\n[تنبيه: انتهى الاتصال دون إشارة اكتمال مؤكدة من المزود؛ تم حفظ النص المستلم وقد يكون الرد ناقصًا.]';
+      onText(finalText);
+    }
     if (!result.toolCalls.length) {
       // If the user explicitly asked us to perform an operation, a plain-text
       // answer is not evidence that it was performed. Surface that distinction.
