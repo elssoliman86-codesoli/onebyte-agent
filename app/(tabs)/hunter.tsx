@@ -428,6 +428,7 @@ export default function CyberSecurityScreen() {
       ) : null}
 
       {activePanel === 'activity' ? (
+      <>
       {result ? (
         <Surface style={styles.resultCard}>
           <View style={styles.sectionHeading}>
@@ -441,6 +442,8 @@ export default function CyberSecurityScreen() {
           <Pressable onPress={() => {
             setMethod(result.method);
             setUrl(result.url);
+            setShowRequestEditor(true);
+            setActivePanel('request');
           }} style={[styles.secondaryButton, { borderColor: colors.border }]}>
             <Feather name="rotate-ccw" size={15} color={colors.foreground} />
             <Text style={[styles.secondaryText, { color: colors.foreground }]}>إعادة تجهيز الطلب</Text>
