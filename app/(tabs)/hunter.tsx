@@ -266,14 +266,14 @@ export default function CyberSecurityScreen() {
               const target = targets.find((item) => item.id === selectedTargetId) ?? targets[0];
               if (!target) return;
               setHuntRunning(true);
-              const rootHost = target.host.replace(/^\\*\\./, '');
+              const rootHost = target.host.startsWith('*.') ? target.host.slice(2) : target.host;
               const startUrl = target.host.startsWith('*.') ? `https://www.${rootHost}/` : `https://${rootHost}/`;
               router.push({ pathname: '/browser', params: { url: startUrl } });
               void runBrowserRecon(target).then((run) => {
                 setLastHunt(run);
                 alertCompat(
                   run.status === 'completed' ? 'اكتمل الاستطلاع الأولي' : 'اكتمل جزء من الاستطلاع',
-                  `الهدف: ${run.target}\\nالروابط المرصودة: ${run.discoveredUrls.length}\\nطلبات الشبكة: ${run.networkRequests}\\nالحالة: ${run.status}\\nراجع مكتبة الأدوات وسجل Hunting للتفاصيل.`,
+                  `الهدف: ${run.target}\nالروابط المرصودة: ${run.discoveredUrls.length}\nالنطاقات الفرعية: ${run.discoveredSubdomains.length}\nطلبات الشبكة: ${run.networkRequests}\nالحالة: ${run.status}\nراجع مكتبة الأدوات وسجل Hunting للتفاصيل.`,
                 );
               }).catch((e) => alertCompat('تعذّر بدء Hunting', e instanceof Error ? e.message : 'خطأ غير معروف'))
                 .finally(() => setHuntRunning(false));
