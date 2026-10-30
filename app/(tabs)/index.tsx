@@ -2079,6 +2079,7 @@ const styles = StyleSheet.create({
   modeEmptyText: { fontFamily: typography.fontFamily, fontSize: typography.sm + 1, textAlign: 'center' },
   modeActionButton: {
     minHeight: 40,
+    flexShrink: 0,
     flexDirection: 'row-reverse',
     alignItems: 'center',
     justifyContent: 'center',
@@ -2090,6 +2091,7 @@ const styles = StyleSheet.create({
   modeActionText: { fontFamily: typography.fontFamily, fontSize: typography.xs + 1, fontWeight: typography.weightBold },
   headerButton: {
     width: 40,
+    flexShrink: 0,
     height: 40,
     alignItems: 'center',
     justifyContent: 'center',
@@ -2300,7 +2302,7 @@ const styles = StyleSheet.create({
   terminalOutput: { maxHeight: 160, borderTopWidth: 1, borderTopColor: 'rgba(128,128,128,0.25)', paddingHorizontal: spacing.sm, paddingVertical: spacing.xs },
   terminalLine: { fontFamily: 'monospace', fontSize: 11, lineHeight: 17, textAlign: 'left', writingDirection: 'ltr', paddingVertical: 1 },
   attachPreviewWrap: { flexDirection: 'row', flexWrap: 'wrap', gap: spacing.xs, paddingHorizontal: spacing.sm + 2, paddingTop: spacing.xs },
-  composerButtons: { flexDirection: 'row-reverse', alignItems: 'flex-end', gap: spacing.xs + 2 },
+  composerButtons: { flexDirection: 'row-reverse', alignItems: 'flex-end', gap: spacing.xs + 2, flexShrink: 0 },
   fileChipsRow: { flexDirection: 'row-reverse', flexWrap: 'wrap', gap: spacing.xs + 2, marginTop: spacing.sm },
   fileChip: {
     flexDirection: 'row-reverse',
@@ -2369,6 +2371,7 @@ const styles = StyleSheet.create({
   },
   input: {
     flex: 1,
+    minWidth: 0,
     minHeight: 44,
     maxHeight: 120,
     paddingTop: spacing.sm + 1,
@@ -2379,7 +2382,7 @@ const styles = StyleSheet.create({
     includeFontPadding: false,
     textAlign: 'right',
   },
-  sendButton: { width: 40, height: 40, borderRadius: radius.full, alignItems: 'center', justifyContent: 'center' },
+  sendButton: { width: 40, height: 40, flexShrink: 0, borderRadius: radius.full, alignItems: 'center', justifyContent: 'center' },
   privacyNote: { fontSize: 9, lineHeight: 13, textAlign: 'center', marginTop: spacing.xs + 3 },
   modalBackdrop: { flex: 1, backgroundColor: 'rgba(4,13,10,0.45)', justifyContent: 'flex-end' },
   historySheet: { maxHeight: '78%', minHeight: '44%', borderTopLeftRadius: radius.xl, borderTopRightRadius: radius.xl, paddingHorizontal: spacing.md + 3, paddingTop: spacing.md + 2, paddingBottom: spacing.lg },
