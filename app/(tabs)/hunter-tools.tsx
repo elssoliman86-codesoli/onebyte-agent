@@ -82,6 +82,7 @@ export default function HunterToolsScreen() {
   }
 
   const verifiedCount = useMemo(() => tools.filter((tool) => tool.status === 'verified').length, [tools]);
+  const selectedVersionUnchanged = !!selected && selected.name === name && selected.description === description && selected.source === source && selected.outputDescription === outputDescription && inputSchemaText === JSON.stringify(selected.inputSchema ?? {}, null, 2);
 
   return (
     <AppScreen
@@ -151,15 +152,15 @@ export default function HunterToolsScreen() {
         <TextInput value={inputSchemaText} onChangeText={setInputSchemaText} multiline autoCapitalize="none" autoCorrect={false} spellCheck={false} textAlignVertical="top" placeholder="JSON schema للمدخلات" placeholderTextColor={colors.mutedForeground} style={[s.code,{color:colors.foreground,borderColor:colors.border,backgroundColor:colors.background,minHeight:110}]} />
         <TextInput value={outputDescription} onChangeText={setOutputDescription} placeholder="وصف شكل المخرجات" placeholderTextColor={colors.mutedForeground} style={[s.input,{color:colors.foreground,borderColor:colors.border}]} />
         {selected?.kind === 'python' && selected.status === 'draft' ? (
-          <Pressable disabled={source !== selected.source} onPress={() => {
+          <Pressable disabled={!selectedVersionUnchanged} onPress={() => {
             void markHunterToolReviewed(selected.id).then(async () => {
               await refresh();
               const updated = (await loadHunterTools()).find((tool) => tool.id === selected.id);
               if (updated) setSelected(updated);
               alertCompat('تم تسجيل مراجعة المصدر', 'أصبح هذا الإصدار مؤهلًا لاختبار التشغيل اليدوي. إذا عدّلت الكود، احفظ إصدارًا جديدًا ثم راجعه مرة أخرى.');
             }).catch((error) => alertCompat('تعذّرت مراجعة المصدر', error instanceof Error ? error.message : 'خطأ غير معروف'));
-          }} style={[s.smallButton,{borderColor:colors.success,opacity:source===selected.source?1:0.45}]}>
-            <Text style={{color:colors.success,fontWeight:'700',fontSize:11}}>{source===selected.source?'أؤكد أنني راجعت الكود':'احفظ التعديلات أولًا ثم راجع الإصدار'}</Text>
+          }} style={[s.smallButton,{borderColor:colors.success,opacity:selectedVersionUnchanged?1:0.45}]}>
+            <Text style={{color:colors.success,fontWeight:'700',fontSize:11}}>{selectedVersionUnchanged?'أؤكد أنني راجعت الكود والمخطط':'احفظ التعديلات أولًا ثم راجع الإصدار'}</Text>
           </Pressable>
         ) : null}
         <Pressable disabled={busy} onPress={() => void save()} style={[s.primary, { backgroundColor: colors.primary, opacity: busy ? 0.6 : 1 }]}>
