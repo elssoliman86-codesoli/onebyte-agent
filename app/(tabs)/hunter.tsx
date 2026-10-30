@@ -7,7 +7,7 @@ import { useColors } from '@/hooks/useColors';
 import { ScreenTopBar } from '@/components/PhoneDrawer';
 import { AppScreen, Surface } from '@/components/Ui';
 import { alertCompat } from '@/src/web-alert';
-import { runBrowserRecon, runSafeHttpHeaderChecks, type HunterRunRecord } from '@/src/hunter-tools';
+import { loadHunterRuns, runBrowserRecon, runSafeHttpHeaderChecks, type HunterRunRecord } from '@/src/hunter-tools';
 import {
   hostOf,
   isAuthorized,
@@ -55,10 +55,12 @@ export default function CyberSecurityScreen() {
   const capturedAt = Array.isArray(routeParams.capturedAt) ? routeParams.capturedAt[0] : routeParams.capturedAt;
 
   const refresh = useCallback(async () => {
-    const [nextTargets, nextLog] = await Promise.all([loadTargets(), loadHunterLog()]);
+    const [nextTargets, nextLog, nextRuns] = await Promise.all([loadTargets(), loadHunterLog(), loadHunterRuns()]);
     if (aliveRef.current) {
       setTargets(nextTargets);
       setLog(nextLog);
+      setLastHunt(nextRuns[0] ?? null);
+      setSelectedTargetId((current) => current && nextTargets.some((target) => target.id === current) ? current : nextTargets.find((target) => isAuthorized(`https://${target.host.startsWith('*.') ? 'www.' + target.host.slice(2) : target.host}/`, [target]).ok)?.id ?? null);
     }
   }, []);
 
@@ -117,6 +119,27 @@ export default function CyberSecurityScreen() {
     setShowRequestEditor(false);
     setActivePanel('overview');
     setError('');
+  }
+
+  function reconfirmTarget(target: HunterTarget) {
+    alertCompat(
+      'إعادة تأكيد تصريح الاختبار',
+      `هل تؤكد أن الإذن الخاص بـ ${target.host} ما زال صالحًا، وأن المصدر والنطاق المسجلين يسمحان بهذا الاختبار؟ هذا إقرار منك وليس تحققًا من مالك الموقع.`,
+      [
+        { text: 'إلغاء', style: 'cancel' },
+        {
+          text: 'أؤكد وأفعّل النطاق',
+          onPress: () => {
+            const updated = targets.map((item) => item.id === target.id
+              ? { ...item, authorizationConfirmedAt: new Date().toISOString() }
+              : item);
+            setTargets(updated);
+            void saveTargets(updated).then(() => setError('تم تسجيل إقرارك. راجع حدود البرنامج قبل كل اختبار.'))
+              .catch(() => alertCompat('تعذّر حفظ التأكيد', 'حاول مرة أخرى.'));
+          },
+        },
+      ],
+    );
   }
 
   async function sendRequest() {
@@ -207,7 +230,7 @@ export default function CyberSecurityScreen() {
 
   return (
     <AppScreen
-      title="Cybersecurity Lab"
+      title="مختبر الأمن السيبراني"
       eyebrow="Authorized HTTP testing"
       subtitle="عدّل الطلبات وأرسلها وأوقفها واقرأ الاستجابة. أضف نطاقًا مصرحًا به أولًا؛ لا يتم إرسال طلبات خارج النطاق."
       topBar={<ScreenTopBar active="hunter" />}
@@ -270,9 +293,9 @@ export default function CyberSecurityScreen() {
               <Text style={[styles.muted, { color: target.authorizationConfirmedAt ? colors.success : colors.warning }]}>{target.authorizationConfirmedAt ? 'إقرار المستخدم مسجل · ليس تحققًا خارجيًا' : 'قديم — يحتاج إعادة تأكيد التصريح'}</Text>
             </View>
             {!target.authorizationConfirmedAt ? (
-              <Pressable accessibilityRole="button" onPress={() => alertCompat('إعادة تأكيد مطلوبة', 'احذف هذا النطاق وأعد إضافته بعد مراجعة مصدر التصريح وحدوده.') } style={[styles.secondaryButton,{borderColor:colors.warning,paddingHorizontal:8,paddingVertical:5}]}>
+              <Pressable accessibilityRole="button" onPress={() => reconfirmTarget(target)} style={[styles.secondaryButton,{borderColor:colors.warning,paddingHorizontal:8,paddingVertical:5}]}>
                 <Feather name="alert-circle" size={13} color={colors.warning} />
-                <Text style={[styles.secondaryText,{color:colors.warning}]}>إعادة إضافة</Text>
+                <Text style={[styles.secondaryText,{color:colors.warning}]}>تأكيد التصريح</Text>
               </Pressable>
             ) : null}
             <Pressable accessibilityRole="button" onPress={() => { setSelectedTargetId(target.id); setUrl(`https://${target.host.startsWith('*.') ? 'www.' + target.host.slice(2) : target.host}/`); setShowRequestEditor(true); setActivePanel('request'); setError('تم اختيار النطاق المحفوظ. راجع قواعد البرنامج وحدود النطاق قبل إرسال أي طلب.'); }} style={[styles.secondaryButton,{borderColor:colors.border,paddingHorizontal:8,paddingVertical:5}]}>
