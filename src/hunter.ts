@@ -97,7 +97,7 @@ export function isAuthorized(url: string, targets: HunterTarget[]): { ok: boolea
   if (!match) {
     return { ok: false, reason: `النطاق ${host} مش في قايمة التارجت المصرح بيها.` };
   }
-  if (!match.authorization.trim() || !match.authorizationConfirmedAt) {
+  if (typeof match.authorization !== 'string' || !match.authorization.trim() || !match.authorizationConfirmedAt) {
     return { ok: false, reason: 'التارجت محفوظ لكنه غير مفعّل: راجع مصدر التصريح وأكّد امتلاكك للإذن والنطاق قبل الاختبار.' };
   }
   return { ok: true, reason: 'تم تأكيد الإذن من المستخدم؛ راجع شروط البرنامج قبل كل اختبار.' };
