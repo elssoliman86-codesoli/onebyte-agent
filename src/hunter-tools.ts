@@ -482,6 +482,26 @@ export async function runBrowserRecon(target: HunterTarget, signal?: AbortSignal
       const generated = await generateHunterPythonTool(modelPlan.missingTool, { target: target.host, pageTitle: page.title, discoveredUrls: urls.slice(0, 80), networkRequestCount: network.length });
       if (generated) record.notes.push(generated.status === 'verified' ? 'أنشأ Tool Builder الأداة واختبرها تلقائيًا واعتمدها بعد اجتياز بوابة Python الآمن: ' + generated.name + ' (v' + generated.version + ').' : 'أنشأ Tool Builder مسودة أداة: ' + generated.name + ' (v' + generated.version + '). لم تجتز شروط الاعتماد التلقائي؛ راجع الكود واختبرها يدويًا.');
     }
+    // Reuse previously verified Python tools against this run's collected evidence.
+    const reusableTools = (await loadHunterTools()).filter((tool) => tool.kind === 'python' && tool.status === 'verified').slice(0, 10);
+    for (const tool of reusableTools) {
+      try {
+        const output = await runPythonHunterTool(tool.id, {
+          target: target.host,
+          pageUrl: page.url,
+          pageTitle: page.title,
+          pageText: page.text.slice(0, 12000),
+          pageSource: (page.source ?? '').slice(0, 16000),
+          urls: urls.slice(0, 200),
+          javascriptAssets: jsAssets.slice(0, 100),
+          networkRequests: network.slice(0, 100).map((entry) => ({ method: entry.method, url: entry.url, status: entry.status })),
+          evidence: urls.slice(0, 200),
+        });
+        record.notes.push('إعادة استخدام الأداة ' + tool.name + ' (v' + tool.version + '): ' + output.slice(0, 1800));
+      } catch (error) {
+        record.notes.push('تعذّر تشغيل الأداة المحفوظة ' + tool.name + ': ' + (error instanceof Error ? error.message : 'runtime error'));
+      }
+    }
     plan[4].status = 'done';
     record.status = 'completed';
     void snapshot;
