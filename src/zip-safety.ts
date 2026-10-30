@@ -73,7 +73,7 @@ export function preflightZip(archive: Uint8Array): void {
     if (nameEnd + extraLength + commentLength > centralOffset + centralSize) throw new Error('اسم ملف تالف داخل ZIP.');
     const path = strFromU8(archive.subarray(nameStart, nameEnd));
     const isDirectory = path.endsWith('/');
-    if (!path || path.includes(String.fromCharCode(0)) || path.startsWith('/') || path.includes('\\') || /^[a-zA-Z]:/.test(path) ||
+    if (!path || path.length > 240 || path.includes(String.fromCharCode(0)) || path.startsWith('/') || path.includes('\\') || /^[a-zA-Z]:/.test(path) ||
         path.split('/').some(part => part === '.' || part === '..')) {
       throw new Error('مسار غير آمن داخل الأرشيف: ' + path);
     }
