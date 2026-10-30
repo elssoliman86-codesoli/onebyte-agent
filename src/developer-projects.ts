@@ -47,7 +47,7 @@ const id = (prefix: string) => `${prefix}-${Date.now()}-${Math.random().toString
 function safeProjectPath(value: string): string {
   const path = value.trim();
   if (path !== value || !path || path.length > 240 || path.startsWith('/') ||
-    path.includes('\\\\') || /^[a-zA-Z]:/.test(path) ||
+    path.includes(String.fromCharCode(92)) || /^[a-zA-Z]:/.test(path) ||
     path.split('/').some(part => !part || part === '.' || part === '..' || !part.trim())) {
     throw new Error('مسار الملف غير صالح.');
   }
