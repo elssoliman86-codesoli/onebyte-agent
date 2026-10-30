@@ -42,6 +42,7 @@ export function DeveloperWorkspace() {
   const [selectedPath, setSelectedPath] = useState('');
   const selectedPathRef = useRef('');
   const refreshSequenceRef = useRef(0);
+  const projectSessionRef = useRef<string | null>(null);
   const [openPaths, setOpenPaths] = useState<string[]>([]);
   const [renameOpen, setRenameOpen] = useState(false);
   const [renameDraft, setRenameDraft] = useState('');
@@ -62,6 +63,7 @@ export function DeveloperWorkspace() {
     const sequence = ++refreshSequenceRef.current;
     if (!activeSession) {
       setProject(null);
+      projectSessionRef.current = null;
       selectedPathRef.current = '';
       setSelectedPath('');
       setDraft('');
@@ -69,6 +71,11 @@ export function DeveloperWorkspace() {
       return;
     }
     const sessionId = activeSession.id;
+    if (projectSessionRef.current !== sessionId) {
+      projectSessionRef.current = sessionId;
+      selectedPathRef.current = '';
+      setOpenPaths([]);
+    }
     const next = await getDeveloperProject(sessionId, activeSession.title);
     if (sequence !== refreshSequenceRef.current) return;
     setProject(next);
