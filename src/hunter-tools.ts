@@ -644,7 +644,7 @@ export async function runBrowserRecon(target: HunterTarget, signal?: AbortSignal
           : {};
         const toolArgs = Object.keys(properties).length
           ? Object.fromEntries(Object.keys(properties).filter((key) => key in availableEvidence).map((key) => [key, availableEvidence[key]]))
-          : availableEvidence;
+          : tool.inputSchema?.additionalProperties === false ? {} : availableEvidence;
         const output = await runPythonHunterTool(tool.id, toolArgs);
         record.notes.push('إعادة استخدام الأداة ' + tool.name + ' (v' + tool.version + '): ' + output.slice(0, 1800));
       } catch (error) {
