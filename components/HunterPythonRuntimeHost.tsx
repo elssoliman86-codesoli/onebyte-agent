@@ -38,7 +38,7 @@ const HTML = `<!doctype html>
       "   ' if root in __hunter_blocked_imports: raise ImportError(\\\"Module is disabled in this runtime: \\\" + root)',",
       "   ' return __hunter_original_import(name, globals, locals, fromlist, level)',",
       "   'builtins.__import__ = __hunter_safe_import'",
-      "  ].join('\\\\n');",
+      "  ].join('\\n');",
       "  await pyodide.runPythonAsync(restrictions);",
       "  await pyodide.runPythonAsync(data.source);",
       "  const wrapper = 'import json, io, contextlib, inspect, sys\\n' +",
