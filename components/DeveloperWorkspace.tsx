@@ -48,6 +48,7 @@ export function DeveloperWorkspace() {
   const [renameDraft, setRenameDraft] = useState('');
   const [collapsedFolders, setCollapsedFolders] = useState<Record<string, boolean>>({});
   const [draft, setDraft] = useState('');
+  const draftRef = useRef('');
   const [newPath, setNewPath] = useState('src/main.ts');
   const [goal, setGoal] = useState('');
   const [planOpen, setPlanOpen] = useState(false);
@@ -58,6 +59,8 @@ export function DeveloperWorkspace() {
   const [reviewPath, setReviewPath] = useState('');
   const [reviewOpen, setReviewOpen] = useState(false);
   const [codeModelPickerOpen, setCodeModelPickerOpen] = useState(false);
+
+  useEffect(() => { draftRef.current = draft; }, [draft]);
 
   const refresh = useCallback(async (preferredPath?: string) => {
     const sequence = ++refreshSequenceRef.current;
@@ -79,11 +82,14 @@ export function DeveloperWorkspace() {
     const next = await getDeveloperProject(sessionId, activeSession.title);
     if (sequence !== refreshSequenceRef.current) return;
     setProject(next);
-    const chosen = next.files.find(f => f.path === (preferredPath ?? selectedPathRef.current)) ?? next.files[0];
+    const previousPath = selectedPathRef.current;
+    const previousFile = next.files.find(file => file.path === previousPath);
+    const chosen = next.files.find(f => f.path === preferredPath) ?? previousFile ?? next.files[0];
     const path = chosen?.path ?? '';
+    const preserveUnsaved = !!chosen && chosen.path === previousPath && !!previousFile && draftRef.current !== previousFile.content;
     selectedPathRef.current = path;
     setSelectedPath(path);
-    setDraft(chosen?.content ?? '');
+    setDraft(preserveUnsaved ? draftRef.current : (chosen?.content ?? ''));
     setOpenPaths(current => {
       const valid = current.filter(item => next.files.some(file => file.path === item));
       return path && !valid.includes(path) ? [...valid, path] : valid;
