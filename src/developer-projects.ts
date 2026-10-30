@@ -136,11 +136,7 @@ export async function importProjectFiles(
   const normalized = new Map<string, string>();
   let totalBytes = 0;
   for (const entry of entries) {
-    const path = entry.path.trim();
-    if (!path || path.includes(String.fromCharCode(0)) || path.startsWith('/') || path.includes('\\') || /^[a-zA-Z]:/.test(path) ||
-      path.split('/').some(part => !part.trim() || part === '.' || part === '..')) {
-      throw new Error('الأرشيف يحتوي على مسار ملف غير آمن.');
-    }
+    const path = safeProjectPath(entry.path.trim());
     if (typeof entry.content !== 'string') throw new Error('محتوى ملف غير صالح.');
     const bytes = strToU8(entry.content).length;
     if (bytes > 25 * 1024 * 1024) throw new Error(`الملف ${path} يتجاوز حد 25MB.`);
