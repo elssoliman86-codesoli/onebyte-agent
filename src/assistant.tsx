@@ -71,6 +71,9 @@ export interface ProviderSettings {
   free?: boolean;
   /** Keyless providers (Free OneByte) need no API key at all. */
   keyless?: boolean;
+  /** Provider-reported model capabilities. null means unknown. */
+  supportsTools?: boolean | null;
+  supportsImages?: boolean | null;
 }
 
 export interface AgentSettings {
@@ -226,6 +229,8 @@ const DEFAULT_PROVIDER: ProviderSettings = {
   providerName: 'Free OneByte',
   keyless: true,
   free: true,
+  supportsTools: null,
+  supportsImages: null,
 };
 
 const DEFAULT_AGENT: AgentSettings = {
@@ -610,6 +615,8 @@ export function AssistantProvider({
         completionPrice: settings.completionPrice ?? null,
         free: settings.free ?? false,
         keyless: settings.keyless ?? false,
+        supportsTools: settings.supportsTools ?? null,
+        supportsImages: settings.supportsImages ?? null,
       };
       await persist({ provider });
     },
