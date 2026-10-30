@@ -231,6 +231,27 @@ export async function approveHunterPythonTool(id: string): Promise<void> {
   await setHunterToolStatus(id, 'verified', 'User reviewed source and approved after smoke test.');
 }
 
+export async function runHunterRegistryTool(id: string, args: Record<string, unknown>): Promise<string> {
+  const tool = (await loadHunterTools()).find((item) => item.id === id);
+  if (!tool || tool.status !== 'verified') throw new Error('الأداة غير موجودة أو لم يتم اعتمادها.');
+  let result: string;
+  if (tool.kind === 'python') {
+    result = await runPythonHunterTool(id, args);
+  } else if (id === 'hunter.extract-endpoints') {
+    const pageText = typeof args.pageText === 'string' ? args.pageText : '';
+    const targetHost = typeof args.targetHost === 'string' ? args.targetHost : '';
+    const urls = Array.isArray(args.urls) ? args.urls.filter((item): item is string => typeof item === 'string') : [];
+    const snapshot: EmbeddedBrowserSnapshot = { url: typeof args.pageUrl === 'string' ? args.pageUrl : 'https://' + targetHost + '/', title: '', text: pageText, elements: [] };
+    result = JSON.stringify({ endpoints: collectEndpointCandidates(snapshot, [], targetHost), suppliedUrlCount: urls.length });
+  } else if (id === 'hunter.javascript-inventory') {
+    const urls = Array.isArray(args.urls) ? args.urls.filter((item): item is string => typeof item === 'string') : [];
+    result = JSON.stringify({ javascriptAssets: collectJavaScriptAssets(urls) });
+  } else { throw new Error('نوع الأداة المدمجة غير مدعوم.'); }
+  const tools = await loadHunterTools();
+  await persistTools(tools.map((item) => item.id === id ? { ...item, lastUsedAt: now(), useCount: item.useCount + 1 } : item));
+  return result.slice(0, 64_000);
+}
+
 export async function runPythonHunterTool(id: string, args: Record<string, unknown>): Promise<string> {
   const tool = (await loadHunterTools()).find((item) => item.id === id);
   if (!tool || tool.kind !== 'python') throw new Error('أداة Python غير موجودة.');
