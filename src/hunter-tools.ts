@@ -7,6 +7,7 @@
  * module never evaluates generated source in the React Native JS process.
  */
 import { storage } from './storage';
+import { endpointFor } from './model-provider';
 import {
   isAuthorized,
   type HunterTarget,
@@ -265,6 +266,50 @@ export async function saveHunterRun(run: HunterRunRecord): Promise<void> {
   await storage.writeRawJSON(RUNS_KEY, [run, ...runs.filter((item) => item.id !== run.id)].slice(0, MAX_RUNS));
 }
 
+interface AdaptiveHuntPlan { summary: string; nextSteps: string[]; missingTool?: { name: string; description: string; purpose: string }; }
+
+async function callHunterModel(messages: { role: 'system' | 'user'; content: string }[]): Promise<string | null> {
+  const settings = await storage.getProvider();
+  if (!settings.baseUrl.trim() || !settings.model.trim()) return null;
+  const apiKey = settings.keyless ? '' : (await storage.readApiKey()) ?? '';
+  if (!settings.keyless && !apiKey) return null;
+  const controller = new AbortController();
+  const timeout = setTimeout(() => controller.abort(), 35_000);
+  try {
+    const response = await fetch(endpointFor(settings.baseUrl), { method: 'POST', headers: { 'Content-Type': 'application/json', ...(apiKey ? { Authorization: 'Bearer ' + apiKey } : {}) }, body: JSON.stringify({ model: settings.model, messages, temperature: 0.1, stream: false }), signal: controller.signal });
+    if (!response.ok) throw new Error('Hunter model HTTP ' + response.status);
+    const payload = await response.json() as { choices?: { message?: { content?: string } }[] };
+    return payload.choices?.[0]?.message?.content?.trim() ?? null;
+  } finally { clearTimeout(timeout); }
+}
+
+async function createAdaptiveHuntPlan(target: HunterTarget, page: EmbeddedBrowserSnapshot, network: EmbeddedBrowserNetworkEntry[], urls: string[]): Promise<AdaptiveHuntPlan> {
+  const fallback: AdaptiveHuntPlan = { summary: 'استطلاع سلبي أولي؛ يلزم تحليل يدوي للـ JavaScript والـ endpoints قبل اقتراح اختبارات إضافية.', nextSteps: ['تحليل ملفات JavaScript المرصودة', 'تصنيف endpoints حسب الوظيفة', 'مراجعة النطاق والاستثناءات قبل أي اختبار نشط'] };
+  try {
+    const raw = await callHunterModel([
+      { role: 'system', content: 'You are a defensive bug-bounty hunting planner. Use ONLY passive observations supplied. Never suggest brute force, credential attacks, denial of service, destructive actions, scope expansion, or requests to unapproved hosts. Return JSON only: {"summary":"...","next_steps":["..."],"missing_tool":{"name":"...","description":"...","purpose":"..."} or null}. Suggest a reusable Python tool only if the current registry lacks a useful capability. Do not claim execution or verification.' },
+      { role: 'user', content: JSON.stringify({ authorizedTarget: target.host, authorizationNote: target.authorization.slice(0, 1200), page: { url: page.url, title: page.title, visibleText: page.text.slice(0, 7000) }, observedNetwork: network.slice(0, 60).map((entry) => ({ method: entry.method, url: entry.url, status: entry.status })), discoveredUrls: urls.slice(0, 100), toolRegistry: (await loadHunterTools()).map((tool) => ({ id: tool.id, name: tool.name, description: tool.description, kind: tool.kind, status: tool.status })) }) },
+    ]);
+    if (!raw) return fallback;
+    const parsed = JSON.parse(raw.trim().replace(/^```(?:json)?\s*/i, '').replace(/\s*```$/, '')) as { summary?: unknown; next_steps?: unknown; missing_tool?: unknown };
+    const missing = parsed.missing_tool && typeof parsed.missing_tool === 'object' ? parsed.missing_tool as Record<string, unknown> : null;
+    return { summary: typeof parsed.summary === 'string' ? parsed.summary.slice(0, 600) : fallback.summary, nextSteps: Array.isArray(parsed.next_steps) ? parsed.next_steps.filter((item): item is string => typeof item === 'string').slice(0, 8) : fallback.nextSteps, missingTool: missing && typeof missing.name === 'string' && typeof missing.description === 'string' && typeof missing.purpose === 'string' ? { name: missing.name.slice(0, 64), description: missing.description.slice(0, 500), purpose: missing.purpose.slice(0, 1200) } : undefined };
+  } catch { return fallback; }
+}
+
+async function generateHunterPythonTool(need: { name: string; description: string; purpose: string }, context: { target: string; pageTitle: string; discoveredUrls: string[]; networkRequestCount: number }): Promise<HunterTool | null> {
+  try {
+    const raw = await callHunterModel([
+      { role: 'system', content: 'Create a reusable passive-only Python helper for an authorized security research app. Define exactly one public function run(args: dict) -> dict. Use only Python standard library. No network, subprocess, filesystem, dynamic imports, eval or exec. Analyze only evidence passed in args. Return JSON only: {"name":"...","description":"...","source":"complete Python source","output_description":"..."}.' },
+      { role: 'user', content: JSON.stringify({ requestedTool: need, evidenceContext: context, constraints: 'Offline analysis of supplied evidence only. No active scanning, sockets, or external targets.' }) },
+    ]);
+    if (!raw) return null;
+    const parsed = JSON.parse(raw.trim().replace(/^```(?:json)?\s*/i, '').replace(/\s*```$/, '')) as Record<string, unknown>;
+    if (typeof parsed.name !== 'string' || typeof parsed.description !== 'string' || typeof parsed.source !== 'string') return null;
+    return await saveHunterTool({ name: parsed.name.slice(0, 64), description: parsed.description.slice(0, 500), source: parsed.source, outputDescription: typeof parsed.output_description === 'string' ? parsed.output_description.slice(0, 500) : 'Structured JSON result', tags: ['generated', 'passive-analysis'] });
+  } catch { return null; }
+}
+
 /**
  * A conservative browser-first reconnaissance pass. It never probes newly
  * discovered hosts; every request stays on the explicitly authorized host tree.
@@ -316,6 +361,13 @@ export async function runBrowserRecon(target: HunterTarget, signal?: AbortSignal
     const jsAssets = collectJavaScriptAssets(urls);
     record.notes.push(`تم رصد ${urls.length} رابطًا داخل النطاق و${jsAssets.length} ملف JavaScript.`);
     record.notes.push('لم يتم إرسال طلبات تخمين أو brute-force أو اختبارات نشطة.');
+    const modelPlan = await createAdaptiveHuntPlan(target, page, network, urls);
+    if (modelPlan.summary) record.notes.push('خطة الموديل: ' + modelPlan.summary);
+    if (modelPlan.nextSteps.length) record.notes.push('الخطوات المقترحة: ' + modelPlan.nextSteps.join(' | '));
+    if (modelPlan.missingTool) {
+      const generated = await generateHunterPythonTool(modelPlan.missingTool, { target: target.host, pageTitle: page.title, discoveredUrls: urls.slice(0, 80), networkRequestCount: network.length });
+      if (generated) record.notes.push('أنشأ Tool Builder مسودة أداة جديدة: ' + generated.name + ' (v' + generated.version + '). لم يتم تشغيلها أو اعتمادها.');
+    }
     plan[4].status = 'done';
     record.status = 'completed';
     void snapshot;
