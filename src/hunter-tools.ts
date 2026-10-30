@@ -108,7 +108,10 @@ function validateToolArgs(schema: Record<string, unknown>, args: Record<string, 
   assertToolInputSchema(schema);
   const properties = (schema.properties ?? {}) as Record<string, unknown>;
   const required = Array.isArray(schema.required) ? schema.required as string[] : [];
-  for (const key of required) if (!(key in args)) throw new Error('مدخل مطلوب مفقود: ' + key);
+  for (const key of required) {
+    if (!(key in properties)) throw new Error('مخطط الأداة يطلب مدخلًا غير معرّف: ' + key);
+    if (!(key in args)) throw new Error('مدخل مطلوب مفقود: ' + key);
+  }
   if (schema.additionalProperties === false) {
     for (const key of Object.keys(args)) if (!(key in properties)) throw new Error('مدخل غير معرّف في مخطط الأداة: ' + key);
   }
@@ -136,6 +139,10 @@ function validateToolArgs(schema: Record<string, unknown>, args: Record<string, 
     if (type === 'array' && Array.isArray(value) && typeof rule.maxItems === 'number' && value.length > rule.maxItems) {
       throw new Error('عدد عناصر المدخل يتجاوز الحد: ' + key);
     }
+    if (type === 'array' && Array.isArray(value) && rule.items && typeof rule.items === 'object' && !Array.isArray(rule.items)) {
+      const itemType = (rule.items as Record<string, unknown>).type;
+      if (itemType === 'string' && value.some((item) => typeof item !== 'string')) throw new Error('كل عناصر المدخل يجب أن تكون نصوصًا: ' + key);
+    }
   }
 }
 
@@ -147,7 +154,7 @@ export const BUILTIN_HUNTER_TOOLS: HunterTool[] = [
     description: 'Extract same-scope links, API paths and endpoint candidates from browser-observed page text and network records.',
     kind: 'builtin',
     status: 'verified',
-    inputSchema: { pageText: 'string', urls: 'string[]' },
+    inputSchema: { type: 'object', properties: { targetHost: { type: 'string' }, pageUrl: { type: 'string' }, pageText: { type: 'string' }, urls: { type: 'array', items: { type: 'string' }, maxItems: 500 } }, required: ['targetHost', 'pageText', 'urls'], additionalProperties: false },
     outputDescription: 'Unique in-scope URL and path candidates with source labels.',
     source: 'builtin:endpoint-collector:v1',
     version: 1,
@@ -163,7 +170,7 @@ export const BUILTIN_HUNTER_TOOLS: HunterTool[] = [
     description: 'Collect certificate-transparency names for the explicitly saved root domain. Does not resolve or probe discovered hosts.',
     kind: 'builtin',
     status: 'verified',
-    inputSchema: { targetHost: 'string' },
+    inputSchema: { type: 'object', properties: { targetHost: { type: 'string' } }, required: ['targetHost'], additionalProperties: false },
     outputDescription: 'Deduplicated in-scope subdomain names from public certificate transparency records.',
     source: 'builtin:ct-subdomain:v1',
     version: 1,
@@ -179,7 +186,7 @@ export const BUILTIN_HUNTER_TOOLS: HunterTool[] = [
     description: 'Collect JavaScript asset URLs exposed by page links and captured same-scope network traffic.',
     kind: 'builtin',
     status: 'verified',
-    inputSchema: { urls: 'string[]' },
+    inputSchema: { type: 'object', properties: { urls: { type: 'array', items: { type: 'string' }, maxItems: 500 } }, required: ['urls'], additionalProperties: false },
     outputDescription: 'Deduplicated JavaScript asset URLs.',
     source: 'builtin:javascript-inventory:v1',
     version: 1,
