@@ -240,6 +240,11 @@ export async function streamCompletion({
     .sort((a, b) => a[0] - b[0])
     .map(([, call], index) => ({ ...call, id: call.id || `call_${Date.now()}_${index}` }))
     .filter((call) => call.name);
+
+  // Never execute a tool call assembled from a dropped/length-limited stream.
+  if (toolCalls.length && (!receivedDone && !finishReason || finishReason === 'length')) {
+    throw new Error('انقطع طلب الأداة قبل اكتمال بياناتها؛ لم يتم تنفيذها. أعد المحاولة.');
+  }
   return { text, toolCalls, finishReason, streamComplete: receivedDone || !!finishReason };
 }
 
