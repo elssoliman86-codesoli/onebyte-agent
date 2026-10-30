@@ -167,6 +167,7 @@ export async function saveHunterTool(input: {
   }
   const tools = await loadHunterTools();
   const existing = input.id ? tools.find((tool) => tool.id === input.id) : undefined;
+  if (!input.id && tools.some((tool) => tool.name.toLowerCase() === name.toLowerCase())) throw new Error('يوجد اسم أداة مطابق بالفعل؛ افتح الأداة الموجودة لإنشاء إصدار جديد.');
   const timestamp = now();
   if (existing) {
     const version = existing.version + 1;
@@ -180,7 +181,7 @@ export async function saveHunterTool(input: {
       inputSchema: input.inputSchema ?? existing.inputSchema,
       outputDescription: input.outputDescription ?? existing.outputDescription,
       version,
-      versions: [...existing.versions, { version: existing.version, source: existing.source, createdAt: timestamp, testSummary: 'Previous version retained.' }],
+      versions: [...existing.versions, { version: existing.version, source: existing.source, createdAt: timestamp, testSummary: 'Previous version retained.' }].slice(-50),
       updatedAt: timestamp,
       tags: input.tags ?? existing.tags,
     };
@@ -198,7 +199,7 @@ export async function saveHunterTool(input: {
     outputDescription: input.outputDescription ?? 'لم يتم تحديد شكل المخرجات بعد.',
     source,
     version: 1,
-    versions: [],
+    versions: [{ version: 1, source, createdAt: timestamp, testSummary: 'Not tested yet.' }],
     createdAt: timestamp,
     updatedAt: timestamp,
     useCount: 0,
