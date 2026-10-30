@@ -26,6 +26,7 @@ assert.doesNotThrow(() => preflightZip(valid), 'normal project ZIP should pass')
 const encoded = Buffer.from(valid).toString('base64');
 assert.deepEqual(base64ToBytes(encoded), valid, 'base64 decoder should preserve every byte');
 assert.throws(() => preflightZip(strToU8('not a zip')), /ZIP|zip/i, 'invalid archive should be rejected');
+assert.throws(() => preflightZip(new Uint8Array(32 * 1024 * 1024 + 1)), /32MB/, 'oversized archives should be rejected before parsing');
 
 const traversal = zipSync({ '../escape.py': strToU8('print(1)') });
 assert.throws(() => preflightZip(traversal), /مسار غير آمن/, 'parent traversal path should be rejected');
