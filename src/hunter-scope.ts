@@ -3,7 +3,7 @@
  * Exact entries authorize one host only. Wildcards must be explicit (*.example.com).
  */
 export function normalizeHostPattern(value: string): string {
-  return value.trim().toLowerCase().replace(/\.$/, '');
+  return typeof value === 'string' ? value.trim().toLowerCase().replace(/\.$/, '') : '';
 }
 
 export function normalizeTargetPattern(value: string): string | null {
