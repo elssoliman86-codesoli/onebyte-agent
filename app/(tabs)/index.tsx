@@ -1338,7 +1338,8 @@ export default function ChatScreen() {
           { role: 'system', content: systemWithSummary },
           ...toProviderMessages(recent),
         ],
-        specs: toolsForRequest(deviceOn),
+        specs: provider.supportsTools === false ? [] : toolsForRequest(deviceOn),
+        toolsUnavailableHint: provider.supportsTools === false,
         maxSteps: agent.maxSteps,
         autoApproveDeviceTools:
           deviceOn && Device.isAvailable() && Device.isServiceEnabled(),
@@ -1368,7 +1369,7 @@ export default function ChatScreen() {
       steps = result.steps;
       setPlanDone('ok');
       if (result.toolsWereUnsupported) {
-        setError('لم تُنفَّذ أدوات فعلية في هذه المحاولة. اختر موديلًا يدعم Tool Calling وتأكد من ظهور خطوات أدوات ناجحة قبل اعتبار الفحص مكتملًا.');
+        setError('لم تُنفَّذ أداة فعلية لهذا الطلب؛ لا تعتبر الإجراء مكتملًا. تحقق من دعم الموديل لـ Tool Calling ومن تفعيل الأداة المطلوبة.');
       }
       if (!fullResponse.trim() && !steps.length) {
         throw new Error('الموديل أرجع ردًا فارغًا. راجع اسم الموديل وإعدادات المزود.');
