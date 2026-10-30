@@ -136,14 +136,6 @@ export function DeveloperWorkspace() {
     };
     const contentType = response.headers.get('content-type') || '';
     const reader = response.body?.getReader?.();
-    if (!onChunk || !reader || !contentType.includes('text/event-stream')) {
-      const full = readPayloadContent(await response.json());
-      if (onChunk && full) onChunk(full);
-      return full;
-    }
-
-    const decoder = new TextDecoder();
-    let buffer = '';
     let complete = '';
     const consumeLine = (line: string) => {
       const trimmed = line.trim();
@@ -158,6 +150,22 @@ export function DeveloperWorkspace() {
         if (chunk) { complete += chunk; onChunk?.(chunk); }
       } catch { /* Ignore incomplete/non-JSON SSE lines; the next frame is parsed separately. */ }
     };
+    if (!onChunk || !contentType.includes('text/event-stream')) {
+      const full = readPayloadContent(await response.json());
+      if (onChunk && full) onChunk(full);
+      return full;
+    }
+    if (!reader) {
+      // React Native fetch implementations may expose no ReadableStream reader.
+      // Consume the complete SSE text as a compatibility fallback instead of
+      // attempting response.json() on an event stream.
+      const raw = await response.text();
+      raw.split(/\\r?\\n/).forEach(consumeLine);
+      return complete;
+    }
+
+    const decoder = new TextDecoder();
+    let buffer = '';
     while (true) {
       const { value, done } = await reader.read();
       buffer += decoder.decode(value ?? new Uint8Array(), { stream: !done });
