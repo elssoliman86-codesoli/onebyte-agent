@@ -25,6 +25,19 @@ const REGISTRY_KEY = '@onebyte-agent/hunter-tool-registry-v1';
 const RUNS_KEY = '@onebyte-agent/hunter-runs-v1';
 const MAX_TOOLS = 200;
 const MAX_SOURCE_LENGTH = 64_000;
+const DEFAULT_PYTHON_INPUT_SCHEMA: Record<string, unknown> = {
+  type: 'object',
+  properties: {
+    target: { type: 'string' },
+    evidence: { type: 'array', items: { type: 'object' }, maxItems: 500 },
+    urls: { type: 'array', items: { type: 'string' }, maxItems: 500 },
+    page_text: { type: 'string' },
+    page_source: { type: 'string' },
+    network_requests: { type: 'array', items: { type: 'object' }, maxItems: 500 },
+  },
+  required: [],
+  additionalProperties: false,
+};
 const MAX_RUNS = 100;
 
 export type HunterToolStatus = 'draft' | 'smoke-tested' | 'verified' | 'disabled';
@@ -224,7 +237,7 @@ export async function saveHunterTool(input: {
 }): Promise<HunterTool> {
   const name = input.name.trim();
   const source = input.source;
-  const inputSchema = input.inputSchema ?? { type: 'object', properties: {}, additionalProperties: false };
+  const inputSchema = input.inputSchema ?? DEFAULT_PYTHON_INPUT_SCHEMA;
   assertToolInputSchema(inputSchema);
   if (name.length < 3 || name.length > 64) throw new Error('اسم الأداة يجب أن يكون بين 3 و64 حرفًا.');
   if (!source.trim() || source.length > MAX_SOURCE_LENGTH) throw new Error('كود الأداة فارغ أو أكبر من الحد المسموح (64KB).');
