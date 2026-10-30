@@ -234,7 +234,7 @@ export default function BrowserScreen() {
           if (!check.ok) throw new Error(check.reason);
           if (!target) throw new Error('الرابط خارج النطاق المصرّح به.');
         }
-        const nextScope = target?.host ?? '';
+        const nextScope = requireAuthorization && target ? target.host : '';
         if (scopeHostRef.current !== nextScope) clearNetworkEntries();
         activateScope(nextScope);
         setBrowserError('');
@@ -522,7 +522,7 @@ export default function BrowserScreen() {
               try {
                 const targets = await loadTargets();
                 const match = findAuthorizedTarget(loadedUrl, targets);
-                if (!scopeHostRef.current && match) activateScope(match.host);
+                if (!scopeHostRef.current && match && isAuthorized(loadedUrl, targets).ok) activateScope(match.host);
                 if (scopeHostRef.current && isHostInScope(loadedUrl, scopeHostRef.current)) {
                   appendNetworkEntry({
                     id: 'navigation-' + Date.now() + '-' + Math.random().toString(36).slice(2, 8),
