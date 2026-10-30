@@ -1017,17 +1017,37 @@ export default function ChatScreen() {
       const controlState = deviceOn
         ? available
           ? serviceOn
-            ? '✅ الخدمة مفعّلة'
-            : '⚠️ مفعّل لكن خدمة إمكانية الوصول غير مشغلة — فعّلها من الإعدادات'
-          : '⚠️ متاح فقط في نسخة Android المثبتة'
-        : '⛔ المفتاح مقفول من الإعدادات';
+            ? '✅ متاح'
+            : '⚠️ مفعّل لكن خدمة إمكانية الوصول غير مشغّلة'
+          : '⚠️ غير متاح في هذه البيئة'
+        : '⛔ متوقف من الإعدادات';
+      const availableTools = toolsForRequest(deviceOn);
+      const groups: Array<[string, string]> = [
+        ['local', 'GitHub وTelegram والمهارات والملفات'],
+        ['memory', 'الذاكرة والمهام'],
+        ['net', 'البحث وجلب صفحات الويب'],
+        ['browser', 'المتصفح المدمج ومكتبة أدوات الأمن'],
+        ['device_read', 'قراءة حالة الهاتف'],
+        ['device_act', 'التحكم في الهاتف'],
+      ];
+      const toolLines = groups.map(([group, label]) => {
+        const items = availableTools.filter((tool) => tool.group === group);
+        if (!items.length) return `- ${label}: غير متاح في هذه النسخة أو غير مفعّل`;
+        return `- ${label}: ${items.map((tool) => tool.label || tool.name).join('، ')}`;
+      });
+      const capability = provider.supportsTools === true
+        ? '✅ الموديل يعلن دعم Tool Calling'
+        : provider.supportsTools === false
+          ? '⛔ الموديل لا يعلن دعم Tool Calling؛ لن أرسل له استدعاءات أدوات'
+          : '❔ دعم Tool Calling غير معروف؛ سيُتحقق منه عند أول استدعاء';
       await replyLocal(
-        '**الأدوات المتصلة (خوادم محلية مدمجة):**\n' +
-          '- الذاكرة والمحادثات: `save_memory` · `search_history` · `read_skill` — ✅ جاهزة\n' +
-          '- الويب: `web_search` · `web_fetch` — ✅ جاهزة (بموافقتك)\n' +
-          '- التحكم في الهاتف: `get_screen` · `tap` · `type_text` · `scroll` · `press` · `open_app` — ' +
-          controlState +
-          '\n\n`/help` لكل الأوامر.',
+        '**حالة الأدوات الفعلية في هذه النسخة:**\n' +
+          `- المزوّد: ${provider.providerName} · ${provider.model || 'لا يوجد موديل مختار'}\n` +
+          `- قدرات الموديل: ${capability}\n` +
+          toolLines.join('\n') +
+          `\n- تحكم الهاتف: ${controlState}\n` +
+          '\nملاحظة: هذه أدوات مدمجة داخل التطبيق وليست خوادم MCP خارجية. GitHub وTelegram يحتاجان إعداد اتصال صالحًا، وأي كتابة خارجية أو تعديل في المتصفح ينتظر موافقتك.\n' +
+          '`/help` لكل الأوامر.',
       );
       return { handled: true };
     }
