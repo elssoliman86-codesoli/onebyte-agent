@@ -334,6 +334,53 @@ export async function runPythonHunterTool(id: string, args: Record<string, unkno
   return result.output.slice(0, 64_000);
 }
 
+export async function runSafeHttpHeaderChecks(target: HunterTarget, runId: string): Promise<HunterRunRecord> {
+  const savedTargets = await loadTargets();
+  const savedTarget = savedTargets.find((item) => item.id === target.id && item.host.toLowerCase() === target.host.toLowerCase());
+  if (!savedTarget) throw new Error('النطاق لم يعد محفوظًا أو لم يعد مصرحًا به.');
+  const runs = await loadHunterRuns();
+  const run = runs.find((item) => item.id === runId && item.target.toLowerCase() === target.host.toLowerCase());
+  if (!run) throw new Error('عملية Hunting الأصلية غير موجودة.');
+  const browser = await waitForEmbeddedBrowser(12_000);
+  const candidates = [...new Set(run.discoveredUrls)].filter((url) => {
+    try { return isAuthorized(url, [savedTarget]).ok && new URL(url).protocol === 'https:'; }
+    catch { return false; }
+  }).slice(0, 6);
+  if (!candidates.length) throw new Error('لا توجد endpoints HTTPS داخل النطاق لإجراء فحص HEAD الآمن.');
+  run.plan.push({ id: 'safe-headers', title: 'Safe HTTP header checks', detail: 'HEAD فقط، دون body أو payload أو تغيير بيانات؛ يتطلب ضغط المستخدم على زر الفحص.', status: 'done' });
+  const findings: string[] = [];
+  for (const url of candidates) {
+    const controller = new AbortController();
+    const timeout = setTimeout(() => controller.abort(), 8_000);
+    try {
+      const response = await browser.sendRequest({ url, method: 'HEAD', headers: { Accept: '*/*' }, body: '', signal: controller.signal });
+      if (!isAuthorized(response.url, [savedTarget]).ok) {
+        findings.push('تم تجاهل استجابة أعادت توجيه الطلب خارج النطاق: ' + url);
+        continue;
+      }
+      const headers = Object.fromEntries(Object.entries(response.headers).map(([key, value]) => [key.toLowerCase(), value]));
+      const missing = [
+        !headers['strict-transport-security'] ? 'HSTS' : '',
+        !headers['content-security-policy'] ? 'CSP' : '',
+        !headers['x-content-type-options'] ? 'X-Content-Type-Options' : '',
+        !headers['referrer-policy'] ? 'Referrer-Policy' : '',
+        !headers['permissions-policy'] ? 'Permissions-Policy' : '',
+        !headers['x-frame-options'] && !/frame-ancestors/i.test(headers['content-security-policy'] ?? '') ? 'anti-clickjacking' : '',
+      ].filter(Boolean);
+      findings.push(response.status + ' ' + url + ': ' + (missing.length ? 'headers not observed: ' + missing.join(', ') : 'baseline security headers observed'));
+    } catch (error) {
+      findings.push('تعذّر فحص HEAD لـ ' + url + ': ' + (error instanceof Error ? error.message : 'network error'));
+    } finally {
+      clearTimeout(timeout);
+    }
+    await new Promise((resolve) => setTimeout(resolve, 750));
+  }
+  run.notes.push('Safe HTTP header checks (explicit user action; HEAD only; ' + candidates.length + ' URLs max): ' + findings.join(' | ').slice(0, 6000));
+  run.finishedAt = now();
+  await saveHunterRun(run);
+  return run;
+}
+
 export async function loadHunterRuns(): Promise<HunterRunRecord[]> {
   return storage.readRawJSON<HunterRunRecord[]>(RUNS_KEY, []);
 }
