@@ -57,7 +57,7 @@ export default function HunterToolsScreen() {
       setDescription('');
       setSource('');
       await refresh();
-      alertCompat('تم حفظ الأداة', 'حُفظ الكود في مكتبة الأدوات كإصدار Draft. لا يتم تشغيله أو اعتماده قبل توفر محرك Python المعزول واجتياز الاختبارات.');
+      alertCompat('تم حفظ الأداة', 'حُفظ الكود في مكتبة الأدوات كإصدار Draft. الأدوات المولدة تلقائيًا لا تُعتمد إلا بعد اجتياز بوابة المصدر المحدود واختبار Python؛ الأدوات التي لا تجتازها تظل Draft للمراجعة اليدوية.');
     } catch (error) {
       alertCompat('تعذّر حفظ الأداة', error instanceof Error ? error.message : 'خطأ غير معروف');
     } finally { setBusy(false); }
@@ -118,7 +118,7 @@ export default function HunterToolsScreen() {
           </View>
         ))}
         <Text style={[s.note, { color: colors.mutedForeground }]}>
-          Python يعمل على الجهاز داخل WebAssembly Worker مستقل. أول تشغيل يحتاج تنزيل Runtime الرسمي من jsDelivr؛ بعد تحميله يعمل التنفيذ محليًا مع تعطيل الشبكة داخل Python. ملفات كل تشغيل مؤقتة ولا تصل إلى ملفات Android أو Native Bridge.
+          Python يعمل على الجهاز داخل WebAssembly Worker مستقل. أول تشغيل يحتاج تنزيل Runtime الرسمي من jsDelivr؛ بعد تحميله يعمل التنفيذ محليًا. الاعتماد التلقائي مقصور على كود Python خالص بلا imports أو وصول للنظام أو الشبكة، مع اختبار تشغيل فعلي. الأكواد التي لا تجتاز البوابة تظل Draft للمراجعة.
         </Text>
       </Surface>
 
