@@ -24,10 +24,11 @@ const HTML = `<!doctype html>
       "  pyodide.setStdout({ batched: function(s){ self.__stdout = ((self.__stdout || '') + s).slice(0, 32000); } });",
       "  pyodide.setStderr({ batched: function(s){ self.__stderr = ((self.__stderr || '') + s).slice(0, 32000); } });",
       "  pyodide.globals.set('__hunter_args_json', JSON.stringify(data.args || {}));",
-      "  const wrapper = 'import json, io, contextlib, inspect, sys\\n' +",
+      "  const wrapper = 'import json, io, contextlib, inspect, sys, time\\n' +",
       "   'for _name in (\\\"socket\\\", \\\"subprocess\\\", \\\"urllib\\\", \\\"http\\\", \\\"ftplib\\\", \\\"telnetlib\\\"):\\n sys.modules.pop(_name, None)\\n' +",
       "   'import json as _json\\n__hunter_args = _json.loads(__hunter_args_json)\\n' +",
-      "   '__hunter_out = io.StringIO()\\n' +",
+      "   '__hunter_out = io.StringIO()\\n' +
+   '__hunter_deadline = time.monotonic() + 8\\ndef __hunter_trace(frame, event, arg):\\n if time.monotonic() > __hunter_deadline: raise TimeoutError(\\\"Tool exceeded 8s execution budget\\\")\\n return __hunter_trace\\nsys.settrace(__hunter_trace)\\n' +",
       "   'if not callable(globals().get(\\\"run\\\")): raise TypeError(\\\"Tool must define run(args)\\\")\\n' +",
       "   'if not callable(globals().get(\\\"run\\\")): raise TypeError(\\\"Tool must define run(args)\\\")\\n' +",
       "   'with contextlib.redirect_stdout(__hunter_out):\\n __hunter_result = run(__hunter_args)\\n' +",
