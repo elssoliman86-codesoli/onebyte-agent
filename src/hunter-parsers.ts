@@ -1,4 +1,5 @@
 import type { EmbeddedBrowserNetworkEntry, EmbeddedBrowserSnapshot } from './embedded-browser';
+import { targetMatchesHost } from './hunter-scope';
 
 function unique(values: string[]): string[] {
   return [...new Set(values.map((value) => value.trim()).filter(Boolean))].slice(0, 500);
@@ -20,7 +21,7 @@ export function collectEndpointCandidates(snapshot: EmbeddedBrowserSnapshot, net
     try {
       const url = new URL(candidate, snapshot.url);
       if (url.protocol !== 'http:' && url.protocol !== 'https:') continue;
-      if (url.hostname === targetHost || url.hostname.endsWith('.' + targetHost)) output.push(url.toString());
+      if (targetMatchesHost(targetHost, url.hostname)) output.push(url.toString());
     } catch { /* Ignore malformed page values. */ }
   }
   return unique(output);
