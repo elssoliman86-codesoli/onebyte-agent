@@ -285,7 +285,7 @@ export default function BrowserScreen() {
             '(async()=>{const r=await fetch(' + JSON.stringify(target.toString()) + ',{method:' + JSON.stringify(method) + ',redirect:"manual",headers:' + JSON.stringify(input.headers) +
             (['GET', 'HEAD'].includes(method) ? '' : ',body:' + JSON.stringify(input.body)) +
             ',credentials:"same-origin"});const h={};r.headers.forEach((v,k)=>h[k]=/^(set-cookie|www-authenticate)$/i.test(k)?"[REDACTED]":v);const b=' +
-            JSON.stringify(method) + '==="HEAD"?"":await r.text();return JSON.stringify({url:r.url,status:r.status,statusText:r.statusText,ok:r.ok,headers:h,body:b.slice(0,40000)})})()',
+            JSON.stringify(method) + '==="HEAD"?"":await (async()=>{const max=524288;const len=Number(r.headers.get("content-length")||0);if(len>max){try{await r.body.cancel()}catch(_){}return "[response omitted: >512KB]"}const rd=r.body&&r.body.getReader?r.body.getReader():null;if(!rd)return (await r.text()).slice(0,max);const d=new TextDecoder();let s="",n=0,t=false;while(true){const q=await rd.read();if(q.done)break;const left=max-n;if(left<=0){t=true;await rd.cancel();break}const chunk=q.value.subarray(0,left);s+=d.decode(chunk,{stream:true});n+=chunk.byteLength;if(chunk.byteLength<q.value.byteLength){t=true;await rd.cancel();break}}s+=d.decode();return s+(t?" [truncated after 512KB]":"")})() ;return JSON.stringify({url:r.url,status:r.status,statusText:r.statusText,ok:r.ok,headers:h,body:b.slice(0,40000)})})()',
             45_000,
           );
           const result = JSON.parse(raw) as Omit<EmbeddedBrowserRequestResult, 'elapsedMs'>;
