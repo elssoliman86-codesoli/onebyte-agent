@@ -249,7 +249,36 @@ export async function approveHunterPythonTool(id: string): Promise<void> {
   await setHunterToolStatus(id, 'verified', 'User reviewed source and approved after smoke test.');
 }
 
-async function discoverPassiveSubdomains(targetHost: string): Promise<string[]> {\n  const savedTargets = await loadTargets();\n  const target = savedTargets.find((item) => item.host.toLowerCase() === targetHost.toLowerCase());\n  if (!target) throw new Error('أداة اكتشاف النطاقات الفرعية تتطلب تارجت محفوظًا ومصرحًا به.');\n  const root = target.host.replace(/^\\*\\./, '').toLowerCase();\n  const controller = new AbortController();\n  const timeout = setTimeout(() => controller.abort(), 12_000);\n  try {\n    const response = await fetch('https://crt.sh/?q=%25.' + encodeURIComponent(root) + '&output=json', { signal: controller.signal, headers: { Accept: 'application/json' } });\n    if (!response.ok) throw new Error('Certificate Transparency lookup HTTP ' + response.status);\n    const rows = await response.json() as { name_value?: string }[];\n    const names = new Set<string>();\n    for (const row of rows.slice(0, 5000)) {\n      for (const raw of (row.name_value ?? '').split(/\\r?\\n/)) {\n        const name = raw.trim().toLowerCase().replace(/^\\*\\./, '').replace(/\\.$/, '');\n        if (name !== root && name.endsWith('.' + root) && /^[a-z0-9.-]+$/.test(name)) names.add(name);\n      }\n    }\n    return [...names].slice(0, 500);\n  } finally { clearTimeout(timeout); }\n}\n\nexport async function runHunterRegistryTool(id: string, args: Record<string, unknown>): Promise<string> {
+async function discoverPassiveSubdomains(targetHost: string): Promise<string[]> {
+  const savedTargets = await loadTargets();
+  const target = savedTargets.find((item) => item.host.toLowerCase() === targetHost.toLowerCase());
+  if (!target) throw new Error('أداة اكتشاف النطاقات الفرعية تتطلب تارجت محفوظًا ومصرحًا به.');
+  const root = target.host.startsWith('*.') ? target.host.slice(2).toLowerCase() : target.host.toLowerCase();
+  const controller = new AbortController();
+  const timeout = setTimeout(() => controller.abort(), 12_000);
+  try {
+    const response = await fetch('https://crt.sh/?q=%25.' + encodeURIComponent(root) + '&output=json', {
+      signal: controller.signal,
+      headers: { Accept: 'application/json' },
+    });
+    if (!response.ok) throw new Error('Certificate Transparency lookup HTTP ' + response.status);
+    const rows = await response.json() as { name_value?: string }[];
+    const names = new Set<string>();
+    for (const row of rows.slice(0, 5000)) {
+      const entries = (row.name_value ?? '').replace(/\r/g, '').split('\n');
+      for (const raw of entries) {
+        const value = raw.trim().toLowerCase();
+        const name = (value.startsWith('*.') ? value.slice(2) : value).replace(/\.$/, '');
+        if (name !== root && name.endsWith('.' + root) && /^[a-z0-9.-]+$/.test(name)) names.add(name);
+      }
+    }
+    return [...names].slice(0, 500);
+  } finally {
+    clearTimeout(timeout);
+  }
+}
+
+export async function runHunterRegistryTool(id: string, args: Record<string, unknown>): Promise<string> {
   const tool = (await loadHunterTools()).find((item) => item.id === id);
   if (!tool || tool.status !== 'verified') throw new Error('الأداة غير موجودة أو لم يتم اعتمادها.');
   let result: string;
@@ -299,7 +328,12 @@ function unique(values: string[]): string[] {
 export function collectEndpointCandidates(snapshot: EmbeddedBrowserSnapshot, network: EmbeddedBrowserNetworkEntry[], targetHost: string): string[] {
   const candidates: string[] = [];
   const absolute = /https?:\/\/[^\s"'<>\\)]+/gi;
-  for (const match of snapshot.text.match(absolute) ?? []) candidates.push(match.replace(/[),.;]+$/, ''));
+  const sourceText = (snapshot.text || '') + '\n' + (snapshot.source || '');
+  for (const match of sourceText.match(absolute) ?? []) candidates.push(match.replace(/[),.;]+$/, ''));
+  const apiPath = /["'](\/(?:api|graphql|rest|v[0-9]+|oauth|auth)[^"'\s<>]*)["']/gi;
+  for (const match of sourceText.matchAll(apiPath)) {
+    try { candidates.push(new URL(match[1], snapshot.url).toString()); } catch { /* Ignore malformed paths. */ }
+  }
   for (const element of snapshot.elements) if (element.href) candidates.push(element.href);
   for (const entry of network) candidates.push(entry.url);
   const output: string[] = [];
@@ -375,7 +409,8 @@ async function generateHunterPythonTool(need: { name: string; description: strin
  */
 export async function runBrowserRecon(target: HunterTarget, signal?: AbortSignal): Promise<HunterRunRecord> {
   const startedAt = now();
-  const rootUrl = `https://${target.host.replace(/^\*\./, '')}/`;
+  const rootHost = target.host.startsWith('*.') ? target.host.slice(2) : target.host;
+  const rootUrl = target.host.startsWith('*.') ? `https://www.${rootHost}/` : `https://${rootHost}/`;
   const scope = isAuthorized(rootUrl, [target]);
   if (!scope.ok) throw new Error(scope.reason);
   const plan: HunterRunRecord['plan'] = [
