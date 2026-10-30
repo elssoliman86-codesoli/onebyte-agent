@@ -414,7 +414,7 @@ export default function CyberSecurityScreen() {
                 if (!target) { alertCompat('النطاق غير موجود', 'أعد إضافة النطاق المصرح به أولًا.'); return; }
                 setSafeChecksRunning(true);
                 void runSafeHttpHeaderChecks(target, lastHunt.id)
-                  .then((run) => { setLastHunt(run); alertCompat('انتهت فحوص HTTP الآمنة', run.notes.filter((note) => note.startsWith('Safe HTTP header checks')).join('\\n') || 'تم حفظ نتائج الفحص في سجل Hunting.'); })
+                   .then((run) => { setLastHunt(run); setActivePanel('activity'); alertCompat('انتهت فحوص HTTP الآمنة', run.notes.filter((note) => note.startsWith('Safe HTTP header checks')).join('\n') || 'تم حفظ نتائج الفحص في سجل Hunting.'); })
                   .catch((error) => alertCompat('تعذّر تشغيل الفحوص', error instanceof Error ? error.message : 'خطأ غير معروف'))
                   .finally(() => setSafeChecksRunning(false));
               }}
