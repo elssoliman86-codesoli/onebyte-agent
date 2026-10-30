@@ -39,6 +39,7 @@ function redactText(value: string | undefined): string {
     .replace(/("(?:password|token|secret|api[_-]?key|authorization|cookie|session|access_token|refresh_token)"\s*:\s*")[^"]*(")/gi, '$1[REDACTED]$2')
     .replace(/((?:password|token|secret|api[_-]?key|authorization|cookie|session|access_token|refresh_token)=)[^&\s]+/gi, '$1[REDACTED]')
     .replace(/((?:api[_-]?key|token|secret|authorization)\s*[:=]\s*["'`])[^"'`]+(["'`])/gi, '$1[REDACTED]$2')
+    .replace(/((?:authorization|proxy-authorization|cookie|set-cookie|x-api-key|api[_-]?key|access_token|refresh_token|token|secret|password)\\s*[:=]\\s*)(?:Bearer\\s+)?[^\\s,;"'<>]+/gi, '$1[REDACTED]')
     .slice(0, 5000);
 }
 
