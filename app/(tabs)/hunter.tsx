@@ -7,6 +7,7 @@ import { useColors } from '@/hooks/useColors';
 import { ScreenTopBar } from '@/components/PhoneDrawer';
 import { AppScreen, Surface } from '@/components/Ui';
 import { alertCompat } from '@/src/web-alert';
+import { runBrowserRecon, type HunterRunRecord } from '@/src/hunter-tools';
 import {
   hostOf,
   isAuthorized,
