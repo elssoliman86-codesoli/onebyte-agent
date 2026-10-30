@@ -151,6 +151,23 @@ export default function CyberSecurityScreen() {
     );
   }
 
+  function removeTarget(target: HunterTarget) {
+    alertCompat('حذف النطاق المحفوظ؟', `سيتم حذف ${target.host} وإيقاف السماح بأي طلبات جديدة ضمنه. سجل Hunting السابق سيظل محفوظًا.`, [
+      { text: 'إلغاء', style: 'cancel' },
+      { text: 'حذف النطاق', style: 'destructive', onPress: () => {
+        const next = targets.filter((item) => item.id !== target.id);
+        void saveTargets(next).then(() => {
+          setTargets(next);
+          if (selectedTargetId === target.id) {
+            setSelectedTargetId(null);
+            setShowRequestEditor(false);
+            setActivePanel('overview');
+          }
+        }).catch((error) => alertCompat('تعذّر حذف النطاق', error instanceof Error ? error.message : 'خطأ في التخزين.'));
+      } },
+    ]);
+  }
+
   async function sendRequest() {
     if (running) return;
     setError('');
@@ -332,12 +349,7 @@ export default function CyberSecurityScreen() {
               <Feather name="shield" size={14} color={colors.primary} />
               <Text style={[styles.secondaryText,{color:colors.primary}]}>فتح المختبر</Text>
             </Pressable>
-            <Pressable accessibilityRole="button" accessibilityLabel={`حذف نطاق ${target.host}`} onPress={() => {
-              const next = targets.filter((item) => item.id !== target.id);
-              setTargets(next);
-              if (selectedTargetId === target.id) { setSelectedTargetId(null); setShowRequestEditor(false); }
-              void saveTargets(next);
-            }}>
+            <Pressable accessibilityRole="button" accessibilityLabel={`حذف نطاق ${target.host}`} onPress={() => removeTarget(target)}>
               <Feather name="trash-2" size={16} color={colors.mutedForeground} />
             </Pressable>
           </View>
