@@ -95,7 +95,7 @@ export function DeveloperWorkspace() {
       return path && !valid.includes(path) ? [...valid, path] : valid;
     });
   }, [activeSession?.id, activeSession?.title]);
-  useEffect(() => { void refresh(); }, [refresh]);
+  useEffect(() => { void refresh().catch((error) => alertCompat('تعذّر تحميل المشروع', error instanceof Error ? error.message : 'خطأ في التخزين المحلي.')); }, [refresh]);
 
   const outline = useMemo(() => buildProjectOutline(project?.files ?? []), [project?.files]);
   const visibleOutline = useMemo(() => outline.filter(item => {
