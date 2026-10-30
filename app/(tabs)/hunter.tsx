@@ -32,6 +32,7 @@ export default function CyberSecurityScreen() {
   const [selectedTargetId, setSelectedTargetId] = useState<string | null>(null);
   const [showRequestEditor, setShowRequestEditor] = useState(false);
   const [authorization, setAuthorization] = useState('');
+  const [authorizationConfirmed, setAuthorizationConfirmed] = useState(false);
   const [method, setMethod] = useState('GET');
   const [url, setUrl] = useState('');
   const [headersText, setHeadersText] = useState('{"Accept":"*/*"}');
@@ -89,7 +90,11 @@ export default function CyberSecurityScreen() {
       return;
     }
     if (!authorization.trim()) {
-      alertCompat('التأكيد مطلوب', 'اكتب مصدر الإذن أو رابط برنامج HackerOne ونطاق الاختبار المسموح.');
+      alertCompat('مصدر التصريح مطلوب', 'اكتب رابط البرنامج أو تفاصيل الإذن المكتوب والنطاق المسموح.');
+      return;
+    }
+    if (!authorizationConfirmed) {
+      alertCompat('تأكيد الإذن مطلوب', 'فعّل إقرار التصريح بعد التأكد من أنك تملك الإذن وأن النطاق مطابق لشروط البرنامج.');
       return;
     }
     const next: HunterTarget = {
@@ -97,6 +102,7 @@ export default function CyberSecurityScreen() {
       host: normalized,
       note: 'Added by the user',
       authorization: authorization.trim(),
+      authorizationConfirmedAt: new Date().toISOString(),
       createdAt: new Date().toISOString(),
     };
     const updated = [next, ...targets.filter((item) => item.host !== normalized)];
@@ -104,6 +110,7 @@ export default function CyberSecurityScreen() {
     setTargets(updated);
     setTargetHost('');
     setAuthorization('');
+    setAuthorizationConfirmed(false);
     setSelectedTargetId(next.id);
     setShowRequestEditor(false);
     setError('');
@@ -223,17 +230,33 @@ export default function CyberSecurityScreen() {
           multiline
           style={[styles.input, styles.multiline, { color: colors.foreground, borderColor: colors.border, backgroundColor: colors.background }]}
         />
+        <Pressable
+          accessibilityRole="checkbox"
+          accessibilityState={{ checked: authorizationConfirmed }}
+          onPress={() => setAuthorizationConfirmed((value) => !value)}
+          style={styles.attestationRow}
+        >
+          <Feather name={authorizationConfirmed ? 'check-square' : 'square'} size={18} color={authorizationConfirmed ? colors.primary : colors.mutedForeground} />
+          <Text style={[styles.muted, { color: colors.foreground, flex: 1 }]}>أؤكد أن لدي تصريحًا صالحًا، وأن هذا النطاق داخل حدود البرنامج المسموح بها. هذا إقرار مني وليس تحققًا آليًا من الجهة المالكة.</Text>
+        </Pressable>
         <Pressable onPress={() => void addTarget()} style={[styles.primaryButton, { backgroundColor: colors.primary }]}>
           <Feather name="plus-circle" size={16} color={colors.primaryForeground} />
           <Text style={[styles.primaryText, { color: colors.primaryForeground }]}>إضافة النطاق</Text>
         </Pressable>
         {targets.length ? targets.map((target) => (
           <View key={target.id} style={[styles.scopeRow, { borderColor: colors.border }]}>
-            <Feather name="check-circle" size={15} color={colors.primary} />
+            <Feather name={target.authorizationConfirmedAt ? 'shield-check' : 'alert-triangle'} size={16} color={target.authorizationConfirmedAt ? colors.success : colors.warning} />
             <View style={{ flex: 1, gap: 3 }}>
               <Text style={[styles.scopeHost, { color: colors.foreground }]}>{target.host}</Text>
               <Text style={[styles.muted, { color: colors.mutedForeground }]}>{target.authorization}</Text>
+              <Text style={[styles.muted, { color: target.authorizationConfirmedAt ? colors.success : colors.warning }]}>{target.authorizationConfirmedAt ? 'إقرار المستخدم مسجل · ليس تحققًا خارجيًا' : 'قديم — يحتاج إعادة تأكيد التصريح'}</Text>
             </View>
+            {!target.authorizationConfirmedAt ? (
+              <Pressable accessibilityRole="button" onPress={() => alertCompat('إعادة تأكيد مطلوبة', 'احذف هذا النطاق وأعد إضافته بعد مراجعة مصدر التصريح وحدوده.') } style={[styles.secondaryButton,{borderColor:colors.warning,paddingHorizontal:8,paddingVertical:5}]}>
+                <Feather name="alert-circle" size={13} color={colors.warning} />
+                <Text style={[styles.secondaryText,{color:colors.warning}]}>إعادة إضافة</Text>
+              </Pressable>
+            ) : null}
             <Pressable accessibilityRole="button" onPress={() => { setSelectedTargetId(target.id); setUrl(`https://${target.host}/`); setShowRequestEditor(true); setError('تم اختيار النطاق المحفوظ. راجع قواعد البرنامج وحدود النطاق قبل إرسال أي طلب.'); }} style={[styles.secondaryButton,{borderColor:colors.border,paddingHorizontal:8,paddingVertical:5}]}>
               <Feather name="shield" size={14} color={colors.primary} />
               <Text style={[styles.secondaryText,{color:colors.primary}]}>فتح المختبر</Text>
@@ -451,6 +474,7 @@ const styles = StyleSheet.create({
   stopButton: { minHeight: 43, borderWidth: 1, borderRadius: 11, paddingHorizontal: 13, flexDirection: 'row-reverse', alignItems: 'center', justifyContent: 'center', gap: 7 },
   secondaryButton: { minHeight: 38, borderWidth: 1, borderRadius: 10, paddingHorizontal: 12, flexDirection: 'row-reverse', alignItems: 'center', justifyContent: 'center', gap: 7 },
   secondaryText: { fontSize: 12, fontWeight: '700' },
+  attestationRow: { flexDirection: 'row-reverse', alignItems: 'flex-start', gap: 9, paddingVertical: 4 },
   scopeRow: { flexDirection: 'row-reverse', alignItems: 'center', gap: 9, borderTopWidth: StyleSheet.hairlineWidth, paddingTop: 9 },
   scopeHost: { fontSize: 12, fontWeight: '700', textAlign: 'left' },
   muted: { fontSize: 11, lineHeight: 17, textAlign: 'right' },
