@@ -61,6 +61,7 @@ export interface HunterRunRecord {
   pageTextPreview?: string;
   pageSourcePreview?: string;
   discoveredUrls: string[];
+  discoveredSubdomains: string[];
   networkRequests: number;
   notes: string[];
 }
@@ -101,6 +102,22 @@ export const BUILTIN_HUNTER_TOOLS: HunterTool[] = [
     updatedAt: '2026-10-30T00:00:00.000Z',
     useCount: 0,
     tags: ['recon', 'endpoint', 'passive'],
+  },
+  {
+    id: 'hunter.passive-subdomain-discovery',
+    name: 'Passive Subdomain Discovery',
+    description: 'Collect certificate-transparency names for the explicitly saved root domain. Does not resolve or probe discovered hosts.',
+    kind: 'builtin',
+    status: 'verified',
+    inputSchema: { targetHost: 'string' },
+    outputDescription: 'Deduplicated in-scope subdomain names from public certificate transparency records.',
+    source: 'builtin:ct-subdomain:v1',
+    version: 1,
+    versions: [{ version: 1, source: 'builtin:ct-subdomain:v1', createdAt: '2026-10-30T00:00:00.000Z', testSummary: 'Passive certificate-transparency lookup; no target probing.' }],
+    createdAt: '2026-10-30T00:00:00.000Z',
+    updatedAt: '2026-10-30T00:00:00.000Z',
+    useCount: 0,
+    tags: ['recon', 'subdomain', 'passive'],
   },
   {
     id: 'hunter.javascript-inventory',
@@ -232,7 +249,7 @@ export async function approveHunterPythonTool(id: string): Promise<void> {
   await setHunterToolStatus(id, 'verified', 'User reviewed source and approved after smoke test.');
 }
 
-export async function runHunterRegistryTool(id: string, args: Record<string, unknown>): Promise<string> {
+async function discoverPassiveSubdomains(targetHost: string): Promise<string[]> {\n  const savedTargets = await loadTargets();\n  const target = savedTargets.find((item) => item.host.toLowerCase() === targetHost.toLowerCase());\n  if (!target) throw new Error('أداة اكتشاف النطاقات الفرعية تتطلب تارجت محفوظًا ومصرحًا به.');\n  const root = target.host.replace(/^\\*\\./, '').toLowerCase();\n  const controller = new AbortController();\n  const timeout = setTimeout(() => controller.abort(), 12_000);\n  try {\n    const response = await fetch('https://crt.sh/?q=%25.' + encodeURIComponent(root) + '&output=json', { signal: controller.signal, headers: { Accept: 'application/json' } });\n    if (!response.ok) throw new Error('Certificate Transparency lookup HTTP ' + response.status);\n    const rows = await response.json() as { name_value?: string }[];\n    const names = new Set<string>();\n    for (const row of rows.slice(0, 5000)) {\n      for (const raw of (row.name_value ?? '').split(/\\r?\\n/)) {\n        const name = raw.trim().toLowerCase().replace(/^\\*\\./, '').replace(/\\.$/, '');\n        if (name !== root && name.endsWith('.' + root) && /^[a-z0-9.-]+$/.test(name)) names.add(name);\n      }\n    }\n    return [...names].slice(0, 500);\n  } finally { clearTimeout(timeout); }\n}\n\nexport async function runHunterRegistryTool(id: string, args: Record<string, unknown>): Promise<string> {
   const tool = (await loadHunterTools()).find((item) => item.id === id);
   if (!tool || tool.status !== 'verified') throw new Error('الأداة غير موجودة أو لم يتم اعتمادها.');
   let result: string;
@@ -244,6 +261,9 @@ export async function runHunterRegistryTool(id: string, args: Record<string, unk
     const urls = Array.isArray(args.urls) ? args.urls.filter((item): item is string => typeof item === 'string') : [];
     const snapshot: EmbeddedBrowserSnapshot = { url: typeof args.pageUrl === 'string' ? args.pageUrl : 'https://' + targetHost + '/', title: '', text: pageText, elements: [] };
     result = JSON.stringify({ endpoints: collectEndpointCandidates(snapshot, [], targetHost), suppliedUrlCount: urls.length });
+  } else if (id === 'hunter.passive-subdomain-discovery') {
+    const targetHost = typeof args.targetHost === 'string' ? args.targetHost.trim().toLowerCase() : '';
+    result = JSON.stringify({ source: 'crt.sh certificate transparency', passive: true, subdomains: await discoverPassiveSubdomains(targetHost) });
   } else if (id === 'hunter.javascript-inventory') {
     const urls = Array.isArray(args.urls) ? args.urls.filter((item): item is string => typeof item === 'string') : [];
     result = JSON.stringify({ javascriptAssets: collectJavaScriptAssets(urls) });
@@ -373,6 +393,7 @@ export async function runBrowserRecon(target: HunterTarget, signal?: AbortSignal
     status: 'partial',
     plan,
     discoveredUrls: [],
+    discoveredSubdomains: [],
     networkRequests: 0,
     notes: [],
   };
