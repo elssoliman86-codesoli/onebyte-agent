@@ -615,28 +615,39 @@ export async function runBrowserRecon(target: HunterTarget, signal?: AbortSignal
     plan[3].status = 'done';
     record.notes.push(`تم رصد ${urls.length} رابطًا داخل النطاق و${jsAssets.length} ملف JavaScript.`);
     record.notes.push('لم يتم إرسال طلبات تخمين أو brute-force أو اختبارات نشطة.');
+    if (signal?.aborted) throw new Error('تم إيقاف الفحص.');
     const modelPlan = await createAdaptiveHuntPlan(target, page, network, urls);
+    if (signal?.aborted) throw new Error('تم إيقاف الفحص.');
     if (modelPlan.summary) record.notes.push('خطة الموديل: ' + modelPlan.summary);
     if (modelPlan.nextSteps.length) record.notes.push('الخطوات المقترحة: ' + modelPlan.nextSteps.join(' | '));
     if (modelPlan.missingTool) {
       const generated = await generateHunterPythonTool(modelPlan.missingTool, { target: target.host, pageTitle: page.title, discoveredUrls: urls.slice(0, 80), networkRequestCount: network.length });
-      if (generated) record.notes.push(generated.status === 'verified' ? 'أنشأ Tool Builder الأداة واختبرها تلقائيًا واعتمدها بعد اجتياز بوابة Python الآمن: ' + generated.name + ' (v' + generated.version + ').' : 'أنشأ Tool Builder مسودة أداة: ' + generated.name + ' (v' + generated.version + '). لم تجتز شروط الاعتماد التلقائي؛ راجع الكود واختبرها يدويًا.');
+      if (generated) record.notes.push('أنشأ Tool Builder مسودة أداة: ' + generated.name + ' (v' + generated.version + '). افتح مكتبة الأدوات، راجع المصدر ومخطط المدخلات، ثم اختبر هذا الإصدار واعتمده يدويًا.');
     }
     // Reuse previously verified Python tools against this run's collected evidence.
     const reusableTools = (await loadHunterTools()).filter((tool) => tool.kind === 'python' && tool.status === 'verified').slice(0, 10);
+    const availableEvidence: Record<string, unknown> = {
+      target: target.host,
+      page_url: page.url, pageUrl: page.url,
+      page_title: page.title, pageTitle: page.title,
+      page_text: page.text.slice(0, 12000), pageText: page.text.slice(0, 12000),
+      page_source: (page.source ?? '').slice(0, 16000), pageSource: (page.source ?? '').slice(0, 16000),
+      urls: urls.slice(0, 200),
+      javascript_assets: jsAssets.slice(0, 100), javascriptAssets: jsAssets.slice(0, 100),
+      network_requests: network.slice(0, 100).map((entry) => ({ method: entry.method, url: entry.url, status: entry.status })),
+      networkRequests: network.slice(0, 100).map((entry) => ({ method: entry.method, url: entry.url, status: entry.status })),
+      evidence: urls.slice(0, 200),
+    };
     for (const tool of reusableTools) {
+      if (signal?.aborted) throw new Error('تم إيقاف الفحص.');
       try {
-        const output = await runPythonHunterTool(tool.id, {
-          target: target.host,
-          pageUrl: page.url,
-          pageTitle: page.title,
-          pageText: page.text.slice(0, 12000),
-          pageSource: (page.source ?? '').slice(0, 16000),
-          urls: urls.slice(0, 200),
-          javascriptAssets: jsAssets.slice(0, 100),
-          networkRequests: network.slice(0, 100).map((entry) => ({ method: entry.method, url: entry.url, status: entry.status })),
-          evidence: urls.slice(0, 200),
-        });
+        const properties = tool.inputSchema?.properties && typeof tool.inputSchema.properties === 'object'
+          ? tool.inputSchema.properties as Record<string, unknown>
+          : {};
+        const toolArgs = Object.keys(properties).length
+          ? Object.fromEntries(Object.keys(properties).filter((key) => key in availableEvidence).map((key) => [key, availableEvidence[key]]))
+          : availableEvidence;
+        const output = await runPythonHunterTool(tool.id, toolArgs);
         record.notes.push('إعادة استخدام الأداة ' + tool.name + ' (v' + tool.version + '): ' + output.slice(0, 1800));
       } catch (error) {
         record.notes.push('تعذّر تشغيل الأداة المحفوظة ' + tool.name + ': ' + (error instanceof Error ? error.message : 'runtime error'));
@@ -646,7 +657,7 @@ export async function runBrowserRecon(target: HunterTarget, signal?: AbortSignal
     record.status = 'completed';
     void snapshot;
   } catch (error) {
-    record.status = 'partial';
+    record.status = signal?.aborted ? 'stopped' : 'partial';
     record.notes.push(error instanceof Error ? error.message : 'تعذّر إكمال الاستطلاع.');
     const failed = plan.find((step) => step.status === 'error');
     if (failed) failed.detail += ' تعذّر الوصول إلى المتصفح أو قراءة الصفحة.';
