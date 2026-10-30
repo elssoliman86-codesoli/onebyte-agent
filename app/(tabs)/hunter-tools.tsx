@@ -23,9 +23,7 @@ export default function HunterToolsScreen() {
   const [selected, setSelected] = useState<HunterTool | null>(null);
   const [name, setName] = useState('');
   const [description, setDescription] = useState('');
-  const [source, setSource] = useState('def run(args: dict) -> dict:
-    """Analyze supplied evidence and return structured findings."""
-    return {"target": args.get("target", ""), "findings": []}');
+  const [source, setSource] = useState('def run(args: dict) -> dict:\n    """Analyze supplied evidence and return structured findings."""\n    return {"target": args.get("target", ""), "findings": []}');
   const [busy, setBusy] = useState(false);
   const [testingId, setTestingId] = useState<string | null>(null);
 
