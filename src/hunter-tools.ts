@@ -532,7 +532,7 @@ async function generateHunterPythonTool(need: { name: string; description: strin
     if (typeof parsed.name !== 'string' || typeof parsed.description !== 'string' || typeof parsed.source !== 'string') return null;
     const inputSchema = parsed.input_schema && typeof parsed.input_schema === 'object' && !Array.isArray(parsed.input_schema)
       ? parsed.input_schema as Record<string, unknown>
-      : { type: 'object', properties: {}, additionalProperties: false };
+      : DEFAULT_PYTHON_INPUT_SCHEMA;
     const tool = await saveHunterTool({
       name: parsed.name.slice(0, 64),
       inputSchema,
