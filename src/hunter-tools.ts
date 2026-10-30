@@ -41,6 +41,8 @@ export interface HunterTool {
   description: string;
   kind: HunterToolKind;
   status: HunterToolStatus;
+  /** Version explicitly inspected by the user before testing/approval. */
+  reviewedVersion?: number;
   inputSchema: Record<string, unknown>;
   outputDescription: string;
   source: string;
@@ -181,6 +183,7 @@ export async function saveHunterTool(input: {
       source,
       kind: 'python',
       status: 'draft',
+      reviewedVersion: undefined,
       inputSchema: input.inputSchema ?? existing.inputSchema,
       outputDescription: input.outputDescription ?? existing.outputDescription,
       version,
@@ -236,9 +239,17 @@ export async function deleteHunterTool(id: string): Promise<void> {
   await persistTools(tools.filter((tool) => tool.id !== id));
 }
 
+export async function markHunterToolReviewed(id: string): Promise<void> {
+  const tool = (await loadHunterTools()).find((item) => item.id === id);
+  if (!tool || tool.kind !== 'python' || tool.status !== 'draft') throw new Error('افتح أداة Python في حالة Draft لمراجعة مصدرها أولًا.');
+  const tools = await loadHunterTools();
+  await persistTools(tools.map((item) => item.id === id ? { ...item, reviewedVersion: item.version, testSummary: 'Source explicitly reviewed by user; awaiting manual smoke test.' } : item));
+}
+
 export async function smokeTestHunterPythonTool(id: string): Promise<string> {
   const tool = (await loadHunterTools()).find((item) => item.id === id);
   if (!tool || tool.kind !== 'python') throw new Error('أداة Python غير موجودة.');
+  if (tool.status !== 'draft' || tool.reviewedVersion !== tool.version) throw new Error('راجع مصدر الإصدار الحالي وأكّد المراجعة قبل تشغيل الاختبار.');
   if (!pythonRuntime) throw new Error('محرك Python المحلي لم يجهز بعد.');
   const result = await pythonRuntime.execute({ source: tool.source, args: { target: 'example.invalid', evidence: [], urls: [] }, timeoutMs: 8_000, maxOutputBytes: 64_000, network: 'disabled' });
   if (!result.value || typeof result.value !== 'object') throw new Error('الأداة لم تُرجع نتيجة JSON منظمة.');
@@ -249,7 +260,7 @@ export async function smokeTestHunterPythonTool(id: string): Promise<string> {
 
 export async function approveHunterPythonTool(id: string): Promise<void> {
   const tool = (await loadHunterTools()).find((item) => item.id === id);
-  if (!tool || tool.kind !== 'python' || tool.status !== 'smoke-tested') throw new Error('يجب نجاح اختبار التشغيل الأولي قبل الاعتماد.');
+  if (!tool || tool.kind !== 'python' || tool.status !== 'smoke-tested' || tool.reviewedVersion !== tool.version) throw new Error('يجب مراجعة مصدر الإصدار الحالي واختباره يدويًا قبل الاعتماد.');
   await setHunterToolStatus(id, 'verified', 'User reviewed source and approved after smoke test.');
 }
 
