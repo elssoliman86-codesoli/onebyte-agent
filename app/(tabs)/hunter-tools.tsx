@@ -10,7 +10,8 @@ import {
   loadHunterRuns,
   loadHunterTools,
   saveHunterTool,
-  setHunterToolStatus,
+  approveHunterPythonTool,
+  smokeTestHunterPythonTool,
   type HunterRunRecord,
   type HunterTool,
 } from '@/src/hunter-tools';
@@ -24,6 +25,7 @@ export default function HunterToolsScreen() {
   const [description, setDescription] = useState('');
   const [source, setSource] = useState('def run(target: str) -> dict:\n    """Return structured findings for an authorized target."""\n    return {"target": target, "findings": []}');
   const [busy, setBusy] = useState(false);
+  const [testingId, setTestingId] = useState<string | null>(null);
 
   async function refresh() {
     const [nextTools, nextRuns] = await Promise.all([loadHunterTools(), loadHunterRuns()]);
@@ -87,6 +89,23 @@ export default function HunterToolsScreen() {
               <Text style={[s.toolName, { color: colors.foreground }]}>{tool.name}</Text>
               <Text style={[s.muted, { color: colors.mutedForeground }]}>{tool.description}</Text>
               <Text style={[s.meta, { color: colors.mutedForeground }]}>{tool.kind.toUpperCase()} · v{tool.version} · {tool.useCount} استخدام · {tool.status}</Text>
+              {tool.kind === 'python' && tool.status !== 'verified' ? (
+                <View style={s.row}>
+                  <Pressable disabled={testingId === tool.id} onPress={() => {
+                    setTestingId(tool.id);
+                    void smokeTestHunterPythonTool(tool.id).then((output) => alertCompat('نجح اختبار التشغيل الأولي', output.slice(0, 1200) || 'تم تنفيذ run(args) وإرجاع نتيجة منظمة.'))
+                      .catch((error) => alertCompat('فشل اختبار الأداة', error instanceof Error ? error.message : 'خطأ غير معروف'))
+                      .finally(() => { setTestingId(null); void refresh(); });
+                  }} style={[s.smallButton, { borderColor: colors.border }]}>
+                    <Text style={{ color: colors.primary, fontSize: 10 }}>{testingId === tool.id ? 'جارٍ الاختبار…' : 'اختبار التشغيل'}</Text>
+                  </Pressable>
+                  {tool.status === 'smoke-tested' ? (
+                    <Pressable onPress={() => void approveHunterPythonTool(tool.id).then(refresh).catch((error) => alertCompat('تعذّر الاعتماد', error instanceof Error ? error.message : 'خطأ غير معروف'))} style={[s.smallButton, { borderColor: colors.success }]}>
+                      <Text style={{ color: colors.success, fontSize: 10 }}>اعتماد الإصدار</Text>
+                    </Pressable>
+                  ) : null}
+                </View>
+              ) : null}
             </View>
             <Pressable onPress={() => edit(tool)} accessibilityLabel={`تعديل ${tool.name}`} style={s.iconButton}>
               <Feather name="edit-2" size={16} color={colors.primary} />
@@ -99,7 +118,7 @@ export default function HunterToolsScreen() {
           </View>
         ))}
         <Text style={[s.note, { color: colors.mutedForeground }]}>
-          حالة المحرك: مكتبة الكود والحفظ الدائم متاحان. تشغيل Python الفعلي يحتاج ربط runtime معزول؛ لا يتم تنفيذ كود Python داخل JavaScript الخاص بالتطبيق.
+          Python يعمل على الجهاز داخل WebAssembly Worker مستقل. أول تشغيل يحتاج تنزيل Runtime الرسمي من jsDelivr؛ بعد تحميله يعمل التنفيذ محليًا مع تعطيل الشبكة داخل Python. ملفات كل تشغيل مؤقتة ولا تصل إلى ملفات Android أو Native Bridge.
         </Text>
       </Surface>
 
@@ -148,6 +167,7 @@ const s = StyleSheet.create({
   iconButton: { padding: 7 },
   input: { minHeight: 42, borderWidth: 1, borderRadius: 9, paddingHorizontal: 10, fontSize: 12 },
   code: { minHeight: 190, borderWidth: 1, borderRadius: 9, padding: 10, fontFamily: 'monospace', fontSize: 11, lineHeight: 17 },
+  smallButton: { minHeight: 28, borderWidth: 1, borderRadius: 7, paddingHorizontal: 8, alignItems: 'center', justifyContent: 'center' },
   primary: { minHeight: 42, borderRadius: 9, alignItems: 'center', justifyContent: 'center', flexDirection: 'row', gap: 7 },
   note: { fontSize: 10, lineHeight: 16 },
 });
