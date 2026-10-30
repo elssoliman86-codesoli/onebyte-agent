@@ -4,6 +4,7 @@ import { Feather } from '@expo/vector-icons';
 import { useColors } from '@/hooks/useColors';
 import { ScreenTopBar } from '@/components/PhoneDrawer';
 import { AppScreen, Surface } from '@/components/Ui';
+import { HunterPythonRuntimeHost } from '@/components/HunterPythonRuntimeHost';
 import { alertCompat } from '@/src/web-alert';
 import {
   deleteHunterTool,
@@ -85,6 +86,7 @@ export default function HunterToolsScreen() {
   const selectedVersionUnchanged = !!selected && selected.name === name && selected.description === description && selected.source === source && selected.outputDescription === outputDescription && inputSchemaText === JSON.stringify(selected.inputSchema ?? {}, null, 2);
 
   return (
+    <View style={{ flex: 1 }}>
     <AppScreen
       title="Hunter Tool Registry"
       eyebrow="Persistent security tooling"
@@ -185,6 +187,8 @@ export default function HunterToolsScreen() {
         )) : <Text style={[s.muted, { color: colors.mutedForeground }]}>لا توجد عمليات محفوظة بعد.</Text>}
       </Surface>
     </AppScreen>
+    <HunterPythonRuntimeHost />
+    </View>
   );
 }
 
