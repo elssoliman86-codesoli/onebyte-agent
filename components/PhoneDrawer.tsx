@@ -25,7 +25,7 @@ const NAV: { key: string; label: string; icon: string; route: string }[] = [
   { key: 'memory', label: 'الذاكرة', icon: 'database', route: '/(tabs)/memory' },
   { key: 'github', label: 'مشاريع GitHub', icon: 'github', route: '/(tabs)/github' },
   { key: 'hunter', label: 'مختبر الأمن السيبراني', icon: 'shield', route: '/(tabs)/hunter' },
-  { key: 'assessments', label: 'التقييمات والنطاقات', icon: 'clipboard', route: '/(tabs)/assessments' },
+  { key: 'assessments', label: 'التقييمات', icon: 'clipboard', route: '/(tabs)/assessments' },
   { key: 'findings', label: 'الثغرات والنتائج', icon: 'alert-triangle', route: '/(tabs)/findings' },
   { key: 'approvals', label: 'الموافقات', icon: 'check-square', route: '/(tabs)/approvals' },
   { key: 'settings', label: 'الإعدادات', icon: 'settings', route: '/(tabs)/settings' },
