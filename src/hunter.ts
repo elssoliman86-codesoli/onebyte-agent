@@ -113,6 +113,35 @@ export interface RunResult {
   detail: string;
 }
 
+async function readBoundedResponse(response: Response, maxBytes = 512 * 1024): Promise<{ text: string; truncated: boolean }> {
+  const declared = Number(response.headers.get('content-length') || 0);
+  if (declared > maxBytes) {
+    try { await response.body?.cancel?.(); } catch { /* Best-effort cancellation. */ }
+    return { text: '', truncated: true };
+  }
+  const reader = response.body?.getReader?.();
+  if (!reader) {
+    const text = await response.text();
+    return { text: text.slice(0, maxBytes), truncated: text.length > maxBytes };
+  }
+  const decoder = new TextDecoder();
+  let text = '';
+  let total = 0;
+  let truncated = false;
+  while (true) {
+    const { value, done } = await reader.read();
+    if (done) break;
+    const remaining = maxBytes - total;
+    if (remaining <= 0) { truncated = true; await reader.cancel(); break; }
+    const chunk = value.subarray(0, remaining);
+    text += decoder.decode(chunk, { stream: true });
+    total += chunk.byteLength;
+    if (chunk.byteLength < value.byteLength) { truncated = true; await reader.cancel(); break; }
+  }
+  text += decoder.decode();
+  return { text, truncated };
+}
+
 /**
  * Send the request for real. On web, cross-origin targets obey CORS — an
  * opaque failure is reported honestly instead of being hidden.
@@ -130,7 +159,7 @@ export async function runRequest(req: HunterRequest, signal?: AbortSignal): Prom
       method: req.method.toUpperCase(),
       headers: req.headers,
       redirect: 'manual',
-      body: ['GET', 'HEAD'].includes(req.method) ? undefined : req.body || undefined,
+      body: ['GET', 'HEAD'].includes(req.method.toUpperCase()) ? undefined : req.body || undefined,
       signal,
     });
     const ms = Date.now() - started;
@@ -144,15 +173,15 @@ export async function runRequest(req: HunterRequest, signal?: AbortSignal): Prom
     res.headers.forEach((v, k) => {
       headers[k] = v;
     });
-    const text = await res.text();
+    const preview = await readBoundedResponse(res);
     return {
       status: res.status,
       statusText: res.statusText,
       ms,
       headers,
-      body: text.length > 40_000 ? text.slice(0, 40_000) + '\n…(مقتطع)' : text,
+      body: preview.text.length > 40_000 ? preview.text.slice(0, 40_000) + '\n…(مقتطع)' : preview.text,
       ok: res.ok,
-      detail: `HTTP ${res.status} ${res.statusText} · ${ms}ms`,
+      detail: `HTTP ${res.status} ${res.statusText} · ${ms}ms${preview.truncated ? ' · تم اقتطاع الاستجابة بعد حد 512KB' : ''}`,
     };
   } catch (error) {
     const ms = Date.now() - started;
