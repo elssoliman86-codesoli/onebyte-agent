@@ -29,11 +29,10 @@ const NAV: { key: string; label: string; icon: string; route: string }[] = [
   { key: 'settings', label: 'الإعدادات', icon: 'settings', route: '/(tabs)/settings' },
 ];
 
-/** Studio entries start a normal chat with an internal mode prompt. */
+/** Studio entries start normal chats. Cybersecurity Lab is a dedicated workspace, not a chat studio. */
 const STUDIO_NAV: { key: StudioMode; label: string; icon: string }[] = [
   { key: 'marketing', label: 'استوديو التسويق', icon: 'trending-up' },
   { key: 'developer', label: 'مختبر المطوّر', icon: 'code' },
-  { key: 'hunter', label: 'الأمن السيبراني', icon: 'shield' },
 ];
 
 export function ScreenTopBar({
