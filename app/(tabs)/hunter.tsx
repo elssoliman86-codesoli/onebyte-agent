@@ -1,4 +1,5 @@
 import React, { useCallback, useEffect, useRef, useState } from 'react';
+import { router } from 'expo-router';
 import { ActivityIndicator, Pressable, ScrollView, StyleSheet, Text, TextInput, View } from 'react-native';
 import { Feather } from '@expo/vector-icons';
 import { useLocalSearchParams } from 'expo-router';
@@ -37,6 +38,8 @@ export default function CyberSecurityScreen() {
   const [running, setRunning] = useState(false);
   const [result, setResult] = useState<HunterLogEntry | null>(null);
   const [error, setError] = useState('');
+  const [huntRunning, setHuntRunning] = useState(false);
+  const [lastHunt, setLastHunt] = useState<HunterRunRecord | null>(null);
   const abortRef = useRef<AbortController | null>(null);
   const aliveRef = useRef(true);
   const lastImportedCaptureRef = useRef('');
@@ -245,6 +248,50 @@ export default function CyberSecurityScreen() {
         )) : (
           <Text style={[styles.muted, { color: colors.mutedForeground }]}>لا توجد نطاقات مضافة بعد. يمكنك إضافة نطاقات برنامج HackerOne أو أنظمة تملكها أو لديك تصريح مكتوب لاختبارها.</Text>
         )}
+      </Surface>
+
+      <Surface style={styles.requestCard}>
+        <View style={styles.sectionHeading}>
+          <Feather name="activity" size={18} color={colors.primary} />
+          <Text style={[styles.sectionTitle, { color: colors.foreground }]}>Autonomous Hunting</Text>
+        </View>
+        <Text style={[styles.muted, { color: colors.mutedForeground }]}>
+          يبدأ باستطلاع المتصفح المدمج، ثم يجمع روابط الصفحة وطلبات الشبكة المرصودة وملفات JavaScript داخل النطاق المحفوظ. لا ينفذ تخمين كلمات مرور أو brute-force أو اختبارات نشطة تلقائيًا.
+        </Text>
+        <View style={styles.actions}>
+          <Pressable
+            disabled={huntRunning || targets.length === 0}
+            onPress={() => {
+              const target = targets.find((item) => item.id === selectedTargetId) ?? targets[0];
+              if (!target) return;
+              setHuntRunning(true);
+              const rootHost = target.host.replace(/^\\*\\./, '');
+              const startUrl = target.host.startsWith('*.') ? `https://www.${rootHost}/` : `https://${rootHost}/`;
+              router.push({ pathname: '/browser', params: { url: startUrl } });
+              void runBrowserRecon(target).then((run) => {
+                setLastHunt(run);
+                alertCompat(
+                  run.status === 'completed' ? 'اكتمل الاستطلاع الأولي' : 'اكتمل جزء من الاستطلاع',
+                  `الهدف: ${run.target}\\nالروابط المرصودة: ${run.discoveredUrls.length}\\nطلبات الشبكة: ${run.networkRequests}\\nالحالة: ${run.status}\\nراجع مكتبة الأدوات وسجل Hunting للتفاصيل.`,
+                );
+              }).catch((e) => alertCompat('تعذّر بدء Hunting', e instanceof Error ? e.message : 'خطأ غير معروف'))
+                .finally(() => setHuntRunning(false));
+            }}
+            style={[styles.primaryButton, { flex: 1, backgroundColor: colors.primary, opacity: huntRunning || targets.length === 0 ? 0.5 : 1 }]}
+          >
+            {huntRunning ? <ActivityIndicator color={colors.primaryForeground} size="small" /> : <Feather name="crosshair" size={16} color={colors.primaryForeground} />}
+            <Text style={[styles.primaryText, { color: colors.primaryForeground }]}>{huntRunning ? 'جارٍ الاستطلاع…' : 'ابدأ Hunting تلقائي'}</Text>
+          </Pressable>
+          <Pressable onPress={() => router.push('/(tabs)/hunter-tools')} style={[styles.secondaryButton, { borderColor: colors.border }]}>
+            <Feather name="database" size={15} color={colors.foreground} />
+            <Text style={[styles.secondaryText, { color: colors.foreground }]}>مكتبة الأدوات</Text>
+          </Pressable>
+        </View>
+        {lastHunt ? (
+          <Text style={[styles.muted, { color: colors.mutedForeground }]}>
+            آخر تشغيل: {lastHunt.target} · {lastHunt.discoveredUrls.length} روابط · {lastHunt.status}
+          </Text>
+        ) : null}
       </Surface>
 
       {showRequestEditor && selectedTargetId && targets.some((target) => target.id === selectedTargetId) ? <Surface style={styles.requestCard}>
