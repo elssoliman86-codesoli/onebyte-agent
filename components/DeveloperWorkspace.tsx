@@ -210,6 +210,46 @@ export function DeveloperWorkspace() {
     }
   }
 
+  function selectProjectFile(path: string) {
+    selectedPathRef.current = path;
+    setSelectedPath(path);
+    setDraft(project?.files.find(file => file.path === path)?.content ?? '');
+    setOpenPaths(current => current.includes(path) ? current : [...current, path]);
+  }
+
+  async function renameFile() {
+    if (!activeSession || !selectedPath || !renameDraft.trim()) return;
+    try {
+      const oldPath = selectedPath;
+      await renameProjectFile(activeSession.id, oldPath, renameDraft.trim());
+      selectedPathRef.current = renameDraft.trim();
+      setSelectedPath(renameDraft.trim());
+      setOpenPaths(current => current.map(path => path === oldPath ? renameDraft.trim() : path));
+      setRenameOpen(false);
+      await refresh(renameDraft.trim());
+      alertCompat('تم تغيير اسم الملف', 'تم تحديث المسار مع الحفاظ على محتوى الملف.');
+    } catch (error) {
+      alertCompat('تعذّر تغيير الاسم', error instanceof Error ? error.message : 'مسار غير صالح.');
+    }
+  }
+
+  function confirmDeleteFile() {
+    if (!activeSession || !selectedPath) return;
+    const path = selectedPath;
+    alertCompat('حذف ملف المشروع؟', `سيتم حذف ${path} من هذا المشروع وإغلاق مراجعاته المعلقة. لا يمكن التراجع عن الحذف.`, [
+      { text: 'إلغاء', style: 'cancel' },
+      { text: 'حذف الملف', style: 'destructive', onPress: () => {
+        void deleteProjectFile(activeSession.id, path).then(async () => {
+          selectedPathRef.current = '';
+          setSelectedPath('');
+          setDraft('');
+          setOpenPaths(current => current.filter(item => item !== path));
+          await refresh();
+        }).catch(error => alertCompat('تعذّر حذف الملف', error instanceof Error ? error.message : 'خطأ غير معروف'));
+      } },
+    ]);
+  }
+
   async function exportZip() {
     if (!project?.files.length) { alertCompat('المشروع فارغ', 'أضف ملفات أولًا.'); return; }
     try {
@@ -409,7 +449,7 @@ export function DeveloperWorkspace() {
       <View style={[s.sidebar,{borderColor:colors.border,backgroundColor:colors.card}, compactLayout ? s.sidebarCompact : null]}>
         <View style={s.filePanelHeading}><View style={s.inline}><Feather name="folder" size={15} color={colors.primary}/><Text style={[s.sectionTitle,{color:colors.foreground}]}>ملفات المشروع</Text></View><Text style={{color:colors.mutedForeground,fontSize:10}}>{project?.files.length ?? 0} ملف</Text></View>
         <View style={s.inline}><TextInput value={newPath} onChangeText={setNewPath} placeholder="src/main.ts" placeholderTextColor={colors.mutedForeground} style={[s.path,{color:colors.foreground,borderColor:colors.border}]}/><Pressable onPress={()=>void createFile()} style={[s.plus,{backgroundColor:colors.primary}]}><Feather name="plus" size={15} color={colors.primaryForeground}/></Pressable></View>
-        <ScrollView style={{maxHeight:compactLayout?88:260}}>{visibleOutline.map(item=><Pressable key={item.path} onPress={()=>{if(item.directory){setCollapsedFolders(prev=>({...prev,[item.path]:!prev[item.path]}));}else{setSelectedPath(item.path);setDraft(project?.files.find(f=>f.path===item.path)?.content??'');}}} style={[s.tree,{paddingLeft:7+item.depth*11,backgroundColor:selectedPath===item.path?colors.accentSubtle:'transparent'}]}><Feather name={item.directory?(collapsedFolders[item.path]?'chevron-right':'chevron-down'):'file-text'} size={13} color={colors.mutedForeground}/><Text numberOfLines={1} style={{color:colors.foreground,fontSize:12,flex:1}}>{item.path.split('/').pop()}</Text></Pressable>)}</ScrollView>
+        <ScrollView style={{maxHeight:compactLayout?88:260}}>{visibleOutline.map(item=><Pressable key={item.path} onPress={()=>{if(item.directory){setCollapsedFolders(prev=>({...prev,[item.path]:!prev[item.path]}));}else{selectProjectFile(item.path);}}} style={[s.tree,{paddingLeft:7+item.depth*11,backgroundColor:selectedPath===item.path?colors.accentSubtle:'transparent'}]}><Feather name={item.directory?(collapsedFolders[item.path]?'chevron-right':'chevron-down'):'file-text'} size={13} color={colors.mutedForeground}/><Text numberOfLines={1} style={{color:colors.foreground,fontSize:12,flex:1}}>{item.path.split('/').pop()}</Text></Pressable>)}</ScrollView>
         <View style={s.inline}>
           <Pressable onPress={()=>void exportZip()} style={[s.button,{borderColor:colors.border,flex:1}]}><Feather name="download" size={14} color={colors.foreground}/><Text style={{color:colors.foreground,fontSize:11}}>تصدير ZIP</Text></Pressable>
           <Pressable onPress={()=>void importZip()} style={[s.button,{borderColor:colors.border,flex:1}]}><Feather name="upload" size={14} color={colors.foreground}/><Text style={{color:colors.foreground,fontSize:11}}>استيراد ZIP</Text></Pressable>
