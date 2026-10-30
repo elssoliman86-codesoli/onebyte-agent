@@ -112,7 +112,7 @@ export default function BrowserScreen() {
   const colors = useColors();
   const params = useLocalSearchParams<{ url?: string | string[] }>();
   const initialUrl = (Array.isArray(params.url) ? params.url[0] : params.url) ?? '';
-  const [address, setAddress] = useState(initialUrl);
+  const [address, setAddress] = useState(redactUrl(initialUrl));
   const [url, setUrl] = useState(initialUrl);
   const [sourceUrl, setSourceUrl] = useState('');
   const [networkLog, setNetworkLog] = useState<EmbeddedBrowserNetworkEntry[]>([]);
@@ -163,7 +163,7 @@ export default function BrowserScreen() {
 
   useEffect(() => {
     let active = true;
-    setAddress(initialUrl);
+    setAddress(redactUrl(initialUrl));
     setUrl(initialUrl);
     setSourceUrl('');
     currentUrlRef.current = initialUrl;
@@ -331,7 +331,7 @@ export default function BrowserScreen() {
       clearNetworkEntries();
       activateScope(matchingTarget && isAuthorized(cleanUrl, targets).ok ? matchingTarget.host : '');
       setBrowserError('');
-      setAddress(cleanUrl);
+      setAddress(redactUrl(cleanUrl));
       setUrl(cleanUrl);
       currentUrlRef.current = cleanUrl;
       pageReadyRef.current = false;
@@ -504,14 +504,14 @@ export default function BrowserScreen() {
             pageReadyRef.current = false;
           }}
           onNavigationStateChange={(state) => {
-            setAddress(state.url);
+            setAddress(redactUrl(state.url));
             setUrl(state.url);
             currentUrlRef.current = state.url;
           }}
           onLoadEnd={(event) => {
             const loadedUrl = event.nativeEvent.url;
             currentUrlRef.current = loadedUrl;
-            setAddress(loadedUrl);
+            setAddress(redactUrl(loadedUrl));
             setUrl(loadedUrl);
             pageReadyRef.current = true;
             setBrowserError('');
