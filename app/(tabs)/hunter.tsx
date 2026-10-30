@@ -53,6 +53,7 @@ export default function CyberSecurityScreen() {
   const capturedHeaders = Array.isArray(routeParams.capturedHeaders) ? routeParams.capturedHeaders[0] : routeParams.capturedHeaders;
   const capturedBody = Array.isArray(routeParams.capturedBody) ? routeParams.capturedBody[0] : routeParams.capturedBody;
   const capturedAt = Array.isArray(routeParams.capturedAt) ? routeParams.capturedAt[0] : routeParams.capturedAt;
+  const eligibleTargets = targets.filter((target) => isAuthorized(`https://${target.host.startsWith('*.') ? 'www.' + target.host.slice(2) : target.host}/`, [target]).ok);
 
   const refresh = useCallback(async () => {
     const [nextTargets, nextLog, nextRuns] = await Promise.all([loadTargets(), loadHunterLog(), loadHunterRuns()]);
@@ -298,7 +299,8 @@ export default function CyberSecurityScreen() {
                 <Text style={[styles.secondaryText,{color:colors.warning}]}>تأكيد التصريح</Text>
               </Pressable>
             ) : null}
-            <Pressable accessibilityRole="button" onPress={() => { setSelectedTargetId(target.id); setUrl(`https://${target.host.startsWith('*.') ? 'www.' + target.host.slice(2) : target.host}/`); setShowRequestEditor(true); setActivePanel('request'); setError('تم اختيار النطاق المحفوظ. راجع قواعد البرنامج وحدود النطاق قبل إرسال أي طلب.'); }} style={[styles.secondaryButton,{borderColor:colors.border,paddingHorizontal:8,paddingVertical:5}]}>
+            <Pressable accessibilityRole="button" disabled={!target.authorizationConfirmedAt}
+              onPress={() => { setSelectedTargetId(target.id); setUrl(`https://${target.host.startsWith('*.') ? 'www.' + target.host.slice(2) : target.host}/`); setShowRequestEditor(true); setActivePanel('request'); setError('تم اختيار النطاق المحفوظ. راجع قواعد البرنامج وحدود النطاق قبل إرسال أي طلب.'); }} style={[styles.secondaryButton,{borderColor:colors.border,paddingHorizontal:8,paddingVertical:5}]}>
               <Feather name="shield" size={14} color={colors.primary} />
               <Text style={[styles.secondaryText,{color:colors.primary}]}>فتح المختبر</Text>
             </Pressable>
@@ -326,9 +328,9 @@ export default function CyberSecurityScreen() {
         </Text>
         <View style={styles.actions}>
           <Pressable
-            disabled={huntRunning || targets.length === 0}
+            disabled={huntRunning || eligibleTargets.length === 0}
             onPress={() => {
-              const target = targets.find((item) => item.id === selectedTargetId) ?? targets[0];
+              const target = eligibleTargets.find((item) => item.id === selectedTargetId) ?? eligibleTargets[0];
               if (!target) return;
               setHuntRunning(true);
               const rootHost = target.host.startsWith('*.') ? target.host.slice(2) : target.host;
@@ -343,7 +345,7 @@ export default function CyberSecurityScreen() {
               }).catch((e) => alertCompat('تعذّر بدء Hunting', e instanceof Error ? e.message : 'خطأ غير معروف'))
                 .finally(() => setHuntRunning(false));
             }}
-            style={[styles.primaryButton, { flex: 1, backgroundColor: colors.primary, opacity: huntRunning || targets.length === 0 ? 0.5 : 1 }]}
+            style={[styles.primaryButton, { flex: 1, backgroundColor: colors.primary, opacity: huntRunning || eligibleTargets.length === 0 ? 0.5 : 1 }]}
           >
             {huntRunning ? <ActivityIndicator color={colors.primaryForeground} size="small" /> : <Feather name="crosshair" size={16} color={colors.primaryForeground} />}
             <Text style={[styles.primaryText, { color: colors.primaryForeground }]}>{huntRunning ? 'جارٍ الاستطلاع…' : 'ابدأ Hunting تلقائي'}</Text>
