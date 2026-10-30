@@ -123,6 +123,11 @@ export default function CyberSecurityScreen() {
   }
 
   function reconfirmTarget(target: HunterTarget) {
+    const normalizedHost = normalizeTargetPattern(target.host);
+    if (!normalizedHost) {
+      alertCompat('صيغة النطاق قديمة وغير صالحة', 'احذف هذا التارجت وأعد إضافته بصيغة اسم مضيف فقط مثل example.com أو wildcard صريح مثل *.example.com.');
+      return;
+    }
     alertCompat(
       'إعادة تأكيد تصريح الاختبار',
       `هل تؤكد أن الإذن الخاص بـ ${target.host} ما زال صالحًا، وأن المصدر والنطاق المسجلين يسمحان بهذا الاختبار؟ هذا إقرار منك وليس تحققًا من مالك الموقع.`,
@@ -132,7 +137,7 @@ export default function CyberSecurityScreen() {
           text: 'أؤكد وأفعّل النطاق',
           onPress: () => {
             const updated = targets.map((item) => item.id === target.id
-              ? { ...item, authorizationConfirmedAt: new Date().toISOString() }
+              ? { ...item, host: normalizedHost, authorizationConfirmedAt: new Date().toISOString() }
               : item);
             setTargets(updated);
             void saveTargets(updated).then(() => setError('تم تسجيل إقرارك. راجع حدود البرنامج قبل كل اختبار.'))
