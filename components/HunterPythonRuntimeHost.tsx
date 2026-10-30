@@ -6,7 +6,7 @@ import { registerHunterPythonRuntime, type PythonRuntime } from '@/src/hunter-to
 const PYODIDE_VERSION = '0.29.5';
 const HTML = `<!doctype html>
 <html><head><meta name="viewport" content="width=device-width,initial-scale=1">
-<meta http-equiv="Content-Security-Policy" content="default-src 'none'; script-src 'unsafe-inline' https://cdn.jsdelivr.net blob:; worker-src blob:; connect-src https://cdn.jsdelivr.net; style-src 'unsafe-inline';">
+<meta http-equiv="Content-Security-Policy" content="default-src 'none'; script-src 'unsafe-inline' 'wasm-unsafe-eval' https://cdn.jsdelivr.net blob:; worker-src blob:; connect-src https://cdn.jsdelivr.net; style-src 'unsafe-inline';">
 </head><body><script>
 (function(){
   var workers = Object.create(null);
@@ -36,10 +36,11 @@ const HTML = `<!doctype html>
       "   'if inspect.isawaitable(__hunter_result): __hunter_result = await __hunter_result\\n' +",
       "   'sys.settrace(None)\\n' +",
       "   'if not isinstance(__hunter_result, (dict, list, str, int, float, bool, type(None))): raise TypeError(\\\"Tool result must be JSON-compatible\\\")\\n' +",
-      "   '__hunter_json = _json.dumps(__hunter_result, ensure_ascii=False)\\nif len(__hunter_json) > 64000: raise ValueError(\\\"Tool output exceeds 64KB\\\")';",
+      "   '__hunter_stdout = __hunter_out.getvalue()\\n__hunter_json = _json.dumps(__hunter_result, ensure_ascii=False)\\nif len(__hunter_json) > 64000: raise ValueError(\\\"Tool output exceeds 64KB\\\")';",
       "  await pyodide.runPythonAsync(wrapper);",
       "  const result = pyodide.globals.get('__hunter_json');",
-      "  const output = (self.__stdout || '') + (self.__stderr || '') + String(result || 'null');",
+      "  const stdout = pyodide.globals.get('__hunter_stdout');
+  const output = String(stdout || '') + (self.__stdout || '') + (self.__stderr || '') + String(result || 'null');",
       "  self.postMessage({ id: data.id, ok: true, output: output.slice(0, 64000), value: String(result || 'null') });",
       " } catch(error) { self.postMessage({ id: data.id, ok: false, error: String(error && error.message || error).slice(0, 4000) }); }",
       "};"
