@@ -323,7 +323,7 @@ export async function markHunterToolReviewed(id: string): Promise<void> {
   const tools = await loadHunterTools();
   const tool = tools.find((item) => item.id === id);
   if (!tool || tool.kind !== 'python' || tool.status !== 'draft') throw new Error('افتح أداة Python في حالة Draft لمراجعة مصدرها أولًا.');
-  await persistTools(tools.map((item) => item.id === id ? { ...item, reviewedVersion: tool.version, testSummary: 'Source explicitly reviewed by user; awaiting manual smoke test.' } : item));
+  await persistTools(tools.map((item) => item.id === id ? { ...item, reviewedVersion: tool.version, versions: item.versions.map((version) => version.version === item.version ? { ...version, testSummary: 'Source reviewed by user; awaiting manual smoke test.' } : version) } : item));
 }
 
 export async function smokeTestHunterPythonTool(id: string): Promise<string> {
