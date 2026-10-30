@@ -13,6 +13,7 @@ import { NativeTabs } from 'expo-router/unstable-native-tabs';
 import { DesktopShell } from '@/components/desktop/DesktopShell';
 import { DesktopChat } from '@/components/desktop/DesktopChat';
 import { useIsDesktopViewport } from '@/components/desktop/useDesktopViewport';
+import { HunterPythonRuntimeHost } from '@/components/HunterPythonRuntimeHost';
 
 // IMPORTANT: iOS 26 uses NativeTabs for native tabs with liquid glass support.
 // NativeTabs intentionally does NOT use custom design tokens — liquid glass
@@ -172,15 +173,18 @@ export default function TabLayout() {
   const isDesktop = useIsDesktopViewport();
   // Desktop viewport (web only): custom command-center shell instead of the
   // tab bar. The mobile tab bar is not rendered simultaneously.
-  if (isDesktop) {
-    return (
-      <DesktopShell>
-        <DesktopCenter />
-      </DesktopShell>
-    );
-  }
-  if (isLiquidGlassAvailable()) {
-    return <NativeTabLayout />;
-  }
-  return <ClassicTabLayout />;
+  const content = isDesktop
+    ? <DesktopShell><DesktopCenter /></DesktopShell>
+    : isLiquidGlassAvailable()
+      ? <NativeTabLayout />
+      : <ClassicTabLayout />;
+
+  // Keep one native Python worker runtime alive for both Hunter reconnaissance
+  // and the tool registry. Web does not mount react-native-webview.
+  return (
+    <View style={{ flex: 1 }}>
+      {content}
+      {Platform.OS !== 'web' ? <HunterPythonRuntimeHost /> : null}
+    </View>
+  );
 }
