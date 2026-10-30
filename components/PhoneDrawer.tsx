@@ -113,7 +113,33 @@ export function PhoneDrawer({
   const pendingApprovals = approvals.filter((a) => a.status === 'pending').length;
   const recent = sessions.filter((session) => !['developer', 'marketing', 'hunter'].includes(session.mode ?? '')).slice(0, 6);
 
+  async function openGenericChat() {
+    const current = sessions.find((session) => session.id === activeSessionId);
+    onClose();
+    if (!current?.mode) {
+      router.push('/(tabs)');
+      return;
+    }
+    // A generic Chat is a separate workspace. Leaving a studio must not
+    // carry its mode/system directive into the normal discussion thread.
+    try {
+      if (onNewChat) {
+        onNewChat();
+      } else {
+        const id = await createSession();
+        await setActiveSession(id);
+        router.push('/(tabs)');
+      }
+    } catch {
+      alertCompat('تعذّر فتح محادثة عامة', 'حاول مرة أخرى.');
+    }
+  }
+
   function go(route: string) {
+    if (route === '/(tabs)') {
+      void openGenericChat();
+      return;
+    }
     onClose();
     router.push(route as never);
   }
