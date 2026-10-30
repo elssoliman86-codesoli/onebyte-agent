@@ -49,12 +49,24 @@ function sleep(ms: number, signal?: AbortSignal): Promise<void> {
       reject(new DOMException('Aborted', 'AbortError'));
       return;
     }
-    const handle = setTimeout(resolve, ms);
+    let settled = false;
+    const cleanup = () => signal?.removeEventListener('abort', onAbort);
+    const handle = setTimeout(() => {
+      if (settled) return;
+      settled = true;
+      cleanup();
+      resolve();
+    }, ms);
     const onAbort = () => {
+      if (settled) return;
+      settled = true;
       clearTimeout(handle);
+      cleanup();
       reject(new DOMException('Aborted', 'AbortError'));
     };
     signal?.addEventListener('abort', onAbort, { once: true });
+    // Close the race between the initial check and listener registration.
+    if (signal?.aborted) onAbort();
   });
 }
 
@@ -81,72 +93,83 @@ export async function fetchWithRetry(
   options: FetchRetryOptions = {},
 ): Promise<Response> {
   const opts = { ...DEFAULT_OPTIONS, ...options };
+  const externalSignal = opts.signal ?? init?.signal ?? undefined;
   let attempt = 0;
-  let lastError: unknown;
 
   while (true) {
-    // Check for abort before each attempt
-    if (opts.signal?.aborted) {
+    if (externalSignal?.aborted) {
       throw new DOMException('Aborted', 'AbortError');
     }
 
-    // Per-attempt timer only when a positive timeout was requested. When the
-    // caller disables it (0 / undefined) the request has no time cap.
     const controller = new AbortController();
     let timeoutId: ReturnType<typeof setTimeout> | undefined;
-    if (opts.timeout) {
-      timeoutId = setTimeout(() => controller.abort(), opts.timeout);
+    let timedOut = false;
+    let externallyAborted = false;
+    let onExternalAbort: (() => void) | undefined;
+
+    // Do not depend on AbortSignal.any: some Android/Hermes runtimes do not
+    // implement it. A manually bridged controller preserves cancellation on
+    // every supported runtime, including timeout: 0 requests.
+    if (externalSignal) {
+      onExternalAbort = () => {
+        externallyAborted = true;
+        controller.abort();
+      };
+      externalSignal.addEventListener('abort', onExternalAbort, { once: true });
+      if (externalSignal.aborted) onExternalAbort();
     }
 
-    // Combine the attempt controller with the external signal
-    const combinedSignal = AbortSignal.any?.([controller.signal, opts.signal].filter(Boolean) as AbortSignal[]) ?? controller.signal;
+    if (opts.timeout > 0) {
+      timeoutId = setTimeout(() => {
+        timedOut = true;
+        controller.abort();
+      }, opts.timeout);
+    }
 
-    const attemptInit: RequestInit = {
-      ...init,
-      signal: combinedSignal,
+    const cleanupAttempt = () => {
+      if (timeoutId) clearTimeout(timeoutId);
+      if (onExternalAbort) externalSignal?.removeEventListener('abort', onExternalAbort);
     };
 
     try {
-      const response = await fetch(url, attemptInit);
-      if (timeoutId) clearTimeout(timeoutId);
+      const response = await fetch(url, {
+        ...init,
+        signal: controller.signal,
+      });
+      cleanupAttempt();
 
-      // If response is ok or non-retryable status, return it
-      if (response.ok || !opts.retryStatusCodes.includes(response.status)) {
-        return response;
+      if (externalSignal?.aborted || externallyAborted) {
+        throw new DOMException('Aborted', 'AbortError');
       }
-
-      // Status is retryable - throw to trigger retry logic
+      if (response.ok || !opts.retryStatusCodes.includes(response.status)) return response;
       throw new ResponseError(response.status, `HTTP ${response.status}`);
     } catch (error) {
-      if (timeoutId) clearTimeout(timeoutId);
-      lastError = error;
+      cleanupAttempt();
 
-      // If aborted intentionally, don't retry
-      if (error instanceof DOMException && error.name === 'AbortError') {
+      if (externalSignal?.aborted || externallyAborted) {
+        throw new DOMException('Aborted', 'AbortError');
+      }
+      if (error instanceof DOMException && error.name === 'AbortError' && !timedOut) {
         throw error;
       }
 
-      // Check if we should retry
       const status = error instanceof ResponseError ? error.status : null;
-      const shouldRetry = attempt < opts.maxRetries && isRetryable(status, error, opts.retryStatusCodes);
+      const shouldRetry = attempt < opts.maxRetries &&
+        (timedOut || isRetryable(status, error, opts.retryStatusCodes));
+      if (!shouldRetry) throw error;
 
-      if (!shouldRetry) {
-        throw error;
-      }
-
-      // Calculate delay with exponential backoff and jitter
       const delay = Math.min(
         opts.baseDelay * Math.pow(opts.backoffMultiplier, attempt),
         opts.maxDelay,
       );
-      const jitter = delay * 0.1 * Math.random(); // 0-10% jitter
+      const jitter = delay * 0.1 * Math.random();
       const totalDelay = delay + jitter;
-
-      // Notify about retry
-      opts.onRetry?.(attempt + 1, error instanceof Error ? error : new Error(String(error)), totalDelay);
-
-      // Wait before retry
-      await sleep(totalDelay, opts.signal);
+      opts.onRetry?.(
+        attempt + 1,
+        error instanceof Error ? error : new Error(String(error)),
+        totalDelay,
+      );
+      await sleep(totalDelay, externalSignal);
       attempt += 1;
     }
   }
