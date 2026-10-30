@@ -512,7 +512,7 @@ export function DeveloperWorkspace() {
     {compactLayout ? (
       <View style={[s.mobileFileBar,{borderColor:colors.border,backgroundColor:colors.card}]}>
         <Pressable onPress={()=>setFilesDrawerOpen(true)} style={[s.mobileFilesButton,{backgroundColor:colors.accentSubtle,borderColor:colors.border}]}>
-          <Feather name="folder-tree" size={15} color={colors.primary}/>
+          <Feather name="folder" size={15} color={colors.primary}/>
           <Text numberOfLines={1} style={{color:colors.foreground,fontSize:12,fontWeight:'700',flex:1}}>الملفات · {project?.files.length??0}</Text>
           <Feather name="chevron-down" size={14} color={colors.mutedForeground}/>
         </Pressable>
