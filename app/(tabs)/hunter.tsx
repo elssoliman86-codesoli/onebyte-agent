@@ -68,7 +68,7 @@ export default function CyberSecurityScreen() {
 
   useEffect(() => {
     aliveRef.current = true;
-    void refresh();
+    void refresh().catch((error) => setError(error instanceof Error ? error.message : 'تعذّر تحميل بيانات مختبر الأمن.'));
     return () => {
       aliveRef.current = false;
       abortRef.current?.abort();
@@ -113,7 +113,8 @@ export default function CyberSecurityScreen() {
       createdAt: new Date().toISOString(),
     };
     const updated = [next, ...targets.filter((item) => item.host !== normalized)];
-    await saveTargets(updated);
+    try { await saveTargets(updated); }
+    catch (error) { alertCompat('تعذّر حفظ النطاق', error instanceof Error ? error.message : 'خطأ في التخزين المحلي.'); return; }
     setTargets(updated);
     setTargetHost('');
     setAuthorization('');
