@@ -2,7 +2,7 @@ import { Linking, Platform } from 'react-native';
 import { router } from 'expo-router';
 import { getEmbeddedBrowser, waitForEmbeddedBrowser } from './embedded-browser';
 import { isAuthorized, loadTargets } from './hunter';
-import { runHunterRegistryTool } from './hunter-tools';
+import { listHunterToolCatalog, runHunterRegistryTool, saveHunterTool } from './hunter-tools';
 import { fetchWithRetry } from './fetch-with-retry';
 import * as Device from './device';
 import { createFile, getDefaultBranch, getRepoTree, listRepos, loadGithubToken, readFileSnapshot, verifyGithubToken, writeFile } from './github';
@@ -253,6 +253,25 @@ export const TOOL_SPECS: ToolSpec[] = [
       headers: { type: 'object', additionalProperties: { type: 'string' } },
       body: { type: 'string' },
     }, ['url', 'method']),
+  },
+  {
+    name: 'hunter_list_saved_tools',
+    group: 'browser',
+    label: 'عرض مكتبة أدوات Hunter',
+    description: 'List persistent Hunter tools with IDs, versions, descriptions, input schemas and verification status. Always check this registry before proposing a duplicate tool.',
+    parameters: obj({}),
+  },
+  {
+    name: 'hunter_save_python_tool',
+    group: 'browser',
+    label: 'حفظ أداة Python في Hunter',
+    description: 'Save a generated Python helper into the persistent Hunter registry as a DRAFT. It must define run(args), analyze only supplied evidence, use no network or filesystem, and will not execute until the user runs a smoke test and explicitly approves it.',
+    parameters: obj({
+      name: { type: 'string' },
+      description: { type: 'string' },
+      source: { type: 'string' },
+      outputDescription: { type: 'string' },
+    }, ['name', 'description', 'source']),
   },
   {
     name: 'hunter_run_saved_tool',
@@ -662,6 +681,18 @@ export async function executeTool(
     }
     case 'web_search':
       return await webSearch(str(args, 'query'));
+    case 'hunter_list_saved_tools':
+      return await listHunterToolCatalog();
+    case 'hunter_save_python_tool': {
+      const tool = await saveHunterTool({
+        name: str(args, 'name'),
+        description: str(args, 'description'),
+        source: str(args, 'source'),
+        outputDescription: typeof args.outputDescription === 'string' ? args.outputDescription : undefined,
+        tags: ['agent-generated'],
+      });
+      return JSON.stringify({ saved: true, id: tool.id, name: tool.name, version: tool.version, status: tool.status, note: 'Draft only; run the smoke test and explicitly approve before execution.' });
+    }
     case 'hunter_run_saved_tool': {
       const toolId = str(args, 'tool_id');
       const toolArgs = args.args && typeof args.args === 'object' && !Array.isArray(args.args) ? args.args as Record<string, unknown> : {};
