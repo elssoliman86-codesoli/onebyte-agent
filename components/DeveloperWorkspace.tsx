@@ -173,6 +173,7 @@ export function DeveloperWorkspace() {
   }
   async function createFile() {
     if (!activeSession || !newPath.trim()) return;
+    if (selectedFile && draft !== selectedFile.content) { alertCompat('احفظ التعديلات أولًا', 'احفظ الملف المفتوح قبل إنشاء ملف آخر حتى لا تفقد تغييراتك.'); return; }
     try {
       await saveProjectFile(activeSession.id, activeSession.title, newPath.trim(), '');
       setSelectedPath(newPath.trim()); setDraft(''); await refresh(newPath.trim());
@@ -217,7 +218,15 @@ export function DeveloperWorkspace() {
     }
   }
 
-  function selectProjectFile(path: string) {
+  function selectProjectFile(path: string, discardUnsaved = false) {
+    if (path === selectedPath) return;
+    if (!discardUnsaved && selectedFile && draft !== selectedFile.content) {
+      alertCompat('تعديلات غير محفوظة', 'احفظ الملف الحالي أولًا، أو اختر تجاهل التعديلات لفتح الملف الآخر.', [
+        { text: 'إلغاء', style: 'cancel' },
+        { text: 'تجاهل وفتح', style: 'destructive', onPress: () => selectProjectFile(path, true) },
+      ]);
+      return;
+    }
     selectedPathRef.current = path;
     setSelectedPath(path);
     setDraft(project?.files.find(file => file.path === path)?.content ?? '');
@@ -228,6 +237,7 @@ export function DeveloperWorkspace() {
     if (!activeSession || !selectedPath || !renameDraft.trim()) return;
     try {
       const oldPath = selectedPath;
+      if (selectedFile && draft !== selectedFile.content) await saveProjectFile(activeSession.id, activeSession.title, oldPath, draft);
       await renameProjectFile(activeSession.id, oldPath, renameDraft.trim());
       selectedPathRef.current = renameDraft.trim();
       setSelectedPath(renameDraft.trim());
@@ -463,7 +473,7 @@ export function DeveloperWorkspace() {
         </View>
       </View>
       <View style={[s.editor,{borderColor:colors.border,backgroundColor:colors.card}, compactLayout ? s.editorCompact : null]}>
-        <View style={s.fileHeading}><View style={{flex:1,minWidth:0}}><Text style={{color:colors.foreground,fontWeight:'700'}} numberOfLines={1}>{selectedPath||'المحرر — لا يوجد ملف مفتوح'}</Text><Text style={{color:colors.mutedForeground,fontSize:11}}>{selectedFile?.language??'اختر ملفًا من الشجرة'}</Text><Text style={{color:colors.mutedForeground,fontSize:10}}>موديل الكود: {project?.codeModelId || provider.model || 'غير محدد'}</Text></View>{selectedFile ? <Pressable accessibilityLabel="إعادة تسمية الملف" onPress={()=>{setRenameDraft(selectedPath);setRenameOpen(true);}} style={{padding:5}}><Feather name="edit-2" size={15} color={colors.primary}/></Pressable> : null}{selectedFile ? <Pressable accessibilityLabel="حذف الملف" onPress={confirmDeleteFile} style={{padding:5}}><Feather name="trash-2" size={15} color={colors.destructive}/></Pressable> : null}<Pressable onPress={()=>setCodeModelPickerOpen(true)} style={{padding:5}}><Feather name="cpu" size={17} color={colors.primary}/></Pressable><Pressable onPress={()=>setPlanOpen(v=>!v)}><Feather name="help-circle" size={18} color={colors.primary}/></Pressable></View>
+        <View style={s.fileHeading}><View style={{flex:1,minWidth:0}}><Text style={{color:colors.foreground,fontWeight:'700'}} numberOfLines={1}>{selectedPath||'المحرر — لا يوجد ملف مفتوح'}</Text><Text style={{color:colors.mutedForeground,fontSize:11}}>{selectedFile?.language??'اختر ملفًا من الشجرة'}{selectedFile && draft!==selectedFile.content ? ' · غير محفوظ' : selectedFile ? ' · محفوظ' : ''}</Text><Text style={{color:colors.mutedForeground,fontSize:10}}>موديل الكود: {project?.codeModelId || provider.model || 'غير محدد'}</Text></View>{selectedFile ? <Pressable accessibilityLabel="إعادة تسمية الملف" onPress={()=>{setRenameDraft(selectedPath);setRenameOpen(true);}} style={{padding:5}}><Feather name="edit-2" size={15} color={colors.primary}/></Pressable> : null}{selectedFile ? <Pressable accessibilityLabel="حذف الملف" onPress={confirmDeleteFile} style={{padding:5}}><Feather name="trash-2" size={15} color={colors.destructive}/></Pressable> : null}<Pressable onPress={()=>setCodeModelPickerOpen(true)} style={{padding:5}}><Feather name="cpu" size={17} color={colors.primary}/></Pressable><Pressable onPress={()=>setPlanOpen(v=>!v)}><Feather name="help-circle" size={18} color={colors.primary}/></Pressable></View>
         {openPaths.length ? <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={s.fileTabs}>{openPaths.map(path=><Pressable key={path} onPress={()=>selectProjectFile(path)} style={[s.fileTab,{borderColor:path===selectedPath?colors.primary:colors.border,backgroundColor:path===selectedPath?colors.accentSubtle:colors.background}]}><Text numberOfLines={1} style={{color:path===selectedPath?colors.primary:colors.mutedForeground,fontSize:11,fontWeight:'700'}}>{path.split('/').pop()}</Text></Pressable>)}</ScrollView> : null}
         {renameOpen ? <View style={[s.renamePanel,{borderColor:colors.border,backgroundColor:colors.background}]}><TextInput value={renameDraft} onChangeText={setRenameDraft} autoCapitalize="none" autoCorrect={false} placeholder="المسار الجديد للملف" placeholderTextColor={colors.mutedForeground} style={[s.path,{color:colors.foreground,borderColor:colors.border,flex:1}]}/><Pressable onPress={()=>void renameFile()} style={[s.primary,{backgroundColor:colors.primary}]}><Text style={{color:colors.primaryForeground,fontSize:11}}>حفظ الاسم</Text></Pressable><Pressable onPress={()=>setRenameOpen(false)} style={[s.button,{borderColor:colors.border}]}><Text style={{color:colors.foreground,fontSize:11}}>إلغاء</Text></Pressable></View> : null}
         {selectedFile ? (
