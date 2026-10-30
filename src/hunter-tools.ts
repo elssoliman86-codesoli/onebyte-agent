@@ -11,6 +11,7 @@ import { endpointFor } from './model-provider';
 import { collectEndpointCandidates, collectJavaScriptAssets } from './hunter-parsers';
 import {
   isAuthorized,
+  loadTargets,
   type HunterTarget,
 } from './hunter';
 import {
