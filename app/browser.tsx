@@ -38,7 +38,7 @@ function redactText(value: string | undefined): string {
   return value
     .replace(/("(?:password|token|secret|api[_-]?key|authorization|cookie|session|access_token|refresh_token)"\s*:\s*")[^"]*(")/gi, '$1[REDACTED]$2')
     .replace(/((?:password|token|secret|api[_-]?key|authorization|cookie|session|access_token|refresh_token)=)[^&\s]+/gi, '$1[REDACTED]')
-    .replace(/((?:api[_-]?key|token|secret|authorization)\\s*[:=]\\s*[\"'`])[^\"'`]+([\"'`])/gi, '$1[REDACTED]$2')
+    .replace(/((?:api[_-]?key|token|secret|authorization)\s*[:=]\s*["'`])[^"'`]+(["'`])/gi, '$1[REDACTED]$2')
     .slice(0, 5000);
 }
 
@@ -252,7 +252,7 @@ export default function BrowserScreen() {
         const snapshot = JSON.parse(await evaluate(
           'JSON.stringify({url:location.href,title:document.title,text:(document.body?.innerText||"").slice(0,24000),source:(document.documentElement?.outerHTML||"").slice(0,30000),elements:Array.from(document.querySelectorAll("a,button,input,textarea,select,[role=button],[contenteditable=true]")).slice(0,160).map((el,i)=>({index:i,tag:el.tagName.toLowerCase(),role:el.getAttribute("role")||"",label:(el.innerText||el.getAttribute("aria-label")||el.getAttribute("name")||el.getAttribute("placeholder")||el.value||"").toString().trim().slice(0,240),type:el.type||"",placeholder:el.getAttribute("placeholder")||"",href:el.href||"",disabled:!!el.disabled,password:el.type==="password"}))})',
         )) as EmbeddedBrowserSnapshot;
-        return { ...snapshot, source: redactText(snapshot.source).slice(0, 30000) };
+        return { ...snapshot, text: redactText(snapshot.text).slice(0, 24000), source: redactText(snapshot.source).slice(0, 30000) };
       },
       click: async (index) => evaluate(
         '(()=>{const e=Array.from(document.querySelectorAll("a,button,input,textarea,select,[role=button],[contenteditable=true]")).slice(0,160)[' + index + '];if(!e)throw new Error("العنصر غير موجود");e.scrollIntoView({block:"center"});e.click();return "تم الضغط على "+(e.innerText||e.getAttribute("aria-label")||e.tagName)})()',
