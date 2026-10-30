@@ -298,7 +298,8 @@ export async function runHunterRegistryTool(id: string, args: Record<string, unk
     const targetHost = typeof args.targetHost === 'string' ? args.targetHost : '';
     const urls = Array.isArray(args.urls) ? args.urls.filter((item): item is string => typeof item === 'string') : [];
     const snapshot: EmbeddedBrowserSnapshot = { url: typeof args.pageUrl === 'string' ? args.pageUrl : 'https://' + targetHost + '/', title: '', text: pageText, elements: [] };
-    result = JSON.stringify({ endpoints: collectEndpointCandidates(snapshot, [], targetHost), suppliedUrlCount: urls.length });
+    const observed = urls.map((url, index) => ({ id: 'observed-' + index, source: 'fetch' as const, method: 'GET', url, createdAt: now(), elapsedMs: 0, status: null, requestHeaders: {}, requestBody: '' }));
+    result = JSON.stringify({ endpoints: collectEndpointCandidates(snapshot, observed, targetHost), suppliedUrlCount: urls.length });
   } else if (id === 'hunter.passive-subdomain-discovery') {
     const targetHost = typeof args.targetHost === 'string' ? args.targetHost.trim().toLowerCase() : '';
     result = JSON.stringify({ source: 'crt.sh certificate transparency', passive: true, subdomains: await discoverPassiveSubdomains(targetHost) });
