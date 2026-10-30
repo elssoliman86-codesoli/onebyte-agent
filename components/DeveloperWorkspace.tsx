@@ -153,44 +153,39 @@ export function DeveloperWorkspace() {
   async function saveFile() {
     if (!activeSession || !selectedPath) return;
     setBusy(true);
-    const savedContent = draft;
-    const filePath = selectedPath;
     try {
-      await saveProjectFile(activeSession.id, activeSession.title, filePath, savedContent);
-      try {
-        const apiKey = provider.keyless ? '' : await getStoredModelApiKey();
-        if (!provider.baseUrl.trim() || !(project?.codeModelId || provider.model).trim()) throw new Error('لا يوجد موديل مراجعة مضبوط.');
-        const response = await fetchWithRetry(endpointFor(provider.baseUrl), {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json', ...(apiKey ? { Authorization: `Bearer ${apiKey}` } : {}) },
-          body: JSON.stringify({
-            model: project?.codeModelId || provider.model,
-            temperature: 0.1,
-            messages: [
-              { role: 'system', content: 'Review the complete source file for correctness, logic bugs, security, maintainability, and edge cases. Return ONLY a JSON object with keys "should_change" (boolean), "reason" (short string), and "proposed_code" (complete source file). Never claim tests were run. If no meaningful improvement is needed, set should_change false and proposed_code to the original file.' },
-              { role: 'user', content: `Review this entire file. Path: ${filePath}\n\n${savedContent}\n\nReturn JSON only.` },
-            ],
-          }),
-        }, { timeout: 120000, maxRetries: 1 });
-        if (!response.ok) throw new Error(`HTTP ${response.status}`);
-        const payload = await response.json() as { choices?: Array<{message?:{content?:string}}> };
-        const raw = payload.choices?.[0]?.message?.content ?? '';
-        const parsed = JSON.parse(raw.replace(/^\`\`\`(?:json)?\s*/i, '').replace(/\s*\`\`\`$/, '')) as {should_change?:boolean;reason?:string;proposed_code?:string};
-        if (parsed.should_change && typeof parsed.proposed_code === 'string' && parsed.proposed_code.trim() && parsed.proposed_code !== savedContent) {
-          await proposeCodeReview(activeSession.id, filePath, savedContent, parsed.proposed_code, parsed.reason || 'مراجعة تلقائية للملف بعد الحفظ');
-          await refresh();
-          alertCompat('تم حفظ الملف وظهرت مراجعة', 'الموديل اقترح تحسينًا. لم يُطبّق أي تغيير حتى توافق عليه.');
-        } else {
-          await refresh();
-          alertCompat('تم الحفظ والمراجعة', 'لم يقترح الموديل تغييرًا جوهريًا. لم يتم تشغيل الاختبارات تلقائيًا.');
-        }
-      } catch (reviewError) {
-        await refresh();
-        alertCompat('تم الحفظ؛ تعذّرت المراجعة الآلية', reviewError instanceof Error ? reviewError.message : 'خطأ غير معروف');
-      }
+      await saveProjectFile(activeSession.id, activeSession.title, selectedPath, draft);
+      await refresh(selectedPath);
+      alertCompat('تم حفظ الملف', 'تم حفظ التعديلات محليًا داخل المشروع. لم يتم إرسال الكود إلى أي موديل ولم يتم تشغيله.');
     } catch (error) {
       alertCompat('فشل الحفظ', error instanceof Error ? error.message : 'خطأ غير معروف');
-    } finally { setBusy(false); }
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  async function reviewFileWithModel() {
+    if (!activeSession || !selectedPath || !selectedFile) return;
+    setBusy(true);
+    try {
+      const source = draft;
+      const raw = await callCodeModel([
+        { role: 'system', content: 'Review the complete source file for correctness, logic bugs, security, maintainability, and edge cases. Return ONLY JSON with keys should_change (boolean), reason (short string), and proposed_code (complete source file). Never claim tests were run. If no meaningful improvement is needed, set should_change false.' },
+        { role: 'user', content: `Review this file. Path: ${selectedPath}\n\n${source}\n\nReturn JSON only.` },
+      ], 0.1);
+      const parsed = JSON.parse(raw.replace(/^\`\`\`(?:json)?\\s*/i, '').replace(/\\s*\`\`\`$/, '')) as { should_change?: boolean; reason?: string; proposed_code?: string };
+      if (parsed.should_change && typeof parsed.proposed_code === 'string' && parsed.proposed_code.trim() && parsed.proposed_code !== source) {
+        await proposeCodeReview(activeSession.id, selectedPath, source, parsed.proposed_code, parsed.reason || 'مراجعة AI');
+        await refresh(selectedPath);
+        alertCompat('المراجعة جاهزة', 'الموديل اقترح تعديلًا. لم يتم تطبيقه؛ راجعه ثم وافق عليه يدويًا.');
+      } else {
+        alertCompat('انتهت المراجعة', 'لم يقترح الموديل تغييرًا جوهريًا. لم يتم تشغيل الاختبارات.');
+      }
+    } catch (error) {
+      alertCompat('تعذّرت مراجعة الملف', error instanceof Error ? error.message : 'استجابة غير صالحة من الموديل.');
+    } finally {
+      setBusy(false);
+    }
   }
 
   async function exportZip() {
@@ -410,7 +405,7 @@ export function DeveloperWorkspace() {
             <Pressable onPress={()=>{setNewPath('src/main.ts');void createFile();}} style={[s.primary,{backgroundColor:colors.primary,marginTop:5}]}><Feather name="file-plus" size={14} color={colors.primaryForeground}/><Text style={{color:colors.primaryForeground}}>إنشاء أول ملف</Text></Pressable>
           </View>
         )}
-        <View style={s.inline}><Pressable disabled={!selectedFile||busy} onPress={()=>void saveFile()} style={[s.primary,{backgroundColor:colors.primary,opacity:busy?0.6:1}]}><Feather name="save" size={13} color={colors.primaryForeground}/><Text style={{color:colors.primaryForeground,fontSize:12}}>حفظ</Text></Pressable><Pressable disabled={!selectedFile} onPress={()=>{setReviewPath(selectedPath);setReviewProposed(draft);setReviewReason('مراجعة التعديلات اليدوية');setReviewOpen(true);}} style={[s.button,{borderColor:colors.border}]}><Text style={{color:colors.foreground,fontSize:12}}>طلب مراجعة</Text></Pressable></View>
+        <View style={s.inline}><Pressable disabled={!selectedFile||busy} onPress={()=>void saveFile()} style={[s.primary,{backgroundColor:colors.primary,opacity:busy?0.6:1}]}><Feather name="save" size={13} color={colors.primaryForeground}/><Text style={{color:colors.primaryForeground,fontSize:12}}>حفظ</Text></Pressable><Pressable disabled={!selectedFile||busy} onPress={()=>void reviewFileWithModel()} style={[s.button,{borderColor:colors.border,opacity:busy?0.6:1}]}><Feather name="shield" size={13} color={colors.primary}/><Text style={{color:colors.foreground,fontSize:12}}>مراجعة AI</Text></Pressable><Pressable disabled={!selectedFile} onPress={()=>{setReviewPath(selectedPath);setReviewProposed(draft);setReviewReason('اقتراح يدوي');setReviewOpen(true);}} style={[s.button,{borderColor:colors.border}]}><Text style={{color:colors.foreground,fontSize:11}}>اقتراح يدوي</Text></Pressable></View>
       </View>
     </View>
     <View style={[s.timeline,{borderColor:colors.border,backgroundColor:colors.card},planOpen?s.timelinePopover:s.timelineClosed]}>
