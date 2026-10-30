@@ -2000,7 +2000,7 @@ export default function ChatScreen() {
               </Text>
             </Pressable>
             <FlatList
-              data={sessions}
+              data={sessions.filter((session) => !['developer', 'marketing', 'hunter'].includes(session.mode ?? ''))}
               keyExtractor={(session) => session.id}
               ListEmptyComponent={
                 <Text style={[styles.emptyHistory, { color: colors.mutedForeground }]}>
