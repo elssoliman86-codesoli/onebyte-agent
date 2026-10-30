@@ -170,13 +170,32 @@ export function DeveloperWorkspace() {
     return complete;
   }
 
-  async function newProject() {
+  async function newProject(discardUnsaved = false) {
     if (busy) return;
+    if (!discardUnsaved && selectedFile && draft !== selectedFile.content) {
+      alertCompat('تعديلات غير محفوظة', 'احفظ الملف الحالي أو تجاهل تعديلاته قبل إنشاء مشروع جديد.', [
+        { text: 'إلغاء', style: 'cancel' },
+        { text: 'تجاهل وإنشاء مشروع', style: 'destructive', onPress: () => void newProject(true) },
+      ]);
+      return;
+    }
     setBusy(true);
     try { const id = await createSession(); await patchSession(id, { mode: 'developer' }); await setActiveSession(id); }
     catch { alertCompat('تعذّر إنشاء المشروع', 'حاول مرة أخرى.'); }
     finally { setBusy(false); }
   }
+  function openProjectSession(sessionId: string, discardUnsaved = false) {
+    if (sessionId === activeSession?.id) return;
+    if (!discardUnsaved && selectedFile && draft !== selectedFile.content) {
+      alertCompat('تعديلات غير محفوظة', 'احفظ الملف الحالي أو تجاهل تعديلاته قبل تبديل المشروع.', [
+        { text: 'إلغاء', style: 'cancel' },
+        { text: 'تجاهل والتبديل', style: 'destructive', onPress: () => openProjectSession(sessionId, true) },
+      ]);
+      return;
+    }
+    void setActiveSession(sessionId);
+  }
+
   async function createFile() {
     if (!activeSession || !newPath.trim()) return;
     if (selectedFile && draft !== selectedFile.content) { alertCompat('احفظ التعديلات أولًا', 'احفظ الملف المفتوح قبل إنشاء ملف آخر حتى لا تفقد تغييراتك.'); return; }
@@ -465,7 +484,7 @@ export function DeveloperWorkspace() {
     <ScreenTopBar active="developer" center={<Text style={{color:colors.foreground,fontWeight:'700'}}>مختبر المطوّر</Text>} />
     <View style={s.header}><View style={{flex:1}}><Text style={[s.heading,{color:colors.foreground}]}>مساحة المشروع</Text><Text style={{color:colors.mutedForeground,fontSize:12}}>{activeSession?.title ?? 'اختر محادثة مطوّر'}</Text></View><Pressable onPress={() => void newProject()} style={[s.button,{borderColor:colors.border}]}><Feather name="plus" size={14} color={colors.foreground}/><Text style={{color:colors.foreground}}>مشروع جديد</Text></Pressable></View>
     <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={[s.sessions, { alignItems: 'center' }]}>
-      {sessions.filter(x=>x.mode==='developer').map(x=><Pressable key={x.id} onPress={()=>void setActiveSession(x.id)} style={[s.chip,{borderColor:x.id===activeSession?.id?colors.primary:colors.border,backgroundColor:x.id===activeSession?.id?colors.accentSubtle:colors.card}]}><Text style={{color:x.id===activeSession?.id?colors.primary:colors.foreground}} numberOfLines={1}>{x.title||'مشروع بدون اسم'}</Text></Pressable>)}
+      {sessions.filter(x=>x.mode==='developer').map(x=><Pressable key={x.id} onPress={()=>openProjectSession(x.id)} style={[s.chip,{borderColor:x.id===activeSession?.id?colors.primary:colors.border,backgroundColor:x.id===activeSession?.id?colors.accentSubtle:colors.card}]}><Text style={{color:x.id===activeSession?.id?colors.primary:colors.foreground}} numberOfLines={1}>{x.title||'مشروع بدون اسم'}</Text></Pressable>)}
       {!sessions.some(x=>x.mode==='developer') ? <Text style={{color:colors.mutedForeground,fontSize:12,paddingHorizontal:8}}>لا توجد مشاريع بعد — أنشئ مشروعًا جديدًا أو استورد ملفاتك.</Text> : null}
     </ScrollView>
     <View style={[s.body, compactLayout ? s.bodyCompact : null]}>
