@@ -35,6 +35,7 @@ const NAV: { key: string; label: string; icon: string; route: string }[] = [
 const STUDIO_NAV: { key: StudioMode; label: string; icon: string }[] = [
   { key: 'marketing', label: 'استوديو التسويق', icon: 'trending-up' },
   { key: 'developer', label: 'مختبر المطوّر', icon: 'code' },
+  { key: 'hunter', label: 'محادثات الأمن السيبراني', icon: 'shield' },
 ];
 
 export function ScreenTopBar({
