@@ -44,6 +44,16 @@ const KEY = '@onebyte-agent/developer-projects-v1';
 const now = () => new Date().toISOString();
 const id = (prefix: string) => `${prefix}-${Date.now()}-${Math.random().toString(36).slice(2,8)}`;
 
+function safeProjectPath(value: string): string {
+  const path = value.trim();
+  if (path !== value || !path || path.length > 240 || path.startsWith('/') ||
+    path.includes('\\\\') || /^[a-zA-Z]:/.test(path) ||
+    path.split('/').some(part => !part || part === '.' || part === '..' || !part.trim())) {
+    throw new Error('مسار الملف غير صالح.');
+  }
+  return path;
+}
+
 export async function loadDeveloperProjects(): Promise<DeveloperProject[]> {
   return storage.readRawJSON<DeveloperProject[]>(KEY, []);
 }
@@ -70,9 +80,10 @@ export async function setDeveloperCodeModel(sessionId: string, modelId: string |
   const project = await getDeveloperProject(sessionId);
   await putDeveloperProject({ ...project, codeModelId: modelId || undefined });
 }
-export async function saveProjectFile(sessionId: string, title: string, path: string, content: string): Promise<DeveloperProjectFile> {
-  if (!path.trim() || path.startsWith('/') || path.includes(String.fromCharCode(92)) || /^[a-zA-Z]:/.test(path) || path.split('/').some(part => part === '..' || part === '.' || part.trim() === '')) {
-    throw new Error('مسار الملف غير صالح.');
+export async function saveProjectFile(sessionId: string, title: string, rawPath: string, content: string): Promise<DeveloperProjectFile> {
+  const path = safeProjectPath(rawPath);
+  if (typeof content !== 'string' || strToU8(content).length > 25 * 1024 * 1024) {
+    throw new Error('محتوى الملف غير صالح أو يتجاوز حد 25MB.');
   }
   const project = await getDeveloperProject(sessionId, title);
   const previous = project.files.find(f => f.path === path);
@@ -82,6 +93,35 @@ export async function saveProjectFile(sessionId: string, title: string, path: st
   await putDeveloperProject({ ...project, files: previous ? project.files.map(f => f.id === previous.id ? file : f) : [...project.files, file] });
   return file;
 }
+/** Rename one file without changing its contents or losing pending review history. */
+export async function renameProjectFile(sessionId: string, oldPath: string, rawNewPath: string): Promise<void> {
+  const newPath = safeProjectPath(rawNewPath);
+  const project = await getDeveloperProject(sessionId);
+  const file = project.files.find(item => item.path === oldPath);
+  if (!file) throw new Error('الملف المطلوب غير موجود.');
+  if (project.files.some(item => item.path === newPath && item.id !== file.id)) {
+    throw new Error('يوجد ملف آخر بهذا المسار بالفعل.');
+  }
+  const timestamp = now();
+  const files = project.files.map(item => item.id === file.id
+    ? { ...item, path: newPath, language: languageForPath(newPath), updatedAt: timestamp }
+    : item);
+  const reviews = project.reviews.map(review => review.filePath === oldPath
+    ? { ...review, filePath: newPath }
+    : review);
+  await putDeveloperProject({ ...project, files, reviews });
+}
+
+/** Delete a file and close pending proposals tied to the deleted path. */
+export async function deleteProjectFile(sessionId: string, path: string): Promise<void> {
+  const project = await getDeveloperProject(sessionId);
+  if (!project.files.some(file => file.path === path)) throw new Error('الملف المطلوب غير موجود.');
+  const reviews = project.reviews.map(review => review.filePath === path && review.status === 'pending'
+    ? { ...review, status: 'rejected' as const }
+    : review);
+  await putDeveloperProject({ ...project, files: project.files.filter(file => file.path !== path), reviews });
+}
+
 /** Import a complete archive in one storage transaction; every file remains scoped to its chat session. */
 export async function importProjectFiles(
   sessionId: string,
@@ -149,6 +189,9 @@ export async function decideCodeReview(sessionId: string, reviewId: string, appr
   let files = project.files;
   if (approve) {
     const previous = files.find(f => f.path === review.filePath);
+    if ((previous?.content ?? '') !== review.original) {
+      throw new Error('الملف تغيّر بعد إنشاء المراجعة. أنشئ مراجعة جديدة حتى لا تستبدل تعديلات أحدث.');
+    }
     const file: DeveloperProjectFile = previous
       ? { ...previous, content: review.proposed, updatedAt: now() }
       : { id: id('file'), sessionId, path: review.filePath, language: languageForPath(review.filePath), content: review.proposed, createdAt: now(), updatedAt: now() };
