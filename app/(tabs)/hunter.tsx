@@ -20,6 +20,7 @@ import {
   type HunterRequest,
   type HunterTarget,
 } from '@/src/hunter';
+import { normalizeTargetPattern } from '@/src/hunter-scope';
 
 const METHODS = ['GET', 'POST', 'PUT', 'PATCH', 'DELETE', 'HEAD', 'OPTIONS'];
 
@@ -84,9 +85,9 @@ export default function CyberSecurityScreen() {
   }, [capturedAt, capturedMethod, capturedUrl, capturedHeaders, capturedBody]);
 
   async function addTarget() {
-    const normalized = targetHost.trim().replace(/^https?:\/\//i, '').replace(/\/$/, '').toLowerCase();
-    if (!normalized || /[\s/@?#]/.test(normalized)) {
-      alertCompat('نطاق غير صالح', 'اكتب اسم النطاق فقط، مثل example.com.');
+    const normalized = normalizeTargetPattern(targetHost);
+    if (!normalized) {
+      alertCompat('نطاق غير صالح', 'اكتب اسم المضيف فقط مثل example.com. استخدم *.example.com فقط إذا كان التصريح يشمل النطاقات الفرعية صراحةً. لا تضع مسارًا أو منفذًا أو رابط صفحة.');
       return;
     }
     if (!authorization.trim()) {
@@ -218,7 +219,7 @@ export default function CyberSecurityScreen() {
           onChangeText={setTargetHost}
           autoCapitalize="none"
           autoCorrect={false}
-          placeholder="example.com"
+          placeholder="example.com أو *.example.com"
           placeholderTextColor={colors.mutedForeground}
           style={[styles.input, { color: colors.foreground, borderColor: colors.border, backgroundColor: colors.background }]}
         />
