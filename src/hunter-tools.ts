@@ -377,9 +377,9 @@ function generatedPythonSourceIsAutoSafe(source: string): boolean {
   if (!source || source.length > MAX_SOURCE_LENGTH) return false;
   // Auto-approval is intentionally limited to pure, self-contained helpers.
   // Tools needing imports, dynamic execution, reflection, I/O, or network stay Draft.
-  const forbidden = /\\b(import|from|eval|exec|compile|open|input|__import__|globals|locals|vars|getattr|setattr|delattr|breakpoint|socket|subprocess|requests|urllib|http|os|sys|pathlib|js|pyodide)\\b|__\\w+__/i;
+  const forbidden = /\b(import|from|eval|exec|compile|open|input|__import__|globals|locals|vars|getattr|setattr|delattr|breakpoint|socket|subprocess|requests|urllib|http|os|sys|pathlib|js|pyodide)\b|__\w+__/i;
   if (forbidden.test(source)) return false;
-  if (!/^\\s*def\\s+run\\s*\\(\\s*args\\s*:\\s*dict\\s*\\)\\s*->\\s*dict\\s*:/m.test(source)) return false;
+  if (!/^\s*def\s+run\s*\\(\s*args\s*:\s*dict\s*\\)\s*->\s*dict\s*:/m.test(source)) return false;
   return true;
 }
 
@@ -390,7 +390,7 @@ async function generateHunterPythonTool(need: { name: string; description: strin
       { role: 'user', content: JSON.stringify({ requestedTool: need, evidenceContext: context, constraints: 'Pure offline analysis of supplied evidence only. No imports, active scanning, sockets, or external targets.' }) },
     ]);
     if (!raw) return null;
-    const parsed = JSON.parse(raw.trim().replace(/^\`\`\`(?:json)?\\s*/i, '').replace(/\\s*\`\`\`$/, '')) as Record<string, unknown>;
+    const parsed = JSON.parse(raw.trim().replace(/^\`\`\`(?:json)?\s*/i, '').replace(/\s*\`\`\`$/, '')) as Record<string, unknown>;
     if (typeof parsed.name !== 'string' || typeof parsed.description !== 'string' || typeof parsed.source !== 'string') return null;
     const tool = await saveHunterTool({ name: parsed.name.slice(0, 64), description: parsed.description.slice(0, 500), source: parsed.source, outputDescription: typeof parsed.output_description === 'string' ? parsed.output_description.slice(0, 500) : 'Structured JSON result', tags: ['generated', 'passive-analysis'] });
     if (!generatedPythonSourceIsAutoSafe(tool.source)) {
