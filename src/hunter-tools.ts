@@ -278,6 +278,15 @@ async function discoverPassiveSubdomains(targetHost: string): Promise<string[]> 
   }
 }
 
+export async function listHunterToolCatalog(): Promise<string> {
+  const tools = await loadHunterTools();
+  return JSON.stringify(tools.map((tool) => ({
+    id: tool.id, name: tool.name, description: tool.description, kind: tool.kind,
+    status: tool.status, version: tool.version, tags: tool.tags,
+    inputSchema: tool.inputSchema, outputDescription: tool.outputDescription,
+  })));
+}
+
 export async function runHunterRegistryTool(id: string, args: Record<string, unknown>): Promise<string> {
   const tool = (await loadHunterTools()).find((item) => item.id === id);
   if (!tool || tool.status !== 'verified') throw new Error('الأداة غير موجودة أو لم يتم اعتمادها.');
@@ -381,7 +390,7 @@ async function createAdaptiveHuntPlan(target: HunterTarget, page: EmbeddedBrowse
   try {
     const raw = await callHunterModel([
       { role: 'system', content: 'You are a defensive bug-bounty hunting planner. Use ONLY passive observations supplied. Never suggest brute force, credential attacks, denial of service, destructive actions, scope expansion, or requests to unapproved hosts. Return JSON only: {"summary":"...","next_steps":["..."],"missing_tool":{"name":"...","description":"...","purpose":"..."} or null}. Suggest a reusable Python tool only if the current registry lacks a useful capability. Do not claim execution or verification.' },
-      { role: 'user', content: JSON.stringify({ authorizedTarget: target.host, authorizationNote: target.authorization.slice(0, 1200), page: { url: page.url, title: page.title, visibleText: page.text.slice(0, 7000) }, observedNetwork: network.slice(0, 60).map((entry) => ({ method: entry.method, url: entry.url, status: entry.status })), discoveredUrls: urls.slice(0, 100), toolRegistry: (await loadHunterTools()).map((tool) => ({ id: tool.id, name: tool.name, description: tool.description, kind: tool.kind, status: tool.status })) }) },
+      { role: 'user', content: JSON.stringify({ authorizedTarget: target.host, authorizationNote: target.authorization.slice(0, 1200), page: { url: page.url, title: page.title, visibleText: page.text.slice(0, 7000), sourcePreview: (page.source ?? '').slice(0, 5000) }, observedNetwork: network.slice(0, 60).map((entry) => ({ method: entry.method, url: entry.url, status: entry.status })), discoveredUrls: urls.slice(0, 100), toolRegistry: (await loadHunterTools()).map((tool) => ({ id: tool.id, name: tool.name, description: tool.description, kind: tool.kind, status: tool.status })) }) },
     ]);
     if (!raw) return fallback;
     const parsed = JSON.parse(raw.trim().replace(/^```(?:json)?\s*/i, '').replace(/\s*```$/, '')) as { summary?: unknown; next_steps?: unknown; missing_tool?: unknown };
@@ -443,6 +452,7 @@ export async function runBrowserRecon(target: HunterTarget, signal?: AbortSignal
     record.pageUrl = page.url;
     record.pageTextPreview = page.text.slice(0, 12_000);
     record.pageSourcePreview = (page.source ?? '').slice(0, 16_000);
+    record.pageSourcePreview = (page.source ?? '').slice(0, 16_000);
     const network = (await browser.getNetworkLog()).filter((entry) => {
       try {
         const host = new URL(entry.url).hostname.toLowerCase();
@@ -451,8 +461,22 @@ export async function runBrowserRecon(target: HunterTarget, signal?: AbortSignal
     });
     record.networkRequests = network.length;
     plan[2].status = 'done';
-    const urls = collectEndpointCandidates(page, network, target.host.replace(/^\*\./, ''));
+    const rootHost = target.host.startsWith('*.') ? target.host.slice(2) : target.host;
+    const endpointResult = await runHunterRegistryTool('hunter.extract-endpoints', { pageText: page.text + '\n' + (page.source ?? ''), urls: network.map((entry) => entry.url), targetHost: rootHost, pageUrl: page.url });
+    const endpointData = JSON.parse(endpointResult) as { endpoints?: string[] };
+    const urls = endpointData.endpoints ?? collectEndpointCandidates(page, network, rootHost);
     record.discoveredUrls = urls;
+    const jsResult = await runHunterRegistryTool('hunter.javascript-inventory', { urls });
+    const jsData = JSON.parse(jsResult) as { javascriptAssets?: string[] };
+    const jsAssets = jsData.javascriptAssets ?? [];
+    try {
+      const subdomainResult = await runHunterRegistryTool('hunter.passive-subdomain-discovery', { targetHost: target.host });
+      const subdomainData = JSON.parse(subdomainResult) as { subdomains?: string[] };
+      record.discoveredSubdomains = subdomainData.subdomains ?? [];
+      record.notes.push('تم جمع ' + record.discoveredSubdomains.length + ' نطاق فرعي من Certificate Transparency فقط؛ لم يتم فحص هذه النطاقات أو إرسال طلبات إليها.');
+    } catch (error) {
+      record.notes.push('تعذّر الاستعلام السلبي عن النطاقات الفرعية: ' + (error instanceof Error ? error.message : 'network error'));
+    }
     plan[3].status = 'done';
     const jsAssets = collectJavaScriptAssets(urls);
     record.notes.push(`تم رصد ${urls.length} رابطًا داخل النطاق و${jsAssets.length} ملف JavaScript.`);
