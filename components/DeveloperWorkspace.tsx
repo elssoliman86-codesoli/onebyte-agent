@@ -342,7 +342,7 @@ export function DeveloperWorkspace() {
       for (const [rawPath, bytes] of Object.entries(unpacked)) {
         if (rawPath.endsWith('/')) continue;
         const path = rawPath;
-        if (!path || path.startsWith('/') || /^[a-zA-Z]:/.test(path) ||
+        if (!path || path.includes(String.fromCharCode(0)) || path.startsWith('/') || /^[a-zA-Z]:/.test(path) ||
           path.split('/').some(part => !part.trim() || part === '.' || part === '..')) {
           throw new Error(`مسار غير آمن داخل الأرشيف: ${rawPath}`);
         }
@@ -357,7 +357,7 @@ export function DeveloperWorkspace() {
       const count = await importProjectFiles(activeSession.id, activeSession.title, entries);
       await refresh();
       const first = entries[0]?.path;
-      if (first) { setSelectedPath(first); setDraft(entries[0].content); }
+      if (first) { selectedPathRef.current = first; setSelectedPath(first); draftRef.current = entries[0].content; setDraft(entries[0].content); setOpenPaths([first]); }
       alertCompat('اكتمل استيراد المشروع', `تم استيراد ${count} ملفًا نصيًا إلى هذه المحادثة. الملفات الثنائية تم تجاهلها.`);
     } catch (e) { alertCompat('فشل استيراد ZIP', e instanceof Error ? e.message : 'ملف غير صالح أو كبير جدًا.'); }
   }
