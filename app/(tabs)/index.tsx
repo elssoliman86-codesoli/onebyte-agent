@@ -566,6 +566,7 @@ export default function ChatScreen() {
     setActiveSession,
     deleteSession,
     appendMessage,
+    upsertMessage,
     replaceSessionMessages,
     consumePendingPrompt,
     saveAgentSettings,
@@ -1198,6 +1199,33 @@ export default function ChatScreen() {
     let fullResponse = '';
     let assistantPersisted = false;
     let responseForCaller = '';
+    let lastPersistedContent = '';
+    let lastPersistedSteps = '';
+    const assistantCreatedAt = new Date().toISOString();
+
+    const persistAssistantProgress = async (force = false) => {
+      const stepsSignature = JSON.stringify(steps);
+      if (!fullResponse.trim() && !steps.length) return;
+      if (!force && fullResponse === lastPersistedContent && stepsSignature === lastPersistedSteps) return;
+      await upsertMessage(sessionId, {
+        id: responseId,
+        role: 'assistant',
+        content: fullResponse || 'جارٍ تنفيذ الأدوات…',
+        createdAt: assistantCreatedAt,
+        steps: [...steps],
+      });
+      lastPersistedContent = fullResponse;
+      lastPersistedSteps = stepsSignature;
+      assistantPersisted = true;
+    };
+
+    // Save partial responses periodically. A navigation change, app pause, or
+    // dropped connection must not erase text that has already reached the UI.
+    const progressSaveTimer = setInterval(() => {
+      void persistAssistantProgress().catch((error) => {
+        console.warn('[chat] Could not persist streaming checkpoint:', error);
+      });
+    }, 1200);
 
     const publish = () => {
       // The user may have switched to another chat while the run is in flight;
@@ -1348,28 +1376,22 @@ export default function ChatScreen() {
       if (!fullResponse.trim()) fullResponse = 'تم تنفيذ الخطوات المطلوبة.';
       responseForCaller = fullResponse;
       publish();
-      await appendMessage(sessionId, {
+      clearInterval(progressSaveTimer);
+      await upsertMessage(sessionId, {
         id: responseId,
         role: 'assistant',
         content: fullResponse,
-        createdAt: new Date().toISOString(),
-        steps,
+        createdAt: assistantCreatedAt,
+        steps: [...steps],
       });
       assistantPersisted = true;
     } catch (caught) {
       const stopped = controller.signal.aborted;
       setPlanDone('fail');
-      if (!assistantPersisted && (fullResponse.trim() || steps.length)) {
-        // Keep what was already produced so nothing the agent did is lost from history.
-        // Skipped if the append above already ran, otherwise a storage failure would
-        // leave two copies of the same response (commit updates memory before disk).
-        await appendMessage(sessionId, {
-          id: responseId,
-          role: 'assistant',
-          content: (fullResponse.trim() || 'توقفت المهمة.') + (stopped ? '\n\n(أوقفتَ المهمة)' : ''),
-          createdAt: new Date().toISOString(),
-          steps,
-        }).catch(() => undefined);
+      if (fullResponse.trim() || steps.length) {
+        await persistAssistantProgress(true).catch((error) => {
+          console.warn('[chat] Failed to preserve partial assistant response:', error);
+        });
       }
       if (!stopped) {
         setError(
@@ -1380,6 +1402,7 @@ export default function ChatScreen() {
       }
       responseForCaller = fullResponse;
     } finally {
+      clearInterval(progressSaveTimer);
       abortRef.current = null;
       runSessionIdRef.current = null;
       setSending(false);
