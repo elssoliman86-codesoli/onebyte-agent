@@ -119,7 +119,7 @@ export function PhoneDrawer({
 
   function routeForMode(mode?: string) {
     if (mode === 'developer') return '/(tabs)/developer';
-    if (mode === 'hunter') return '/(tabs)/hunter';
+    if (mode === 'hunter') return '/(tabs)';
     if (mode === 'marketing') return '/(tabs)/marketing';
     return '/(tabs)';
   }
