@@ -1,4 +1,4 @@
-import React, { useCallback, useEffect, useMemo, useState } from 'react';
+import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { ActivityIndicator, Platform, Pressable, ScrollView, StyleSheet, Text, TextInput, View, useWindowDimensions } from 'react-native';
 import * as FileSystem from 'expo-file-system/legacy';
 import * as Sharing from 'expo-sharing';
@@ -16,8 +16,8 @@ import type { ModelInfo } from '@/src/model-catalog';
 import fetchWithRetry from '@/src/fetch-with-retry';
 import { base64ToBytes, preflightZip, ZIP_IMPORT_LIMITS } from '@/src/zip-safety';
 import {
-  buildProjectOutline, decideCodeReview, getDeveloperProject, proposeCodeReview,
-  replaceProjectPlan, saveProjectFile, setDeveloperCodeModel, updatePlanStep,
+  buildProjectOutline, decideCodeReview, deleteProjectFile, getDeveloperProject, proposeCodeReview,
+  renameProjectFile, replaceProjectPlan, saveProjectFile, setDeveloperCodeModel, updatePlanStep,
   type DeveloperProject, type DeveloperPlanStep,
 } from '@/src/developer-projects';
 
@@ -40,6 +40,11 @@ export function DeveloperWorkspace() {
   const { activeSession, sessions, provider, createSession, setActiveSession, patchSession } = useAssistant();
   const [project, setProject] = useState<DeveloperProject | null>(null);
   const [selectedPath, setSelectedPath] = useState('');
+  const selectedPathRef = useRef('');
+  const refreshSequenceRef = useRef(0);
+  const [openPaths, setOpenPaths] = useState<string[]>([]);
+  const [renameOpen, setRenameOpen] = useState(false);
+  const [renameDraft, setRenameDraft] = useState('');
   const [collapsedFolders, setCollapsedFolders] = useState<Record<string, boolean>>({});
   const [draft, setDraft] = useState('');
   const [newPath, setNewPath] = useState('src/main.ts');
@@ -54,12 +59,28 @@ export function DeveloperWorkspace() {
   const [codeModelPickerOpen, setCodeModelPickerOpen] = useState(false);
 
   const refresh = useCallback(async (preferredPath?: string) => {
-    if (!activeSession) { setProject(null); setSelectedPath(''); setDraft(''); return; }
-    const next = await getDeveloperProject(activeSession.id, activeSession.title);
+    const sequence = ++refreshSequenceRef.current;
+    if (!activeSession) {
+      setProject(null);
+      selectedPathRef.current = '';
+      setSelectedPath('');
+      setDraft('');
+      setOpenPaths([]);
+      return;
+    }
+    const sessionId = activeSession.id;
+    const next = await getDeveloperProject(sessionId, activeSession.title);
+    if (sequence !== refreshSequenceRef.current) return;
     setProject(next);
-    const chosen = next.files.find(f => f.path === (preferredPath ?? selectedPath)) ?? next.files[0];
-    setSelectedPath(chosen?.path ?? '');
+    const chosen = next.files.find(f => f.path === (preferredPath ?? selectedPathRef.current)) ?? next.files[0];
+    const path = chosen?.path ?? '';
+    selectedPathRef.current = path;
+    setSelectedPath(path);
     setDraft(chosen?.content ?? '');
+    setOpenPaths(current => {
+      const valid = current.filter(item => next.files.some(file => file.path === item));
+      return path && !valid.includes(path) ? [...valid, path] : valid;
+    });
   }, [activeSession?.id, activeSession?.title]);
   useEffect(() => { void refresh(); }, [refresh]);
 
