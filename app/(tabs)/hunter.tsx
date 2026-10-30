@@ -43,6 +43,7 @@ export default function CyberSecurityScreen() {
   const [error, setError] = useState('');
   const [huntRunning, setHuntRunning] = useState(false);
   const [safeChecksRunning, setSafeChecksRunning] = useState(false);
+  const [activePanel, setActivePanel] = useState<'overview' | 'request' | 'activity'>('overview');
   const [lastHunt, setLastHunt] = useState<HunterRunRecord | null>(null);
   const abortRef = useRef<AbortController | null>(null);
   const aliveRef = useRef(true);
@@ -114,6 +115,7 @@ export default function CyberSecurityScreen() {
     setAuthorizationConfirmed(false);
     setSelectedTargetId(next.id);
     setShowRequestEditor(false);
+    setActivePanel('overview');
     setError('');
   }
 
@@ -162,6 +164,7 @@ export default function CyberSecurityScreen() {
     const controller = new AbortController();
     abortRef.current = controller;
     setRunning(true);
+    setActivePanel('activity');
     const started = Date.now();
     try {
       const response = await runRequest(request, controller.signal);
@@ -209,6 +212,20 @@ export default function CyberSecurityScreen() {
       subtitle="عدّل الطلبات وأرسلها وأوقفها واقرأ الاستجابة. أضف نطاقًا مصرحًا به أولًا؛ لا يتم إرسال طلبات خارج النطاق."
       topBar={<ScreenTopBar active="hunter" />}
     >
+      <View style={styles.panelTabs}>
+        {([
+          { key: 'overview', label: 'النطاق والاستطلاع', icon: 'shield' },
+          { key: 'request', label: 'مختبر HTTP', icon: 'terminal' },
+          { key: 'activity', label: 'النتائج والسجل', icon: 'activity' },
+        ] as const).map((tab) => (
+          <Pressable key={tab.key} accessibilityRole="tab" accessibilityState={{ selected: activePanel === tab.key }} onPress={() => setActivePanel(tab.key)} style={[styles.panelTab, { borderColor: activePanel === tab.key ? colors.primary : colors.border, backgroundColor: activePanel === tab.key ? colors.accentSubtle : colors.card }]}>
+            <Feather name={tab.icon} size={14} color={activePanel === tab.key ? colors.primary : colors.mutedForeground} />
+            <Text numberOfLines={1} style={[styles.panelTabText, { color: activePanel === tab.key ? colors.primary : colors.mutedForeground }]}>{tab.label}</Text>
+          </Pressable>
+        ))}
+      </View>
+      {activePanel === 'overview' ? (
+        <>
       <Surface style={styles.scopeCard}>
         <View style={styles.sectionHeading}>
           <Feather name="shield" size={18} color={colors.primary} />
@@ -258,7 +275,7 @@ export default function CyberSecurityScreen() {
                 <Text style={[styles.secondaryText,{color:colors.warning}]}>إعادة إضافة</Text>
               </Pressable>
             ) : null}
-            <Pressable accessibilityRole="button" onPress={() => { setSelectedTargetId(target.id); setUrl(`https://${target.host}/`); setShowRequestEditor(true); setError('تم اختيار النطاق المحفوظ. راجع قواعد البرنامج وحدود النطاق قبل إرسال أي طلب.'); }} style={[styles.secondaryButton,{borderColor:colors.border,paddingHorizontal:8,paddingVertical:5}]}>
+            <Pressable accessibilityRole="button" onPress={() => { setSelectedTargetId(target.id); setUrl(`https://${target.host.startsWith('*.') ? 'www.' + target.host.slice(2) : target.host}/`); setShowRequestEditor(true); setActivePanel('request'); setError('تم اختيار النطاق المحفوظ. راجع قواعد البرنامج وحدود النطاق قبل إرسال أي طلب.'); }} style={[styles.secondaryButton,{borderColor:colors.border,paddingHorizontal:8,paddingVertical:5}]}>
               <Feather name="shield" size={14} color={colors.primary} />
               <Text style={[styles.secondaryText,{color:colors.primary}]}>فتح المختبر</Text>
             </Pressable>
@@ -338,8 +355,11 @@ export default function CyberSecurityScreen() {
           </>
         ) : null}
       </Surface>
+        </>
+      ) : null}
 
-      {showRequestEditor && selectedTargetId && targets.some((target) => target.id === selectedTargetId) ? <Surface style={styles.requestCard}>
+      {activePanel === 'request' ? (
+        showRequestEditor && selectedTargetId && targets.some((target) => target.id === selectedTargetId) ? <Surface style={styles.requestCard}>
         <View style={styles.sectionHeading}>
           <Feather name="git-pull-request" size={18} color={colors.primary} />
           <Text style={[styles.sectionTitle, { color: colors.foreground }]}>HTTP Request Editor</Text>
@@ -399,8 +419,15 @@ export default function CyberSecurityScreen() {
           </Pressable>
         </View>
         {error ? <Text accessibilityRole="alert" style={[styles.error, { color: '#FF5F56' }]}>{error}</Text> : null}
-      </Surface> : null}
+      </Surface> : (
+        <Surface style={styles.requestCard}>
+          <Text style={[styles.sectionTitle, { color: colors.foreground }]}>لا يوجد طلب مفتوح</Text>
+          <Text style={[styles.muted, { color: colors.mutedForeground }]}>ارجع إلى «النطاق والاستطلاع»، واختر تارجتًا مؤكد التصريح، ثم اضغط «فتح المختبر» لبدء إعداد طلب HTTP.</Text>
+        </Surface>
+        )}
+      ) : null}
 
+      {activePanel === 'activity' ? (
       {result ? (
         <Surface style={styles.resultCard}>
           <View style={styles.sectionHeading}>
@@ -440,6 +467,8 @@ export default function CyberSecurityScreen() {
         )) : <Text style={[styles.muted, { color: colors.mutedForeground }]}>طلباتك ونتائجها هتظهر هنا بعد الإرسال.</Text>}
       </Surface>
 
+      </>) : null}
+
       <Text style={[styles.footer, { color: colors.mutedForeground }]}>
         ملاحظات مهمة: إيقاف الطلب يعتمد على دعم الشبكة للإلغاء، وقراءة الردود الكبيرة محدودة لحماية الذاكرة. في نسخة الويب، قد تمنع CORS بعض الطلبات؛ أندرويد يتبع صلاحيات الشبكة الخاصة به. لا تستخدم أدوات الاختبار خارج النطاق المصرّح.
       </Text>
@@ -456,6 +485,9 @@ function URLSafePath(url: string): string {
 }
 
 const styles = StyleSheet.create({
+  panelTabs: { flexDirection: 'row-reverse', gap: 6, paddingHorizontal: 1 },
+  panelTab: { flex: 1, minWidth: 0, minHeight: 42, borderWidth: 1, borderRadius: 11, paddingHorizontal: 5, flexDirection: 'row-reverse', alignItems: 'center', justifyContent: 'center', gap: 5 },
+  panelTabText: { fontSize: 10, fontWeight: '800' },
   scopeCard: { gap: 10, padding: 13 },
   requestCard: { gap: 11, padding: 13 },
   resultCard: { gap: 10, padding: 13 },
