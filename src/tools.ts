@@ -2,6 +2,7 @@ import { Linking, Platform } from 'react-native';
 import { router } from 'expo-router';
 import { getEmbeddedBrowser, waitForEmbeddedBrowser } from './embedded-browser';
 import { isAuthorized, loadTargets } from './hunter';
+import { runHunterRegistryTool } from './hunter-tools';
 import { fetchWithRetry } from './fetch-with-retry';
 import * as Device from './device';
 import { createFile, getDefaultBranch, getRepoTree, listRepos, loadGithubToken, readFileSnapshot, verifyGithubToken, writeFile } from './github';
@@ -252,6 +253,16 @@ export const TOOL_SPECS: ToolSpec[] = [
       headers: { type: 'object', additionalProperties: { type: 'string' } },
       body: { type: 'string' },
     }, ['url', 'method']),
+  },
+  {
+    name: 'hunter_run_saved_tool',
+    group: 'browser',
+    label: 'تشغيل أداة Hunter محفوظة',
+    description: 'Run a previously verified tool from the persistent Hunter Tool Registry. Prefer existing verified tools over generating duplicates. Python tools execute in the isolated on-device WebAssembly worker with network disabled; never use this to probe a target directly. Supply only evidence already collected within the authorized scope.',
+    parameters: obj({
+      tool_id: { type: 'string' },
+      args: { type: 'object', additionalProperties: true },
+    }, ['tool_id', 'args']),
   },
   {
     name: 'web_fetch',
@@ -651,6 +662,11 @@ export async function executeTool(
     }
     case 'web_search':
       return await webSearch(str(args, 'query'));
+    case 'hunter_run_saved_tool': {
+      const toolId = str(args, 'tool_id');
+      const toolArgs = args.args && typeof args.args === 'object' && !Array.isArray(args.args) ? args.args as Record<string, unknown> : {};
+      return await runHunterRegistryTool(toolId, toolArgs);
+    }
     case 'web_fetch':
       return await webFetch(str(args, 'url'), args.includeSource === true);
     default:
