@@ -271,6 +271,9 @@ export default function BrowserScreen() {
         if (!scopeHostRef.current || !isHostInScope(target.toString(), scopeHostRef.current)) {
           throw new Error('رفض الطلب: الرابط خارج نطاق الاختبار المصرّح به.');
         }
+        const savedTargets = await loadTargets();
+        const authorizationCheck = isAuthorized(target.toString(), savedTargets);
+        if (!authorizationCheck.ok) throw new Error('رفض أمني قبل الإرسال: ' + authorizationCheck.reason);
         const method = input.method.toUpperCase();
         if (!['GET', 'POST', 'PUT', 'PATCH', 'DELETE', 'HEAD', 'OPTIONS'].includes(method)) {
           throw new Error('طريقة HTTP غير مسموحة.');
@@ -286,7 +289,7 @@ export default function BrowserScreen() {
           );
           const result = JSON.parse(raw) as Omit<EmbeddedBrowserRequestResult, 'elapsedMs'>;
           if (result.status >= 300 && result.status < 400) throw new Error('تم إيقاف إعادة التوجيه؛ راجع Location يدويًا وتأكد أنه داخل النطاق قبل المتابعة.');
-          if (!isHostInScope(result.url, scopeHostRef.current)) throw new Error('تم رفض استجابة خارج النطاق.');
+          if (!isHostInScope(result.url, scopeHostRef.current) || !isAuthorized(result.url, await loadTargets()).ok) throw new Error('تم رفض استجابة خارج النطاق أو غير مؤكدة التصريح.');
           return { ...result, url: redactUrl(result.url), headers: result.headers, body: redactText(result.body), elapsedMs: Date.now() - started };
         } catch (error) {
           const message = error instanceof Error ? error.message : String(error);
