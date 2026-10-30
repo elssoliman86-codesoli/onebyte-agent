@@ -384,8 +384,10 @@ export async function runHunterRegistryTool(id: string, args: Record<string, unk
     const urls = Array.isArray(args.urls) ? args.urls.filter((item): item is string => typeof item === 'string') : [];
     result = JSON.stringify({ javascriptAssets: collectJavaScriptAssets(urls) });
   } else { throw new Error('نوع الأداة المدمجة غير مدعوم.'); }
-  const tools = await loadHunterTools();
-  await persistTools(tools.map((item) => item.id === id ? { ...item, lastUsedAt: now(), useCount: item.useCount + 1 } : item));
+  if (tool.kind !== 'python') {
+    const tools = await loadHunterTools();
+    await persistTools(tools.map((item) => item.id === id ? { ...item, lastUsedAt: now(), useCount: item.useCount + 1 } : item));
+  }
   return result.slice(0, 64_000);
 }
 
