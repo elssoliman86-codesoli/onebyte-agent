@@ -93,6 +93,53 @@ export function registerHunterPythonRuntime(runtime: PythonRuntime): () => void 
 const now = () => new Date().toISOString();
 const makeId = (prefix: string) => `${prefix}_${Date.now()}_${Math.random().toString(36).slice(2, 9)}`;
 
+function assertToolInputSchema(schema: Record<string, unknown>): void {
+  if (schema.type !== undefined && schema.type !== 'object') throw new Error('مخطط مدخلات الأداة يجب أن يكون من النوع object.');
+  if (schema.properties !== undefined && (!schema.properties || typeof schema.properties !== 'object' || Array.isArray(schema.properties))) {
+    throw new Error('properties في مخطط الأداة غير صالح.');
+  }
+  if (schema.required !== undefined && (!Array.isArray(schema.required) || schema.required.some((item) => typeof item !== 'string'))) {
+    throw new Error('required في مخطط الأداة يجب أن يكون قائمة أسماء نصية.');
+  }
+}
+
+function validateToolArgs(schema: Record<string, unknown>, args: Record<string, unknown>): void {
+  if (!Object.keys(schema).length) return;
+  assertToolInputSchema(schema);
+  const properties = (schema.properties ?? {}) as Record<string, unknown>;
+  const required = Array.isArray(schema.required) ? schema.required as string[] : [];
+  for (const key of required) if (!(key in args)) throw new Error('مدخل مطلوب مفقود: ' + key);
+  if (schema.additionalProperties === false) {
+    for (const key of Object.keys(args)) if (!(key in properties)) throw new Error('مدخل غير معرّف في مخطط الأداة: ' + key);
+  }
+  for (const [key, rawRule] of Object.entries(properties)) {
+    if (!(key in args) || !rawRule || typeof rawRule !== 'object' || Array.isArray(rawRule)) continue;
+    const rule = rawRule as Record<string, unknown>;
+    const value = args[key];
+    if (Array.isArray(rule.enum) && !(rule.enum as unknown[]).some((item) => Object.is(item, value))) {
+      throw new Error('قيمة غير مسموحة للمدخل: ' + key);
+    }
+    const type = rule.type;
+    const valid = type === undefined ||
+      (type === 'string' && typeof value === 'string') ||
+      (type === 'number' && typeof value === 'number' && Number.isFinite(value)) ||
+      (type === 'integer' && typeof value === 'number' && Number.isInteger(value)) ||
+      (type === 'boolean' && typeof value === 'boolean') ||
+      (type === 'array' && Array.isArray(value)) ||
+      (type === 'object' && !!value && typeof value === 'object' && !Array.isArray(value)) ||
+      (type === 'null' && value === null);
+    if (!valid) throw new Error('نوع المدخل غير صحيح: ' + key + ' (المطلوب ' + String(type) + ').');
+    if (type === 'string' && typeof value === 'string') {
+      if (typeof rule.minLength === 'number' && value.length < rule.minLength) throw new Error('المدخل أقصر من الحد المطلوب: ' + key);
+      if (typeof rule.maxLength === 'number' && value.length > rule.maxLength) throw new Error('المدخل أطول من الحد المسموح: ' + key);
+    }
+    if (type === 'array' && Array.isArray(value) && typeof rule.maxItems === 'number' && value.length > rule.maxItems) {
+      throw new Error('عدد عناصر المدخل يتجاوز الحد: ' + key);
+    }
+  }
+}
+
+
 export const BUILTIN_HUNTER_TOOLS: HunterTool[] = [
   {
     id: 'hunter.extract-endpoints',
@@ -166,6 +213,8 @@ export async function saveHunterTool(input: {
 }): Promise<HunterTool> {
   const name = input.name.trim();
   const source = input.source;
+  const inputSchema = input.inputSchema ?? { type: 'object', properties: {}, additionalProperties: false };
+  assertToolInputSchema(inputSchema);
   if (name.length < 3 || name.length > 64) throw new Error('اسم الأداة يجب أن يكون بين 3 و64 حرفًا.');
   if (!source.trim() || source.length > MAX_SOURCE_LENGTH) throw new Error('كود الأداة فارغ أو أكبر من الحد المسموح (64KB).');
   if (!/^([a-zA-Z_][a-zA-Z0-9_]*\s*)/.test(source)) {
@@ -186,7 +235,7 @@ export async function saveHunterTool(input: {
       kind: 'python',
       status: 'draft',
       reviewedVersion: undefined,
-      inputSchema: input.inputSchema ?? existing.inputSchema,
+      inputSchema,
       outputDescription: input.outputDescription ?? existing.outputDescription,
       version,
       versions: [...existing.versions, { version: existing.version, source: existing.source, inputSchema: existing.inputSchema, outputDescription: existing.outputDescription, createdAt: timestamp, testSummary: 'Previous version retained.' }].slice(-50),
@@ -203,7 +252,7 @@ export async function saveHunterTool(input: {
     description: input.description.trim(),
     kind: 'python',
     status: 'draft',
-    inputSchema: input.inputSchema ?? { type: 'object', properties: {}, additionalProperties: false },
+    inputSchema,
     outputDescription: input.outputDescription ?? 'لم يتم تحديد شكل المخرجات بعد.',
     source,
     version: 1,
@@ -317,6 +366,7 @@ export async function listHunterToolCatalog(): Promise<string> {
 export async function runHunterRegistryTool(id: string, args: Record<string, unknown>): Promise<string> {
   const tool = (await loadHunterTools()).find((item) => item.id === id);
   if (!tool || tool.status !== 'verified') throw new Error('الأداة غير موجودة أو لم يتم اعتمادها.');
+  validateToolArgs(tool.inputSchema, args);
   let result: string;
   if (tool.kind === 'python') {
     result = await runPythonHunterTool(id, args);
