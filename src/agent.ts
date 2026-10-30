@@ -72,7 +72,7 @@ export async function streamCompletion({
   onText: (chunk: string) => void;
   onThinking?: (chunk: string) => void;
   signal?: AbortSignal;
-}): Promise<{ text: string; toolCalls: ToolCall[] }> {
+}): Promise<{ text: string; toolCalls: ToolCall[]; finishReason?: string; streamComplete: boolean }> {
   const body: Record<string, unknown> = {
     model: settings.model.trim(),
     messages,
@@ -86,18 +86,15 @@ export async function streamCompletion({
     'Content-Type': 'application/json',
     Accept: 'text/event-stream',
   };
-  // Keyless providers (Free OneByte) skip auth entirely.
   if (apiKey) headers.Authorization = `Bearer ${apiKey}`;
+
+  // Do not impose a total generation timeout: large-context models can take
+  // several minutes before their first token. We only detect a stalled stream
+  // after response headers have arrived, and the caller can always cancel.
   const response = await fetchWithRetry(
     endpointFor(settings.baseUrl),
+    { method: 'POST', headers, body: JSON.stringify(body) },
     {
-      method: 'POST',
-      headers,
-      body: JSON.stringify(body),
-    },
-    {
-      // No per-attempt timeout: the model answers whenever it finishes
-      // (tool loops and long-context requests can exceed minutes).
       timeout: 0,
       maxRetries: 2,
       baseDelay: 1_000,
@@ -115,39 +112,45 @@ export async function streamCompletion({
   }
 
   let text = '';
+  let finishReason: string | undefined;
+  let receivedDone = false;
   const calls = new Map<number, ToolCall>();
+  const contentText = (value: unknown): string => {
+    if (typeof value === 'string') return value;
+    if (!Array.isArray(value)) return '';
+    return value.map((part) => part && typeof part === 'object' && typeof (part as { text?: unknown }).text === 'string'
+      ? (part as { text: string }).text : '').join('');
+  };
 
   const handle = (payload: string) => {
     let parsed: {
       choices?: {
+        finish_reason?: string | null;
         delta?: {
-          content?: string;
+          content?: unknown;
           reasoning_content?: string;
           reasoning?: string;
           tool_calls?: { index?: number; id?: string; function?: { name?: string; arguments?: string } }[];
         };
         message?: {
-          content?: string;
+          content?: unknown;
           reasoning_content?: string;
           tool_calls?: { id?: string; function?: { name?: string; arguments?: string } }[];
         };
       }[];
       error?: { message?: string };
     };
-    try {
-      parsed = JSON.parse(payload);
-    } catch {
-      return;
-    }
-    if (parsed.error?.message) throw new Error('المزود أرسل خطأ أثناء توليد الرد.');
+    try { parsed = JSON.parse(payload); } catch { return; }
+    if (parsed.error?.message) throw new Error(parsed.error.message.slice(0, 500));
     const choice = parsed.choices?.[0];
+    if (typeof choice?.finish_reason === 'string') finishReason = choice.finish_reason;
     const delta = choice?.delta;
-    // Reasoning models (DeepSeek-R1 style) stream their thinking separately.
     const think = delta?.reasoning_content ?? delta?.reasoning;
     if (typeof think === 'string' && think) onThinking?.(think);
-    if (typeof delta?.content === 'string' && delta.content) {
-      text += delta.content;
-      onText(delta.content);
+    const chunk = contentText(delta?.content);
+    if (chunk) {
+      text += chunk;
+      onText(chunk);
     }
     for (const tc of delta?.tool_calls ?? []) {
       const index = tc.index ?? 0;
@@ -157,19 +160,22 @@ export async function streamCompletion({
       if (tc.function?.arguments) existing.arguments += tc.function.arguments;
       calls.set(index, existing);
     }
-    // Non-streaming fallback shape.
-    const msg = choice?.message;
-    if (msg) {
-      if (typeof msg.reasoning_content === 'string' && msg.reasoning_content) {
-        onThinking?.(msg.reasoning_content);
+
+    // Some OpenAI-compatible providers return a JSON message even when stream
+    // was requested; accept that shape without pretending it was an SSE stream.
+    const message = choice?.message;
+    if (message) {
+      if (typeof message.reasoning_content === 'string' && message.reasoning_content) {
+        onThinking?.(message.reasoning_content);
       }
-      if (typeof msg.content === 'string' && msg.content) {
-        text += msg.content;
-        onText(msg.content);
+      const full = contentText(message.content);
+      if (full) {
+        text += full;
+        onText(full);
       }
-      (msg.tool_calls ?? []).forEach((tc, i) => {
-        calls.set(calls.size + i, {
-          id: tc.id ?? '',
+      (message.tool_calls ?? []).forEach((tc, index) => {
+        calls.set(index, {
+          id: tc.id ?? `call_${Date.now()}_${index}`,
           name: tc.function?.name ?? '',
           arguments: tc.function?.arguments ?? '',
         });
@@ -180,35 +186,61 @@ export async function streamCompletion({
   const contentType = response.headers.get('content-type') ?? '';
   if (contentType.includes('application/json')) {
     handle(await response.text());
+    finishReason = finishReason ?? 'provider-json-response';
+    receivedDone = true;
   } else {
     const reader = response.body?.getReader();
     if (!reader) throw new Error('المزود أرجع استجابة غير قابلة للقراءة.');
     const decoder = new TextDecoder();
     let buffer = '';
-    for (;;) {
-      const { done, value } = await reader.read();
-      if (done) break;
-      buffer += decoder.decode(value, { stream: true });
-      const lines = buffer.split('\n');
-      buffer = lines.pop() ?? '';
-      for (const line of lines) {
-        if (!line.startsWith('data:')) continue;
-        const payload = line.slice(5).trim();
-        if (payload && payload !== '[DONE]') handle(payload);
+    const idleTimeoutMs = 120_000;
+    try {
+      for (;;) {
+        let idleTimer: ReturnType<typeof setTimeout> | undefined;
+        let next: ReadableStreamReadResult<Uint8Array>;
+        try {
+          next = await Promise.race([
+            reader.read(),
+            new Promise<never>((_, reject) => {
+              idleTimer = setTimeout(() => reject(new Error('توقف تدفق الموديل لأكثر من دقيقتين. تم حفظ الجزء المستلم؛ أعد المحاولة للمتابعة.')), idleTimeoutMs);
+            }),
+          ]);
+        } finally {
+          if (idleTimer) clearTimeout(idleTimer);
+        }
+        if (next.done) break;
+        buffer += decoder.decode(next.value, { stream: true });
+        const lines = buffer.split('\n');
+        buffer = lines.pop() ?? '';
+        for (const rawLine of lines) {
+          const line = rawLine.endsWith('\r') ? rawLine.slice(0, -1) : rawLine;
+          if (!line.startsWith('data:')) continue;
+          const payload = line.slice(5).trim();
+          if (!payload) continue;
+          if (payload === '[DONE]') { receivedDone = true; continue; }
+          handle(payload);
+        }
       }
-    }
-    const tail = buffer.trim();
-    if (tail.startsWith('data:')) {
-      const payload = tail.slice(5).trim();
-      if (payload && payload !== '[DONE]') handle(payload);
+      buffer += decoder.decode();
+      const tail = buffer.trim();
+      if (tail.startsWith('data:')) {
+        const payload = tail.slice(5).trim();
+        if (payload === '[DONE]') receivedDone = true;
+        else if (payload) handle(payload);
+      }
+    } catch (error) {
+      await reader.cancel().catch(() => undefined);
+      throw error;
+    } finally {
+      reader.releaseLock();
     }
   }
 
   const toolCalls = [...calls.entries()]
     .sort((a, b) => a[0] - b[0])
-    .map(([, c], i) => ({ ...c, id: c.id || `call_${Date.now()}_${i}` }))
-    .filter((c) => c.name);
-  return { text, toolCalls };
+    .map(([, call], index) => ({ ...call, id: call.id || `call_${Date.now()}_${index}` }))
+    .filter((call) => call.name);
+  return { text, toolCalls, finishReason, streamComplete: receivedDone || !!finishReason };
 }
 
 const MAX_TOOL_RESULT = 8000;
