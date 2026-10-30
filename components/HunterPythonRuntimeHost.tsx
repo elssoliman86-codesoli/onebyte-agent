@@ -25,7 +25,7 @@ const HTML = `<!doctype html>
       "  pyodide.setStderr({ batched: function(s){ self.__stderr = ((self.__stderr || '') + s).slice(0, 32000); } });",
       "  pyodide.globals.set('__hunter_args_json', JSON.stringify(data.args || {}));",
       "  pyodide.globals.set('__hunter_max_output', Math.max(1024, Math.min(64000, Number(data.maxOutputBytes) || 64000)));",
-      "  const setup = 'import sys, time\\n__hunter_deadline = time.monotonic() + ' + str(Math.max(1, Math.min(30000, Number(data.timeoutMs) || 8000)) / 1000) + '\\ndef __hunter_trace(frame, event, arg):\\n if time.monotonic() > __hunter_deadline: raise TimeoutError(\\\"Python tool execution timed out\\\")\\n return __hunter_trace\\nsys.settrace(__hunter_trace)';",
+      "  const setup = 'import sys, time\\n__hunter_deadline = time.monotonic() + ' + String(Math.max(1, Math.min(30000, Number(data.timeoutMs) || 8000)) / 1000) + '\\ndef __hunter_trace(frame, event, arg):\\n if time.monotonic() > __hunter_deadline: raise TimeoutError(\\\"Python tool execution timed out\\\")\\n return __hunter_trace\\nsys.settrace(__hunter_trace)';",
       "  await pyodide.runPythonAsync(setup);",
       "  await pyodide.runPythonAsync(data.source);",
       "  const wrapper = 'import json, io, contextlib, inspect, sys\\n' +",
