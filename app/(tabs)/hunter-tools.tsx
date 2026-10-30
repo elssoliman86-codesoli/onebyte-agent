@@ -17,7 +17,7 @@ import {
   type HunterTool,
 } from '@/src/hunter-tools';
 
-const DEFAULT_INPUT_SCHEMA = JSON.stringify({ type: 'object', properties: {}, required: [], additionalProperties: false }, null, 2);
+const DEFAULT_INPUT_SCHEMA = JSON.stringify({ type: 'object', properties: { target: { type: 'string' }, evidence: { type: 'array', items: { type: 'object' }, maxItems: 500 }, urls: { type: 'array', items: { type: 'string' }, maxItems: 500 }, page_text: { type: 'string' }, page_source: { type: 'string' }, network_requests: { type: 'array', items: { type: 'object' }, maxItems: 500 } }, required: [], additionalProperties: false }, null, 2);
 
 export default function HunterToolsScreen() {
   const colors = useColors();
