@@ -256,7 +256,10 @@ export async function approveHunterPythonTool(id: string): Promise<void> {
 async function discoverPassiveSubdomains(targetHost: string): Promise<string[]> {
   const savedTargets = await loadTargets();
   const target = savedTargets.find((item) => item.host.toLowerCase() === targetHost.toLowerCase());
-  if (!target) throw new Error('أداة اكتشاف النطاقات الفرعية تتطلب تارجت محفوظًا ومصرحًا به.');
+  if (!target) throw new Error('أداة اكتشاف النطاقات الفرعية تتطلب تارجت محفوظًا.');
+  const probeHost = target.host.startsWith('*.') ? 'www.' + target.host.slice(2) : target.host;
+  const authorization = isAuthorized('https://' + probeHost + '/', [target]);
+  if (!authorization.ok) throw new Error(authorization.reason);
   const root = target.host.startsWith('*.') ? target.host.slice(2).toLowerCase() : target.host.toLowerCase();
   const controller = new AbortController();
   const timeout = setTimeout(() => controller.abort(), 12_000);
@@ -493,9 +496,9 @@ export async function runBrowserRecon(target: HunterTarget, signal?: AbortSignal
     record.networkRequests = network.length;
     plan[2].status = 'done';
     const rootHost = target.host.startsWith('*.') ? target.host.slice(2) : target.host;
-    const endpointResult = await runHunterRegistryTool('hunter.extract-endpoints', { pageText: page.text + '\n' + (page.source ?? ''), urls: network.map((entry) => entry.url), targetHost: rootHost, pageUrl: page.url });
+    const endpointResult = await runHunterRegistryTool('hunter.extract-endpoints', { pageText: page.text + '\n' + (page.source ?? ''), urls: network.map((entry) => entry.url), targetHost: target.host, pageUrl: page.url });
     const endpointData = JSON.parse(endpointResult) as { endpoints?: string[] };
-    const urls = endpointData.endpoints ?? collectEndpointCandidates(page, network, rootHost);
+    const urls = endpointData.endpoints ?? collectEndpointCandidates(page, network, target.host);
     record.discoveredUrls = urls;
     const jsResult = await runHunterRegistryTool('hunter.javascript-inventory', { urls });
     const jsData = JSON.parse(jsResult) as { javascriptAssets?: string[] };
