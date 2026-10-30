@@ -36,6 +36,7 @@ export default function HunterToolsScreen() {
     const [nextTools, nextRuns] = await Promise.all([loadHunterTools(), loadHunterRuns()]);
     setTools(nextTools);
     setRuns(nextRuns);
+    setSelected((current) => current ? nextTools.find((tool) => tool.id === current.id) ?? null : null);
   }
   useEffect(() => { void refresh(); }, []);
 
