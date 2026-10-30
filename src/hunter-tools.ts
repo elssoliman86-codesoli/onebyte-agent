@@ -256,7 +256,7 @@ export async function saveHunterTool(input: {
     outputDescription: input.outputDescription ?? 'لم يتم تحديد شكل المخرجات بعد.',
     source,
     version: 1,
-    versions: [{ version: 1, source, createdAt: timestamp, testSummary: 'Not tested yet.' }],
+    versions: [{ version: 1, source, inputSchema, outputDescription: input.outputDescription ?? 'لم يتم تحديد شكل المخرجات بعد.', createdAt: timestamp, testSummary: 'Not tested yet.' }],
     createdAt: timestamp,
     updatedAt: timestamp,
     useCount: 0,
@@ -392,6 +392,7 @@ export async function runHunterRegistryTool(id: string, args: Record<string, unk
 export async function runPythonHunterTool(id: string, args: Record<string, unknown>): Promise<string> {
   const tool = (await loadHunterTools()).find((item) => item.id === id);
   if (!tool || tool.kind !== 'python') throw new Error('أداة Python غير موجودة.');
+  validateToolArgs(tool.inputSchema, args);
   if (tool.status !== 'verified') throw new Error('الأداة غير معتمدة. اختبرها واعتمد إصدارها أولًا.');
   if (!pythonRuntime) throw new Error('محرك Python المحلي المعزول غير مدمج في هذا الإصدار بعد؛ تم حفظ الكود في المكتبة دون تشغيله.');
   const result = await pythonRuntime.execute({
