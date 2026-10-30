@@ -11,6 +11,8 @@
  */
 
 import { storage } from './storage';
+import { targetMatchesHost } from './hunter-scope';
+export { targetMatchesHost } from './hunter-scope';
 
 export interface HunterTarget {
   id: string;
@@ -70,18 +72,6 @@ export function hostOf(url: string): string {
   }
 }
 
-/** Match a hostname against a saved host or HackerOne-style *.example.com entry. */
-export function targetMatchesHost(targetHost: string, actualHost: string): boolean {
-  const target = targetHost.trim().toLowerCase().replace(/\.$/, '');
-  const host = actualHost.trim().toLowerCase().replace(/\.$/, '');
-  if (!target || !host) return false;
-  if (target.startsWith('*.')) {
-    const root = target.slice(2);
-    // A wildcard covers subdomains, not the apex itself.
-    return host !== root && host.endsWith('.' + root);
-  }
-  return host === target || host.endsWith('.' + target);
-}
 
 export function findAuthorizedTarget(url: string, targets: HunterTarget[]): HunterTarget | null {
   const host = hostOf(url);
@@ -91,7 +81,12 @@ export function findAuthorizedTarget(url: string, targets: HunterTarget[]): Hunt
 
 /** Is this URL inside an authorized scope (exact host, wildcard, or saved subdomain tree)? */
 export function isAuthorized(url: string, targets: HunterTarget[]): { ok: boolean; reason: string } {
-  const host = hostOf(url);
+  let parsed: URL;
+  try { parsed = new URL(url); } catch { return { ok: false, reason: 'الرابط غير صالح.' }; }
+  if (!['http:', 'https:'].includes(parsed.protocol) || parsed.username || parsed.password) {
+    return { ok: false, reason: 'يسمح فقط بروابط HTTP وHTTPS دون بيانات اعتماد مضمّنة.' };
+  }
+  const host = parsed.hostname.toLowerCase();
   if (!host) return { ok: false, reason: 'الرابط غير صالح.' };
   if (!targets.length) {
     return { ok: false, reason: 'أضف تارجت مصرحًا به أولًا — الإرسال خارج السكوب مرفوض.' };
@@ -119,14 +114,27 @@ export interface RunResult {
  */
 export async function runRequest(req: HunterRequest, signal?: AbortSignal): Promise<RunResult> {
   const started = Date.now();
+  const scope = isAuthorized(req.url, await loadTargets());
+  if (!scope.ok) throw new Error('رفض أمني قبل الإرسال: ' + scope.reason);
+  if (!['GET', 'HEAD', 'POST', 'PUT', 'PATCH', 'DELETE', 'OPTIONS'].includes(req.method.toUpperCase())) {
+    throw new Error('طريقة HTTP غير مسموحة.');
+  }
+  if (req.body.length > 1_000_000) throw new Error('حجم Request Body يتجاوز 1MB.');
   try {
     const res = await fetch(req.url, {
-      method: req.method,
+      method: req.method.toUpperCase(),
       headers: req.headers,
+      redirect: 'manual',
       body: ['GET', 'HEAD'].includes(req.method) ? undefined : req.body || undefined,
       signal,
     });
     const ms = Date.now() - started;
+    if (res.status >= 300 && res.status < 400) {
+      return { status: res.status, statusText: res.statusText, ms, headers: {}, body: '', ok: false, detail: 'تم إيقاف إعادة التوجيه تلقائيًا. راجع Location وتحقق من النطاق قبل المتابعة.' };
+    }
+    if (res.url && !isAuthorized(res.url, await loadTargets()).ok) {
+      throw new Error('تم رفض الاستجابة لأن عنوانها النهائي خارج النطاق المحفوظ.');
+    }
     const headers: Record<string, string> = {};
     res.headers.forEach((v, k) => {
       headers[k] = v;
