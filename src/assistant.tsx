@@ -166,6 +166,8 @@ interface AssistantContextValue extends AssistantData {
   createSession: () => Promise<string>;
   deleteSession: (id: string) => Promise<void>;
   appendMessage: (sessionId: string, message: ChatMessage) => Promise<void>;
+  /** Idempotently append or replace a message by id; used for durable streaming checkpoints. */
+  upsertMessage: (sessionId: string, message: ChatMessage) => Promise<void>;
   replaceSessionMessages: (sessionId: string, messages: ChatMessage[]) => Promise<void>;
   saveProvider: (
     settings: ProviderSettings,
@@ -327,6 +329,7 @@ export function AssistantProvider({
     knowledge: [],
   });
   const dataRef = useRef(data);
+  const messagePersistQueueRef = useRef<Promise<void>>(Promise.resolve());
   const [loading, setLoading] = useState(true);
   const [storageError, setStorageError] = useState<string | null>(null);
   const [apiKeyConfigured, setApiKeyConfigured] = useState(false);
@@ -522,6 +525,40 @@ export function AssistantProvider({
       } catch {
         setStorageError('لم يتم حفظ الرسالة. حاولي مرة أخرى.');
         throw new Error('تعذّر حفظ الرسالة.');
+      }
+    },
+    [],
+  );
+
+  const upsertMessage = useCallback(
+    async (sessionId: string, message: ChatMessage) => {
+      await ensureLoaded();
+      const current = dataRef.current;
+      const target = current.sessions.find((session) => session.id === sessionId);
+      if (!target) throw new Error('المحادثة لم تعد موجودة؛ لم يتم حفظ الرد.');
+      const existingIndex = target.messages.findIndex((item) => item.id === message.id);
+      const messages = existingIndex < 0
+        ? [...target.messages, message]
+        : target.messages.map((item, index) => index === existingIndex ? message : item);
+      const sessions = current.sessions.map((session) => session.id !== sessionId ? session : ({
+        ...session,
+        messages,
+        updatedAt: new Date().toISOString(),
+      }));
+      dataRef.current = { ...current, sessions };
+      setData(dataRef.current);
+
+      // Serialize snapshot writes so two chats streaming at once cannot let an
+      // older AsyncStorage write overwrite a newer session list.
+      const write = messagePersistQueueRef.current
+        .catch(() => undefined)
+        .then(() => storage.setSessions(dataRef.current.sessions));
+      messagePersistQueueRef.current = write.catch(() => undefined);
+      try {
+        await write;
+      } catch {
+        setStorageError('تعذّر حفظ التقدم الحالي للرد. سيظل النص ظاهرًا حتى إعادة المحاولة.');
+        throw new Error('تعذّر حفظ التقدم الحالي للرد.');
       }
     },
     [],
@@ -830,6 +867,7 @@ export function AssistantProvider({
       createSession,
       deleteSession,
       appendMessage,
+      upsertMessage,
       replaceSessionMessages,
       saveProvider,
       removeApiKey,
@@ -871,6 +909,7 @@ export function AssistantProvider({
       createSession,
       deleteSession,
       appendMessage,
+      upsertMessage,
       replaceSessionMessages,
       saveProvider,
       removeApiKey,
