@@ -46,6 +46,7 @@ export default function CyberSecurityScreen() {
   const [activePanel, setActivePanel] = useState<'overview' | 'request' | 'activity'>('overview');
   const [lastHunt, setLastHunt] = useState<HunterRunRecord | null>(null);
   const abortRef = useRef<AbortController | null>(null);
+  const huntAbortRef = useRef<AbortController | null>(null);
   const aliveRef = useRef(true);
   const lastImportedCaptureRef = useRef('');
   const capturedMethod = Array.isArray(routeParams.capturedMethod) ? routeParams.capturedMethod[0] : routeParams.capturedMethod;
@@ -71,6 +72,7 @@ export default function CyberSecurityScreen() {
     return () => {
       aliveRef.current = false;
       abortRef.current?.abort();
+      huntAbortRef.current?.abort();
     };
   }, [refresh]);
 
@@ -358,23 +360,31 @@ export default function CyberSecurityScreen() {
               const target = eligibleTargets.find((item) => item.id === selectedTargetId) ?? eligibleTargets[0];
               if (!target) return;
               setHuntRunning(true);
+              const huntController = new AbortController();
+              huntAbortRef.current = huntController;
               const rootHost = target.host.startsWith('*.') ? target.host.slice(2) : target.host;
               const startUrl = target.host.startsWith('*.') ? `https://www.${rootHost}/` : `https://${rootHost}/`;
               router.push({ pathname: '/browser', params: { url: startUrl } });
-              void runBrowserRecon(target).then((run) => {
+              void runBrowserRecon(target, huntController.signal).then((run) => {
                 setLastHunt(run);
                 alertCompat(
-                  run.status === 'completed' ? 'اكتمل الاستطلاع الأولي' : 'اكتمل جزء من الاستطلاع',
+                  run.status === 'stopped' ? 'تم إيقاف Hunting' : run.status === 'completed' ? 'اكتمل الاستطلاع الأولي' : 'اكتمل جزء من الاستطلاع',
                   `الهدف: ${run.target}\nالروابط المرصودة: ${run.discoveredUrls.length}\nالنطاقات الفرعية: ${run.discoveredSubdomains.length}\nطلبات الشبكة: ${run.networkRequests}\nالحالة: ${run.status}\nراجع مكتبة الأدوات وسجل Hunting للتفاصيل.`,
                 );
               }).catch((e) => alertCompat('تعذّر بدء Hunting', e instanceof Error ? e.message : 'خطأ غير معروف'))
-                .finally(() => setHuntRunning(false));
+                .finally(() => { huntAbortRef.current = null; setHuntRunning(false); });
             }}
             style={[styles.primaryButton, { flex: 1, backgroundColor: colors.primary, opacity: huntRunning || eligibleTargets.length === 0 ? 0.5 : 1 }]}
           >
             {huntRunning ? <ActivityIndicator color={colors.primaryForeground} size="small" /> : <Feather name="crosshair" size={16} color={colors.primaryForeground} />}
             <Text style={[styles.primaryText, { color: colors.primaryForeground }]}>{huntRunning ? 'جارٍ الاستطلاع…' : 'ابدأ Hunting تلقائي'}</Text>
           </Pressable>
+          {huntRunning ? (
+            <Pressable onPress={() => huntAbortRef.current?.abort()} style={[styles.stopButton,{borderColor:colors.destructive}]}>
+              <Feather name="stop-circle" size={15} color={colors.destructive}/>
+              <Text style={[styles.secondaryText,{color:colors.destructive}]}>إيقاف Hunting</Text>
+            </Pressable>
+          ) : null}
           <Pressable onPress={() => router.push('/(tabs)/hunter-tools')} style={[styles.secondaryButton, { borderColor: colors.border }]}>
             <Feather name="database" size={15} color={colors.foreground} />
             <Text style={[styles.secondaryText, { color: colors.foreground }]}>مكتبة الأدوات</Text>
