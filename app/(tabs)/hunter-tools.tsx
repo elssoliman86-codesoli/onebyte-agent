@@ -9,6 +9,7 @@ import {
   deleteHunterTool,
   loadHunterRuns,
   loadHunterTools,
+  markHunterToolReviewed,
   saveHunterTool,
   approveHunterPythonTool,
   smokeTestHunterPythonTool,
@@ -89,22 +90,24 @@ export default function HunterToolsScreen() {
               <Text style={[s.toolName, { color: colors.foreground }]}>{tool.name}</Text>
               <Text style={[s.muted, { color: colors.mutedForeground }]}>{tool.description}</Text>
               <Text style={[s.meta, { color: colors.mutedForeground }]}>{tool.kind.toUpperCase()} · v{tool.version} · {tool.useCount} استخدام · {tool.status}</Text>
-              {tool.kind === 'python' && tool.status !== 'verified' ? (
+              {tool.kind === 'python' && tool.status === 'draft' ? (
                 <View style={s.row}>
-                  <Pressable disabled={testingId === tool.id} onPress={() => {
-                    setTestingId(tool.id);
-                    void smokeTestHunterPythonTool(tool.id).then((output) => alertCompat('نجح اختبار التشغيل الأولي', output.slice(0, 1200) || 'تم تنفيذ run(args) وإرجاع نتيجة منظمة.'))
-                      .catch((error) => alertCompat('فشل اختبار الأداة', error instanceof Error ? error.message : 'خطأ غير معروف'))
-                      .finally(() => { setTestingId(null); void refresh(); });
-                  }} style={[s.smallButton, { borderColor: colors.border }]}>
-                    <Text style={{ color: colors.primary, fontSize: 10 }}>{testingId === tool.id ? 'جارٍ الاختبار…' : 'اختبار التشغيل'}</Text>
-                  </Pressable>
-                  {tool.status === 'smoke-tested' ? (
-                    <Pressable onPress={() => void approveHunterPythonTool(tool.id).then(refresh).catch((error) => alertCompat('تعذّر الاعتماد', error instanceof Error ? error.message : 'خطأ غير معروف'))} style={[s.smallButton, { borderColor: colors.success }]}>
-                      <Text style={{ color: colors.success, fontSize: 10 }}>اعتماد الإصدار</Text>
+                  {tool.reviewedVersion === tool.version ? (
+                    <Pressable disabled={testingId === tool.id} onPress={() => {
+                      setTestingId(tool.id);
+                      void smokeTestHunterPythonTool(tool.id).then((output) => alertCompat('نجح اختبار التشغيل الأولي', output.slice(0, 1200) || 'تم تنفيذ run(args) وإرجاع نتيجة منظمة.'))
+                        .catch((error) => alertCompat('فشل اختبار الأداة', error instanceof Error ? error.message : 'خطأ غير معروف'))
+                        .finally(() => { setTestingId(null); void refresh(); });
+                    }} style={[s.smallButton, { borderColor: colors.border }]}>
+                      <Text style={{ color: colors.primary, fontSize: 10 }}>{testingId === tool.id ? 'جارٍ الاختبار…' : 'اختبار التشغيل'}</Text>
                     </Pressable>
-                  ) : null}
+                  ) : <Text style={[s.meta,{color:colors.warning}]}>افتح الكود وراجعه قبل الاختبار</Text>}
                 </View>
+              ) : null}
+              {tool.kind === 'python' && tool.status === 'smoke-tested' ? (
+                <Pressable onPress={() => void approveHunterPythonTool(tool.id).then(refresh).catch((error) => alertCompat('تعذّر الاعتماد', error instanceof Error ? error.message : 'خطأ غير معروف'))} style={[s.smallButton, { borderColor: colors.success, alignSelf:'flex-start' }]}>
+                  <Text style={{ color: colors.success, fontSize: 10 }}>اعتماد الإصدار بعد المراجعة والاختبار</Text>
+                </Pressable>
               ) : null}
             </View>
             <Pressable onPress={() => edit(tool)} accessibilityLabel={`تعديل ${tool.name}`} style={s.iconButton}>
@@ -131,6 +134,18 @@ export default function HunterToolsScreen() {
         <TextInput value={name} onChangeText={setName} placeholder="اسم الأداة" placeholderTextColor={colors.mutedForeground} style={[s.input, { color: colors.foreground, borderColor: colors.border }]} />
         <TextInput value={description} onChangeText={setDescription} placeholder="وظيفة الأداة والمدخلات والمخرجات" placeholderTextColor={colors.mutedForeground} style={[s.input, { color: colors.foreground, borderColor: colors.border }]} />
         <TextInput value={source} onChangeText={setSource} multiline autoCapitalize="none" autoCorrect={false} spellCheck={false} textAlignVertical="top" placeholder="Python source..." placeholderTextColor={colors.mutedForeground} style={[s.code, { color: colors.foreground, borderColor: colors.border, backgroundColor: colors.background }]} />
+        {selected?.kind === 'python' && selected.status === 'draft' ? (
+          <Pressable disabled={source !== selected.source} onPress={() => {
+            void markHunterToolReviewed(selected.id).then(async () => {
+              await refresh();
+              const updated = (await loadHunterTools()).find((tool) => tool.id === selected.id);
+              if (updated) setSelected(updated);
+              alertCompat('تم تسجيل مراجعة المصدر', 'أصبح هذا الإصدار مؤهلًا لاختبار التشغيل اليدوي. إذا عدّلت الكود، احفظ إصدارًا جديدًا ثم راجعه مرة أخرى.');
+            }).catch((error) => alertCompat('تعذّرت مراجعة المصدر', error instanceof Error ? error.message : 'خطأ غير معروف'));
+          }} style={[s.smallButton,{borderColor:colors.success,opacity:source===selected.source?1:0.45}]}>
+            <Text style={{color:colors.success,fontWeight:'700',fontSize:11}}>{source===selected.source?'أؤكد أنني راجعت الكود':'احفظ التعديلات أولًا ثم راجع الإصدار'}</Text>
+          </Pressable>
+        ) : null}
         <Pressable disabled={busy} onPress={() => void save()} style={[s.primary, { backgroundColor: colors.primary, opacity: busy ? 0.6 : 1 }]}>
           <Feather name="save" size={15} color={colors.primaryForeground}/>
           <Text style={{ color: colors.primaryForeground, fontWeight: '700' }}>{busy ? 'جارٍ الحفظ…' : 'حفظ كإصدار Draft'}</Text>
