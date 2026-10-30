@@ -32,6 +32,8 @@ export type HunterToolKind = 'python' | 'builtin';
 export interface HunterToolVersion {
   version: number;
   source: string;
+  inputSchema?: Record<string, unknown>;
+  outputDescription?: string;
   createdAt: string;
   testSummary: string;
 }
@@ -187,7 +189,7 @@ export async function saveHunterTool(input: {
       inputSchema: input.inputSchema ?? existing.inputSchema,
       outputDescription: input.outputDescription ?? existing.outputDescription,
       version,
-      versions: [...existing.versions, { version: existing.version, source: existing.source, createdAt: timestamp, testSummary: 'Previous version retained.' }].slice(-50),
+      versions: [...existing.versions, { version: existing.version, source: existing.source, inputSchema: existing.inputSchema, outputDescription: existing.outputDescription, createdAt: timestamp, testSummary: 'Previous version retained.' }].slice(-50),
       updatedAt: timestamp,
       tags: input.tags ?? existing.tags,
     };
@@ -201,7 +203,7 @@ export async function saveHunterTool(input: {
     description: input.description.trim(),
     kind: 'python',
     status: 'draft',
-    inputSchema: input.inputSchema ?? {},
+    inputSchema: input.inputSchema ?? { type: 'object', properties: {}, additionalProperties: false },
     outputDescription: input.outputDescription ?? 'لم يتم تحديد شكل المخرجات بعد.',
     source,
     version: 1,
@@ -445,14 +447,18 @@ async function createAdaptiveHuntPlan(target: HunterTarget, page: EmbeddedBrowse
 async function generateHunterPythonTool(need: { name: string; description: string; purpose: string }, context: { target: string; pageTitle: string; discoveredUrls: string[]; networkRequestCount: number }): Promise<HunterTool | null> {
   try {
     const raw = await callHunterModel([
-      { role: 'system', content: 'Create a reusable passive-only Python helper for an authorized security research app. Define exactly one public function run(args: dict) -> dict. Use only Python built-in syntax and built-in data types; do not use imports, filesystem, network, subprocess, dynamic execution, reflection, dunder names, or access to runtime objects. Analyze only evidence passed in args. Return JSON only: {"name":"...","description":"...","source":"complete Python source","output_description":"..."}.' },
+      { role: 'system', content: 'Create a reusable passive-only Python helper for an authorized security research app. Define exactly one public function run(args: dict) -> dict. Use only Python built-in syntax and built-in data types; do not use imports, filesystem, network, subprocess, dynamic execution, reflection, dunder names, or access to runtime objects. Analyze only evidence passed in args. Return JSON only: {"name":"...","description":"...","input_schema":{"type":"object","properties":{},"required":[],"additionalProperties":false},"source":"complete Python source","output_description":"..."}.' },
       { role: 'user', content: JSON.stringify({ requestedTool: need, evidenceContext: context, constraints: 'Pure offline analysis of supplied evidence only. No imports, active scanning, sockets, or external targets.' }) },
     ]);
     if (!raw) return null;
     const parsed = JSON.parse(raw.trim().replace(/^\`\`\`(?:json)?\s*/i, '').replace(/\s*\`\`\`$/, '')) as Record<string, unknown>;
     if (typeof parsed.name !== 'string' || typeof parsed.description !== 'string' || typeof parsed.source !== 'string') return null;
+    const inputSchema = parsed.input_schema && typeof parsed.input_schema === 'object' && !Array.isArray(parsed.input_schema)
+      ? parsed.input_schema as Record<string, unknown>
+      : { type: 'object', properties: {}, additionalProperties: false };
     const tool = await saveHunterTool({
       name: parsed.name.slice(0, 64),
+      inputSchema,
       description: parsed.description.slice(0, 500),
       source: parsed.source,
       outputDescription: typeof parsed.output_description === 'string' ? parsed.output_description.slice(0, 500) : 'Structured JSON result',
