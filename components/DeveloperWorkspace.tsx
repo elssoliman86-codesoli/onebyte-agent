@@ -206,6 +206,7 @@ export function DeveloperWorkspace() {
 
   async function createFile() {
     if (!activeSession || !newPath.trim()) return;
+    if (project?.files.some(file => file.path === newPath.trim())) { alertCompat('الملف موجود بالفعل', 'افتح الملف من الشجرة بدل إنشاء ملف بنفس المسار حتى لا يتم استبدال محتواه.'); return; }
     if (selectedFile && draft !== selectedFile.content) { alertCompat('احفظ التعديلات أولًا', 'احفظ الملف المفتوح قبل إنشاء ملف آخر حتى لا تفقد تغييراتك.'); return; }
     try {
       await saveProjectFile(activeSession.id, activeSession.title, newPath.trim(), '');
