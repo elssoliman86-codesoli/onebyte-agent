@@ -7,6 +7,10 @@ on:
     branches: [main]
   workflow_dispatch:
 
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
 permissions:
   contents: read
 
@@ -27,3 +31,7 @@ jobs:
           npx expo config --type public > /tmp/onebyte-expo-config.json
       - name: TypeScript typecheck
         run: npm run typecheck
+      - name: ZIP safety regression tests
+        run: npm run test:safety
+      - name: Hunter parser regression tests
+        run: npm run test:hunter

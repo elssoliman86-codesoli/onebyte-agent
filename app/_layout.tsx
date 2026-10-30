@@ -16,6 +16,7 @@ import { Stack, router } from 'expo-router';
 import * as SplashScreen from 'expo-splash-screen';
 import { WorkspaceProvider } from '@/src/workspace';
 import { AssistantProvider, useAssistant } from '@/src/assistant';
+import { HunterPythonRuntimeHost } from '@/components/HunterPythonRuntimeHost';
 
 // Prevent the splash screen from auto-hiding before asset loading is complete.
 SplashScreen.preventAutoHideAsync();
@@ -122,11 +123,12 @@ export default function RootLayout() {
   return (
     <SafeAreaProvider>
       <ErrorBoundary>
-        <GestureHandlerRootView>
+        <GestureHandlerRootView style={{ flex: 1 }}>
           <KeyboardProvider>
             <WorkspaceProvider>
               <AssistantProvider>
                 <NotificationsBootstrap />
+                <HunterPythonRuntimeHost />
                 <RootLayoutNav />
               </AssistantProvider>
             </WorkspaceProvider>

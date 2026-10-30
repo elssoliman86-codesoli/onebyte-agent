@@ -24,16 +24,17 @@ const NAV: { key: string; label: string; icon: string; route: string }[] = [
   { key: 'skills', label: 'المهارات', icon: 'zap', route: '/(tabs)/skills' },
   { key: 'memory', label: 'الذاكرة', icon: 'database', route: '/(tabs)/memory' },
   { key: 'github', label: 'مشاريع GitHub', icon: 'github', route: '/(tabs)/github' },
-  { key: 'lab', label: 'Cybersecurity Lab', icon: 'shield', route: '/(tabs)/lab' },
-  { key: 'approvals', label: 'الموافقات', icon: 'shield', route: '/(tabs)/approvals' },
+  { key: 'hunter', label: 'مختبر الأمن السيبراني', icon: 'shield', route: '/(tabs)/hunter' },
+  { key: 'assessments', label: 'التقييمات', icon: 'clipboard', route: '/(tabs)/assessments' },
+  { key: 'findings', label: 'الثغرات والنتائج', icon: 'alert-triangle', route: '/(tabs)/findings' },
+  { key: 'approvals', label: 'الموافقات', icon: 'check-square', route: '/(tabs)/approvals' },
   { key: 'settings', label: 'الإعدادات', icon: 'settings', route: '/(tabs)/settings' },
 ];
 
-/** Studio entries start a normal chat with an internal mode prompt. */
+/** Studio entries start normal chats. Cybersecurity Lab is a dedicated workspace, not a chat studio. */
 const STUDIO_NAV: { key: StudioMode; label: string; icon: string }[] = [
   { key: 'marketing', label: 'استوديو التسويق', icon: 'trending-up' },
   { key: 'developer', label: 'مختبر المطوّر', icon: 'code' },
-  { key: 'hunter', label: 'الأمن السيبراني', icon: 'shield' },
 ];
 
 export function ScreenTopBar({
@@ -95,6 +96,7 @@ export function PhoneDrawer({
   /** Starts a new chat (undefined elsewhere — the bottom button hides). */
   onNewChat?: () => void;
 }) {
+  const [expandedStudios, setExpandedStudios] = useState<Record<string, boolean>>({});
   const colors = useColors();
   const {
     sessions,
@@ -211,63 +213,48 @@ export function PhoneDrawer({
               })}
             </View>
 
-            {/* Studios — one specialised button per mode */}
+            {/* Studio workspaces: tap the section to expand its chats; plus creates a new chat in that studio. */}
             <View style={styles.section}>
-              <Text style={[styles.sectionTitle, { color: colors.mutedForeground }]}>
-                الاستوديوهات
-              </Text>
-              {STUDIO_NAV.map((item) => {
-                const isActive = item.key === active;
-                return (
-                  <Pressable
-                    key={item.key}
-                    accessibilityRole="button"
-                    accessibilityLabel={item.label}
-                    onPress={() => void openStudio(item.key)}
-                    style={[
-                      styles.navItem,
-                      isActive && { backgroundColor: colors.accentSubtle, borderColor: colors.borderHighlighted },
-                    ]}
-                  >
-                    <Feather
-                      name={item.icon as React.ComponentProps<typeof Feather>['name']}
-                      size={18}
-                      color={isActive ? colors.primary : colors.mutedForeground}
-                    />
-                    <Text
-                      style={[
-                        styles.navLabel,
-                        { color: isActive ? colors.primary : colors.foreground },
-                      ]}
-                    >
-                      {item.label}
-                    </Text>
-                  </Pressable>
-                );
-              })}
-            </View>
-
-            {/* Separate conversation lists for each studio; generic Chat remains independent. */}
-            <View style={styles.section}>
-              <Text style={[styles.sectionTitle, { color: colors.mutedForeground }]}>مساحات العمل ومحادثاتها</Text>
+              <Text style={[styles.sectionTitle, { color: colors.mutedForeground }]}>مساحات العمل</Text>
               {STUDIO_NAV.map((studio) => {
-                const sectionSessions = sessions.filter((session) => session.mode === studio.key).slice(0, 4);
+                const sectionSessions = sessions.filter((session) => session.mode === studio.key);
+                const expanded = !!expandedStudios[studio.key] || active === studio.key;
                 return (
-                  <View key={studio.key} style={{ marginBottom: 10 }}>
-                    <View style={{ flexDirection: 'row-reverse', alignItems: 'center', gap: 8 }}>
-                      <Feather name={studio.icon as never} size={15} color={colors.primary} />
-                      <Text style={{ color: colors.foreground, fontWeight: '700', flex: 1 }}>{studio.label}</Text>
-                      <Pressable accessibilityRole="button" accessibilityLabel={`محادثة جديدة: ${studio.label}`} onPress={() => void openStudio(studio.key)} style={{ padding: 5, borderRadius: 8, borderWidth: 1, borderColor: colors.border }}>
-                        <Feather name="plus" size={13} color={colors.primary} />
+                  <View key={studio.key} style={[styles.studioCard, { borderColor: expanded ? colors.borderHighlighted : colors.border, backgroundColor: expanded ? colors.card : 'transparent' }]}>
+                    <View style={styles.studioHeader}>
+                      <Pressable
+                        accessibilityRole="button"
+                        accessibilityLabel={`عرض محادثات ${studio.label}`}
+                        onPress={() => setExpandedStudios((current) => ({ ...current, [studio.key]: !current[studio.key] }))}
+                        style={styles.studioTitleButton}
+                      >
+                        <Feather name={studio.icon as React.ComponentProps<typeof Feather>['name']} size={17} color={active === studio.key ? colors.primary : colors.mutedForeground} />
+                        <Text numberOfLines={1} style={[styles.studioTitle, { color: active === studio.key ? colors.primary : colors.foreground }]}>{studio.label}</Text>
+                        <Text style={[styles.studioCount, { color: colors.mutedForeground }]}>{sectionSessions.length}</Text>
+                        <Feather name={expanded ? 'chevron-up' : 'chevron-down'} size={15} color={colors.mutedForeground} />
+                      </Pressable>
+                      <Pressable
+                        accessibilityRole="button"
+                        accessibilityLabel={`محادثة جديدة في ${studio.label}`}
+                        onPress={() => void openStudio(studio.key)}
+                        style={[styles.studioAdd, { borderColor: colors.border }]}
+                      >
+                        <Feather name="plus" size={16} color={colors.primary} />
                       </Pressable>
                     </View>
-                    {sectionSessions.map((session) => (
-                      <Pressable key={session.id} onPress={() => openSession(session.id)} style={[styles.sessionRow, { paddingRight: 24 }]}>
-                        <Feather name={session.id === activeSessionId ? 'message-square' : 'message-circle'} size={13} color={session.id === activeSessionId ? colors.primary : colors.mutedForeground} />
-                        <Text numberOfLines={1} style={[styles.sessionTitle, { color: session.id === activeSessionId ? colors.primary : colors.foreground }]}>{session.title || 'محادثة جديدة'}</Text>
-                      </Pressable>
-                    ))}
-                    {!sectionSessions.length ? <Text style={{ color: colors.mutedForeground, fontSize: 11, paddingVertical: 4, paddingRight: 24 }}>لا توجد محادثات بعد</Text> : null}
+                    {expanded ? (
+                      <View style={styles.studioChats}>
+                        {sectionSessions.length ? sectionSessions.map((session) => (
+                          <Pressable key={session.id} onPress={() => openSession(session.id)} style={[styles.sessionRow, session.id === activeSessionId && { backgroundColor: colors.accentSubtle, borderRadius: 8 }]}>
+                            <Feather name={session.id === activeSessionId ? 'message-square' : 'message-circle'} size={14} color={session.id === activeSessionId ? colors.primary : colors.mutedForeground} />
+                            <Text numberOfLines={1} style={[styles.sessionTitle, { color: session.id === activeSessionId ? colors.primary : colors.foreground }]}>{session.title || 'محادثة جديدة'}</Text>
+                            {session.id === activeSessionId ? <Feather name="check" size={13} color={colors.primary} /> : null}
+                          </Pressable>
+                        )) : (
+                          <Text style={[styles.emptyStudio, { color: colors.mutedForeground }]}>لا توجد محادثات بعد. اضغط + للبدء.</Text>
+                        )}
+                      </View>
+                    ) : null}
                   </View>
                 );
               })}
@@ -450,6 +437,14 @@ const styles = StyleSheet.create({
     paddingHorizontal: 5,
   },
   badgeText: { color: '#FFFFFF', fontSize: 11, fontWeight: '800' },
+  studioCard: { borderWidth: 1, borderRadius: 12, padding: 7, marginBottom: 8 },
+  studioHeader: { flexDirection: 'row-reverse', alignItems: 'center', gap: 7 },
+  studioTitleButton: { flex: 1, minWidth: 0, flexDirection: 'row-reverse', alignItems: 'center', gap: 8, minHeight: 38 },
+  studioTitle: { flex: 1, fontSize: 13.5, fontWeight: '700', textAlign: 'right' },
+  studioCount: { fontSize: 11, fontVariant: ['tabular-nums'] },
+  studioAdd: { width: 34, height: 34, borderWidth: 1, borderRadius: 9, alignItems: 'center', justifyContent: 'center' },
+  studioChats: { borderTopWidth: StyleSheet.hairlineWidth, borderTopColor: 'rgba(128,128,128,0.24)', marginTop: 5, paddingTop: 3 },
+  emptyStudio: { fontSize: 11, textAlign: 'right', paddingVertical: 9, paddingHorizontal: 8 },
   sessionRow: {
     flexDirection: 'row-reverse',
     alignItems: 'center',

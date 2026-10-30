@@ -38,6 +38,8 @@ function redactText(value: string | undefined): string {
   return value
     .replace(/("(?:password|token|secret|api[_-]?key|authorization|cookie|session|access_token|refresh_token)"\s*:\s*")[^"]*(")/gi, '$1[REDACTED]$2')
     .replace(/((?:password|token|secret|api[_-]?key|authorization|cookie|session|access_token|refresh_token)=)[^&\s]+/gi, '$1[REDACTED]')
+    .replace(/((?:api[_-]?key|token|secret|authorization)\s*[:=]\s*["'`])[^"'`]+(["'`])/gi, '$1[REDACTED]$2')
+    .replace(/((?:authorization|proxy-authorization|cookie|set-cookie|x-api-key|api[_-]?key|access_token|refresh_token|token|secret|password)\s*[:=]\s*)(?:Bearer\s+)?[^\s,;"'<>]+/gi, '$1[REDACTED]')
     .slice(0, 5000);
 }
 
@@ -85,7 +87,7 @@ function makeNetworkMonitorScript(scopePattern: string): string {
   return [
     '(function(){',
     'window.__onebyteNetworkScope=' + pattern + ';',
-    'function matches(url){try{return window.__onebyteNetworkScope && (function(h,p){p=p.toLowerCase();h=h.toLowerCase();if(p.indexOf("*.")===0){var root=p.slice(2);return h!==root&&h.endsWith("."+root);}return h===p||h.endsWith("."+p);})(new URL(url,location.href).hostname,window.__onebyteNetworkScope);}catch(_){return false;}}',
+    'function matches(url){try{return window.__onebyteNetworkScope && (function(h,p){p=p.toLowerCase();h=h.toLowerCase();if(p.indexOf("*.")===0){var root=p.slice(2);return h!==root&&h.endsWith("."+root);}return h===p;})(new URL(url,location.href).hostname,window.__onebyteNetworkScope);}catch(_){return false;}}',
     'function safeUrl(raw){try{var u=new URL(raw,location.href);Array.from(u.searchParams.keys()).forEach(function(k){if(/token|secret|password|api[_-]?key|authorization|cookie|session|credential|access[_-]?token|refresh[_-]?token/i.test(k))u.searchParams.set(k,"[REDACTED]");});return u.toString();}catch(_){return String(raw||"");}}',
     'function safeText(value){if(value==null)return "";var s="";if(typeof value==="string")s=value;else if(typeof URLSearchParams!=="undefined"&&value instanceof URLSearchParams)s=value.toString();else if(typeof FormData!=="undefined"&&value instanceof FormData){var keys=[];value.forEach(function(v,k){keys.push(k+"="+(/token|secret|password|api[_-]?key|authorization|cookie|session|credential/i.test(k)?"[REDACTED]":(typeof v==="string"?"[text]":"[file]")));});s="[FormData "+keys.slice(0,50).join("&")+"]";}else s="[non-text body]";s=s.replace(/("(?:password|token|secret|api[_-]?key|authorization|cookie|session|access_token|refresh_token)"\\s*:\\s*")[^"]*(")/gi,"$1[REDACTED]$2");s=s.replace(/((?:password|token|secret|api[_-]?key|authorization|cookie|session|access_token|refresh_token)=)[^&\\s]+/gi,"$1[REDACTED]");return s.slice(0,4000);}',
     'function safeHeaders(input){var out={};try{new Headers(input||{}).forEach(function(v,k){out[k]=/^(authorization|proxy-authorization|cookie|set-cookie|x-api-key)$/i.test(k)?"[REDACTED]":String(v).slice(0,1000);});}catch(_){}return out;}',
@@ -110,7 +112,7 @@ export default function BrowserScreen() {
   const colors = useColors();
   const params = useLocalSearchParams<{ url?: string | string[] }>();
   const initialUrl = (Array.isArray(params.url) ? params.url[0] : params.url) ?? '';
-  const [address, setAddress] = useState(initialUrl);
+  const [address, setAddress] = useState(redactUrl(initialUrl));
   const [url, setUrl] = useState(initialUrl);
   const [sourceUrl, setSourceUrl] = useState('');
   const [networkLog, setNetworkLog] = useState<EmbeddedBrowserNetworkEntry[]>([]);
@@ -161,7 +163,7 @@ export default function BrowserScreen() {
 
   useEffect(() => {
     let active = true;
-    setAddress(initialUrl);
+    setAddress(redactUrl(initialUrl));
     setUrl(initialUrl);
     setSourceUrl('');
     currentUrlRef.current = initialUrl;
@@ -174,7 +176,7 @@ export default function BrowserScreen() {
     void loadTargets().then((targets) => {
       if (!active) return;
       const match = findAuthorizedTarget(initialUrl, targets);
-      activateScope(match?.host ?? '');
+      activateScope(match && isAuthorized(initialUrl, targets).ok ? match.host : '');
       setSourceUrl(initialUrl);
     }).catch(() => {
       if (active) setSourceUrl(initialUrl);
@@ -233,7 +235,7 @@ export default function BrowserScreen() {
           if (!check.ok) throw new Error(check.reason);
           if (!target) throw new Error('الرابط خارج النطاق المصرّح به.');
         }
-        const nextScope = target?.host ?? '';
+        const nextScope = requireAuthorization && target ? target.host : '';
         if (scopeHostRef.current !== nextScope) clearNetworkEntries();
         activateScope(nextScope);
         setBrowserError('');
@@ -247,9 +249,12 @@ export default function BrowserScreen() {
         await driver.waitUntilReady(20_000);
         return driver.readPage();
       },
-      readPage: async () => JSON.parse(await evaluate(
-        'JSON.stringify({url:location.href,title:document.title,text:(document.body?.innerText||"").slice(0,24000),elements:Array.from(document.querySelectorAll("a,button,input,textarea,select,[role=button],[contenteditable=true]")).slice(0,160).map((el,i)=>({index:i,tag:el.tagName.toLowerCase(),role:el.getAttribute("role")||"",label:(el.innerText||el.getAttribute("aria-label")||el.getAttribute("name")||el.getAttribute("placeholder")||el.value||"").toString().trim().slice(0,240),type:el.type||"",placeholder:el.getAttribute("placeholder")||"",href:el.href||"",disabled:!!el.disabled,password:el.type==="password"}))})',
-      )) as EmbeddedBrowserSnapshot,
+      readPage: async () => {
+        const snapshot = JSON.parse(await evaluate(
+          'JSON.stringify({url:location.href,title:document.title,text:(document.body?.innerText||"").slice(0,24000),source:(document.documentElement?.outerHTML||"").slice(0,30000),elements:Array.from(document.querySelectorAll("a,button,input,textarea,select,[role=button],[contenteditable=true]")).slice(0,160).map((el,i)=>({index:i,tag:el.tagName.toLowerCase(),role:el.getAttribute("role")||"",label:(el.innerText||el.getAttribute("aria-label")||el.getAttribute("name")||el.getAttribute("placeholder")||el.value||"").toString().trim().slice(0,240),type:el.type||"",placeholder:el.getAttribute("placeholder")||"",href:el.href||"",disabled:!!el.disabled,password:el.type==="password"}))})',
+        )) as EmbeddedBrowserSnapshot;
+        return { ...snapshot, url: redactUrl(snapshot.url), title: redactText(snapshot.title), text: redactText(snapshot.text).slice(0, 24000), source: redactText(snapshot.source).slice(0, 30000), elements: snapshot.elements.map((element) => ({ ...element, label: redactText(element.label), placeholder: redactText(element.placeholder), href: element.href ? redactUrl(element.href) : '' })) };
+      },
       click: async (index) => evaluate(
         '(()=>{const e=Array.from(document.querySelectorAll("a,button,input,textarea,select,[role=button],[contenteditable=true]")).slice(0,160)[' + index + '];if(!e)throw new Error("العنصر غير موجود");e.scrollIntoView({block:"center"});e.click();return "تم الضغط على "+(e.innerText||e.getAttribute("aria-label")||e.tagName)})()',
       ),
@@ -267,6 +272,9 @@ export default function BrowserScreen() {
         if (!scopeHostRef.current || !isHostInScope(target.toString(), scopeHostRef.current)) {
           throw new Error('رفض الطلب: الرابط خارج نطاق الاختبار المصرّح به.');
         }
+        const savedTargets = await loadTargets();
+        const authorizationCheck = isAuthorized(target.toString(), savedTargets);
+        if (!authorizationCheck.ok) throw new Error('رفض أمني قبل الإرسال: ' + authorizationCheck.reason);
         const method = input.method.toUpperCase();
         if (!['GET', 'POST', 'PUT', 'PATCH', 'DELETE', 'HEAD', 'OPTIONS'].includes(method)) {
           throw new Error('طريقة HTTP غير مسموحة.');
@@ -274,13 +282,15 @@ export default function BrowserScreen() {
         const started = Date.now();
         try {
           const raw = await evaluate(
-            '(async()=>{const r=await fetch(' + JSON.stringify(target.toString()) + ',{method:' + JSON.stringify(method) + ',headers:' + JSON.stringify(input.headers) +
+            '(async()=>{const r=await fetch(' + JSON.stringify(target.toString()) + ',{method:' + JSON.stringify(method) + ',redirect:"manual",headers:' + JSON.stringify(input.headers) +
             (['GET', 'HEAD'].includes(method) ? '' : ',body:' + JSON.stringify(input.body)) +
             ',credentials:"same-origin"});const h={};r.headers.forEach((v,k)=>h[k]=/^(set-cookie|www-authenticate)$/i.test(k)?"[REDACTED]":v);const b=' +
-            JSON.stringify(method) + '==="HEAD"?"":await r.text();return JSON.stringify({url:r.url,status:r.status,statusText:r.statusText,ok:r.ok,headers:h,body:b.slice(0,40000)})})()',
+            JSON.stringify(method) + '==="HEAD"?"":await (async()=>{const max=524288;const len=Number(r.headers.get("content-length")||0);if(len>max){try{await r.body.cancel()}catch(_){}return "[response omitted: >512KB]"}const rd=r.body&&r.body.getReader?r.body.getReader():null;if(!rd)return (await r.text()).slice(0,max);const d=new TextDecoder();let s="",n=0,t=false;while(true){const q=await rd.read();if(q.done)break;const left=max-n;if(left<=0){t=true;await rd.cancel();break}const chunk=q.value.subarray(0,left);s+=d.decode(chunk,{stream:true});n+=chunk.byteLength;if(chunk.byteLength<q.value.byteLength){t=true;await rd.cancel();break}}s+=d.decode();return s+(t?" [truncated after 512KB]":"")})() ;return JSON.stringify({url:r.url,status:r.status,statusText:r.statusText,ok:r.ok,headers:h,body:b.slice(0,40000)})})()',
             45_000,
           );
           const result = JSON.parse(raw) as Omit<EmbeddedBrowserRequestResult, 'elapsedMs'>;
+          if (result.status >= 300 && result.status < 400) throw new Error('تم إيقاف إعادة التوجيه؛ راجع Location يدويًا وتأكد أنه داخل النطاق قبل المتابعة.');
+          if (!isHostInScope(result.url, scopeHostRef.current) || !isAuthorized(result.url, await loadTargets()).ok) throw new Error('تم رفض استجابة خارج النطاق أو غير مؤكدة التصريح.');
           return { ...result, url: redactUrl(result.url), headers: result.headers, body: redactText(result.body), elapsedMs: Date.now() - started };
         } catch (error) {
           const message = error instanceof Error ? error.message : String(error);
@@ -319,9 +329,9 @@ export default function BrowserScreen() {
       const targets = await loadTargets();
       const matchingTarget = findAuthorizedTarget(cleanUrl, targets);
       clearNetworkEntries();
-      activateScope(matchingTarget?.host ?? '');
+      activateScope(matchingTarget && isAuthorized(cleanUrl, targets).ok ? matchingTarget.host : '');
       setBrowserError('');
-      setAddress(cleanUrl);
+      setAddress(redactUrl(cleanUrl));
       setUrl(cleanUrl);
       currentUrlRef.current = cleanUrl;
       pageReadyRef.current = false;
@@ -494,14 +504,14 @@ export default function BrowserScreen() {
             pageReadyRef.current = false;
           }}
           onNavigationStateChange={(state) => {
-            setAddress(state.url);
+            setAddress(redactUrl(state.url));
             setUrl(state.url);
             currentUrlRef.current = state.url;
           }}
           onLoadEnd={(event) => {
             const loadedUrl = event.nativeEvent.url;
             currentUrlRef.current = loadedUrl;
-            setAddress(loadedUrl);
+            setAddress(redactUrl(loadedUrl));
             setUrl(loadedUrl);
             pageReadyRef.current = true;
             setBrowserError('');
@@ -513,7 +523,7 @@ export default function BrowserScreen() {
               try {
                 const targets = await loadTargets();
                 const match = findAuthorizedTarget(loadedUrl, targets);
-                if (!scopeHostRef.current && match) activateScope(match.host);
+                if (!scopeHostRef.current && match && isAuthorized(loadedUrl, targets).ok) activateScope(match.host);
                 if (scopeHostRef.current && isHostInScope(loadedUrl, scopeHostRef.current)) {
                   appendNetworkEntry({
                     id: 'navigation-' + Date.now() + '-' + Math.random().toString(36).slice(2, 8),

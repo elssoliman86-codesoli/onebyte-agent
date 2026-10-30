@@ -1,4 +1,5 @@
 import React, { useCallback, useEffect, useRef, useState } from 'react';
+import { router } from 'expo-router';
 import { ActivityIndicator, Pressable, ScrollView, StyleSheet, Text, TextInput, View } from 'react-native';
 import { Feather } from '@expo/vector-icons';
 import { useLocalSearchParams } from 'expo-router';
@@ -6,6 +7,7 @@ import { useColors } from '@/hooks/useColors';
 import { ScreenTopBar } from '@/components/PhoneDrawer';
 import { AppScreen, Surface } from '@/components/Ui';
 import { alertCompat } from '@/src/web-alert';
+import { loadHunterRuns, runBrowserRecon, runSafeHttpHeaderChecks, type HunterRunRecord } from '@/src/hunter-tools';
 import {
   hostOf,
   isAuthorized,
@@ -18,6 +20,7 @@ import {
   type HunterRequest,
   type HunterTarget,
 } from '@/src/hunter';
+import { normalizeTargetPattern } from '@/src/hunter-scope';
 
 const METHODS = ['GET', 'POST', 'PUT', 'PATCH', 'DELETE', 'HEAD', 'OPTIONS'];
 
@@ -30,6 +33,7 @@ export default function CyberSecurityScreen() {
   const [selectedTargetId, setSelectedTargetId] = useState<string | null>(null);
   const [showRequestEditor, setShowRequestEditor] = useState(false);
   const [authorization, setAuthorization] = useState('');
+  const [authorizationConfirmed, setAuthorizationConfirmed] = useState(false);
   const [method, setMethod] = useState('GET');
   const [url, setUrl] = useState('');
   const [headersText, setHeadersText] = useState('{"Accept":"*/*"}');
@@ -37,7 +41,12 @@ export default function CyberSecurityScreen() {
   const [running, setRunning] = useState(false);
   const [result, setResult] = useState<HunterLogEntry | null>(null);
   const [error, setError] = useState('');
+  const [huntRunning, setHuntRunning] = useState(false);
+  const [safeChecksRunning, setSafeChecksRunning] = useState(false);
+  const [activePanel, setActivePanel] = useState<'overview' | 'request' | 'activity'>('overview');
+  const [lastHunt, setLastHunt] = useState<HunterRunRecord | null>(null);
   const abortRef = useRef<AbortController | null>(null);
+  const huntAbortRef = useRef<AbortController | null>(null);
   const aliveRef = useRef(true);
   const lastImportedCaptureRef = useRef('');
   const capturedMethod = Array.isArray(routeParams.capturedMethod) ? routeParams.capturedMethod[0] : routeParams.capturedMethod;
@@ -45,21 +54,25 @@ export default function CyberSecurityScreen() {
   const capturedHeaders = Array.isArray(routeParams.capturedHeaders) ? routeParams.capturedHeaders[0] : routeParams.capturedHeaders;
   const capturedBody = Array.isArray(routeParams.capturedBody) ? routeParams.capturedBody[0] : routeParams.capturedBody;
   const capturedAt = Array.isArray(routeParams.capturedAt) ? routeParams.capturedAt[0] : routeParams.capturedAt;
+  const eligibleTargets = targets.filter((target) => isAuthorized(`https://${target.host.startsWith('*.') ? 'www.' + target.host.slice(2) : target.host}/`, [target]).ok);
 
   const refresh = useCallback(async () => {
-    const [nextTargets, nextLog] = await Promise.all([loadTargets(), loadHunterLog()]);
+    const [nextTargets, nextLog, nextRuns] = await Promise.all([loadTargets(), loadHunterLog(), loadHunterRuns()]);
     if (aliveRef.current) {
       setTargets(nextTargets);
       setLog(nextLog);
+      setLastHunt(nextRuns[0] ?? null);
+      setSelectedTargetId((current) => current && nextTargets.some((target) => target.id === current) ? current : nextTargets.find((target) => isAuthorized(`https://${target.host.startsWith('*.') ? 'www.' + target.host.slice(2) : target.host}/`, [target]).ok)?.id ?? null);
     }
   }, []);
 
   useEffect(() => {
     aliveRef.current = true;
-    void refresh();
+    void refresh().catch((error) => setError(error instanceof Error ? error.message : 'تعذّر تحميل بيانات مختبر الأمن.'));
     return () => {
       aliveRef.current = false;
       abortRef.current?.abort();
+      huntAbortRef.current?.abort();
     };
   }, [refresh]);
 
@@ -78,13 +91,17 @@ export default function CyberSecurityScreen() {
   }, [capturedAt, capturedMethod, capturedUrl, capturedHeaders, capturedBody]);
 
   async function addTarget() {
-    const normalized = targetHost.trim().replace(/^https?:\/\//i, '').replace(/\/$/, '').toLowerCase();
-    if (!normalized || /[\s/@?#]/.test(normalized)) {
-      alertCompat('نطاق غير صالح', 'اكتب اسم النطاق فقط، مثل example.com.');
+    const normalized = normalizeTargetPattern(targetHost);
+    if (!normalized) {
+      alertCompat('نطاق غير صالح', 'اكتب اسم المضيف فقط مثل example.com. استخدم *.example.com فقط إذا كان التصريح يشمل النطاقات الفرعية صراحةً. لا تضع مسارًا أو منفذًا أو رابط صفحة.');
       return;
     }
     if (!authorization.trim()) {
-      alertCompat('التأكيد مطلوب', 'اكتب مصدر الإذن أو رابط برنامج HackerOne ونطاق الاختبار المسموح.');
+      alertCompat('مصدر التصريح مطلوب', 'اكتب رابط البرنامج أو تفاصيل الإذن المكتوب والنطاق المسموح.');
+      return;
+    }
+    if (!authorizationConfirmed) {
+      alertCompat('تأكيد الإذن مطلوب', 'فعّل إقرار التصريح بعد التأكد من أنك تملك الإذن وأن النطاق مطابق لشروط البرنامج.');
       return;
     }
     const next: HunterTarget = {
@@ -92,16 +109,63 @@ export default function CyberSecurityScreen() {
       host: normalized,
       note: 'Added by the user',
       authorization: authorization.trim(),
+      authorizationConfirmedAt: new Date().toISOString(),
       createdAt: new Date().toISOString(),
     };
     const updated = [next, ...targets.filter((item) => item.host !== normalized)];
-    await saveTargets(updated);
+    try { await saveTargets(updated); }
+    catch (error) { alertCompat('تعذّر حفظ النطاق', error instanceof Error ? error.message : 'خطأ في التخزين المحلي.'); return; }
     setTargets(updated);
     setTargetHost('');
     setAuthorization('');
-    setSelectedTargetId(next[0]?.id ?? null);
+    setAuthorizationConfirmed(false);
+    setSelectedTargetId(next.id);
     setShowRequestEditor(false);
+    setActivePanel('overview');
     setError('');
+  }
+
+  function reconfirmTarget(target: HunterTarget) {
+    const normalizedHost = normalizeTargetPattern(target.host);
+    if (!normalizedHost) {
+      alertCompat('صيغة النطاق قديمة وغير صالحة', 'احذف هذا التارجت وأعد إضافته بصيغة اسم مضيف فقط مثل example.com أو wildcard صريح مثل *.example.com.');
+      return;
+    }
+    alertCompat(
+      'إعادة تأكيد تصريح الاختبار',
+      `هل تؤكد أن الإذن الخاص بـ ${target.host} ما زال صالحًا، وأن المصدر والنطاق المسجلين يسمحان بهذا الاختبار؟ هذا إقرار منك وليس تحققًا من مالك الموقع.`,
+      [
+        { text: 'إلغاء', style: 'cancel' },
+        {
+          text: 'أؤكد وأفعّل النطاق',
+          onPress: () => {
+            const updated = targets.map((item) => item.id === target.id
+              ? { ...item, host: normalizedHost, authorizationConfirmedAt: new Date().toISOString() }
+              : item);
+            setTargets(updated);
+            void saveTargets(updated).then(() => setError('تم تسجيل إقرارك. راجع حدود البرنامج قبل كل اختبار.'))
+              .catch(() => alertCompat('تعذّر حفظ التأكيد', 'حاول مرة أخرى.'));
+          },
+        },
+      ],
+    );
+  }
+
+  function removeTarget(target: HunterTarget) {
+    alertCompat('حذف النطاق المحفوظ؟', `سيتم حذف ${target.host} وإيقاف السماح بأي طلبات جديدة ضمنه. سجل Hunting السابق سيظل محفوظًا.`, [
+      { text: 'إلغاء', style: 'cancel' },
+      { text: 'حذف النطاق', style: 'destructive', onPress: () => {
+        const next = targets.filter((item) => item.id !== target.id);
+        void saveTargets(next).then(() => {
+          setTargets(next);
+          if (selectedTargetId === target.id) {
+            setSelectedTargetId(null);
+            setShowRequestEditor(false);
+            setActivePanel('overview');
+          }
+        }).catch((error) => alertCompat('تعذّر حذف النطاق', error instanceof Error ? error.message : 'خطأ في التخزين.'));
+      } },
+    ]);
   }
 
   async function sendRequest() {
@@ -169,6 +233,7 @@ export default function CyberSecurityScreen() {
       if (aliveRef.current) {
         setResult(entry);
         setLog(next);
+        setActivePanel('activity');
         if (controller.signal.aborted) setError('تم طلب إيقاف الطلب. راجع حالة الاستجابة أدناه.');
       }
     } catch (e) {
@@ -191,25 +256,57 @@ export default function CyberSecurityScreen() {
 
   return (
     <AppScreen
-      title="Cybersecurity Lab"
+      title="مختبر الأمن السيبراني"
       eyebrow="Authorized HTTP testing"
-      subtitle="عدّل الطلبات وأرسلها وأوقفها واقرأ الاستجابة. أضف نطاقًا مصرحًا به أولًا؛ لا يتم إرسال طلبات خارج النطاق."
+      subtitle="سجّل الهدف ومصدر التصريح وحدود النطاق، ثم ابدأ الاستطلاع. طلبات HTTP والاختبارات الإضافية منفصلة وتتطلب اختيارك الصريح."
       topBar={<ScreenTopBar active="hunter" />}
     >
+      <View style={styles.panelTabs}>
+        {([
+          { key: 'overview', label: 'النطاق والاستطلاع', icon: 'shield' },
+          { key: 'request', label: 'مختبر HTTP', icon: 'terminal' },
+          { key: 'activity', label: 'النتائج والسجل', icon: 'activity' },
+        ] as const).map((tab) => (
+          <Pressable key={tab.key} accessibilityRole="tab" accessibilityState={{ selected: activePanel === tab.key }} onPress={() => setActivePanel(tab.key)} style={[styles.panelTab, { borderColor: activePanel === tab.key ? colors.primary : colors.border, backgroundColor: activePanel === tab.key ? colors.accentSubtle : colors.card }]}>
+            <Feather name={tab.icon} size={14} color={activePanel === tab.key ? colors.primary : colors.mutedForeground} />
+            <Text numberOfLines={1} style={[styles.panelTabText, { color: activePanel === tab.key ? colors.primary : colors.mutedForeground }]}>{tab.label}</Text>
+          </Pressable>
+        ))}
+      </View>
+      {activePanel === 'overview' ? (
+        <>
+      <Surface style={styles.metricsCard}>
+          <View style={styles.metricItem}>
+            <Text style={[styles.metricValue, { color: colors.foreground }]}>{targets.length}</Text>
+            <Text style={[styles.metricLabel, { color: colors.mutedForeground }]}>Targets محفوظة</Text>
+          </View>
+          <View style={[styles.metricDivider, { backgroundColor: colors.border }]} />
+          <View style={styles.metricItem}>
+            <Text style={[styles.metricValue, { color: colors.success }]}>{eligibleTargets.length}</Text>
+            <Text style={[styles.metricLabel, { color: colors.mutedForeground }]}>إقرار تصريح مسجل</Text>
+          </View>
+          <View style={[styles.metricDivider, { backgroundColor: colors.border }]} />
+          <View style={styles.metricItem}>
+            <Text style={[styles.metricValue, { color: colors.foreground }]}>{lastHunt?.discoveredUrls.length ?? 0}</Text>
+            <Text style={[styles.metricLabel, { color: colors.mutedForeground }]}>روابط آخر استطلاع</Text>
+          </View>
+        </Surface>
       <Surface style={styles.scopeCard}>
         <View style={styles.sectionHeading}>
           <Feather name="shield" size={18} color={colors.primary} />
           <Text style={[styles.sectionTitle, { color: colors.foreground }]}>نطاقات الاختبار المصرّح بها</Text>
         </View>
+        <Text style={[styles.fieldLabel, { color: colors.foreground }]}>اسم المضيف / النطاق</Text>
         <TextInput
           value={targetHost}
           onChangeText={setTargetHost}
           autoCapitalize="none"
           autoCorrect={false}
-          placeholder="example.com"
+          placeholder="example.com أو *.example.com"
           placeholderTextColor={colors.mutedForeground}
           style={[styles.input, { color: colors.foreground, borderColor: colors.border, backgroundColor: colors.background }]}
         />
+        <Text style={[styles.fieldLabel, { color: colors.foreground }]}>مصدر التصريح وحدوده</Text>
         <TextInput
           value={authorization}
           onChangeText={setAuthorization}
@@ -218,27 +315,39 @@ export default function CyberSecurityScreen() {
           multiline
           style={[styles.input, styles.multiline, { color: colors.foreground, borderColor: colors.border, backgroundColor: colors.background }]}
         />
+        <Pressable
+          accessibilityRole="checkbox"
+          accessibilityState={{ checked: authorizationConfirmed }}
+          onPress={() => setAuthorizationConfirmed((value) => !value)}
+          style={styles.attestationRow}
+        >
+          <Feather name={authorizationConfirmed ? 'check-square' : 'square'} size={18} color={authorizationConfirmed ? colors.primary : colors.mutedForeground} />
+          <Text style={[styles.muted, { color: colors.foreground, flex: 1 }]}>أؤكد أن لدي تصريحًا صالحًا، وأن هذا النطاق داخل حدود البرنامج المسموح بها. هذا إقرار مني وليس تحققًا آليًا من الجهة المالكة.</Text>
+        </Pressable>
         <Pressable onPress={() => void addTarget()} style={[styles.primaryButton, { backgroundColor: colors.primary }]}>
           <Feather name="plus-circle" size={16} color={colors.primaryForeground} />
           <Text style={[styles.primaryText, { color: colors.primaryForeground }]}>إضافة النطاق</Text>
         </Pressable>
         {targets.length ? targets.map((target) => (
           <View key={target.id} style={[styles.scopeRow, { borderColor: colors.border }]}>
-            <Feather name="check-circle" size={15} color={colors.primary} />
+            <Feather name={target.authorizationConfirmedAt ? 'check-circle' : 'alert-triangle'} size={16} color={target.authorizationConfirmedAt ? colors.success : colors.warning} />
             <View style={{ flex: 1, gap: 3 }}>
               <Text style={[styles.scopeHost, { color: colors.foreground }]}>{target.host}</Text>
               <Text style={[styles.muted, { color: colors.mutedForeground }]}>{target.authorization}</Text>
+              <Text style={[styles.muted, { color: target.authorizationConfirmedAt ? colors.success : colors.warning }]}>{target.authorizationConfirmedAt ? 'إقرار المستخدم مسجل · ليس تحققًا خارجيًا' : 'قديم — يحتاج إعادة تأكيد التصريح'}</Text>
             </View>
-            <Pressable accessibilityRole="button" onPress={() => { setSelectedTargetId(target.id); setUrl(`https://${target.host}/`); setShowRequestEditor(true); setError('تم اختيار النطاق المحفوظ. راجع قواعد البرنامج وحدود النطاق قبل إرسال أي طلب.'); }} style={[styles.secondaryButton,{borderColor:colors.border,paddingHorizontal:8,paddingVertical:5}]}>
+            {!target.authorizationConfirmedAt ? (
+              <Pressable accessibilityRole="button" onPress={() => reconfirmTarget(target)} style={[styles.secondaryButton,{borderColor:colors.warning,paddingHorizontal:8,paddingVertical:5}]}>
+                <Feather name="alert-circle" size={13} color={colors.warning} />
+                <Text style={[styles.secondaryText,{color:colors.warning}]}>تأكيد التصريح</Text>
+              </Pressable>
+            ) : null}
+            <Pressable accessibilityRole="button" disabled={!target.authorizationConfirmedAt}
+              onPress={() => { setSelectedTargetId(target.id); setUrl(`https://${target.host.startsWith('*.') ? 'www.' + target.host.slice(2) : target.host}/`); setShowRequestEditor(true); setActivePanel('request'); setError('تم اختيار النطاق المحفوظ. راجع قواعد البرنامج وحدود النطاق قبل إرسال أي طلب.'); }} style={[styles.secondaryButton,{borderColor:colors.border,paddingHorizontal:8,paddingVertical:5}]}>
               <Feather name="shield" size={14} color={colors.primary} />
               <Text style={[styles.secondaryText,{color:colors.primary}]}>فتح المختبر</Text>
             </Pressable>
-            <Pressable accessibilityRole="button" accessibilityLabel={`حذف نطاق ${target.host}`} onPress={() => {
-              const next = targets.filter((item) => item.id !== target.id);
-              setTargets(next);
-              if (selectedTargetId === target.id) { setSelectedTargetId(null); setShowRequestEditor(false); }
-              void saveTargets(next);
-            }}>
+            <Pressable accessibilityRole="button" accessibilityLabel={`حذف نطاق ${target.host}`} onPress={() => removeTarget(target)}>
               <Feather name="trash-2" size={16} color={colors.mutedForeground} />
             </Pressable>
           </View>
@@ -247,7 +356,82 @@ export default function CyberSecurityScreen() {
         )}
       </Surface>
 
-      {showRequestEditor && selectedTargetId && targets.some((target) => target.id === selectedTargetId) ? <Surface style={styles.requestCard}>
+      <Surface style={styles.requestCard}>
+        <View style={styles.sectionHeading}>
+          <Feather name="activity" size={18} color={colors.primary} />
+          <Text style={[styles.sectionTitle, { color: colors.foreground }]}>Autonomous Hunting</Text>
+        </View>
+        <Text style={[styles.muted, { color: colors.mutedForeground }]}>
+          يبدأ باستطلاع المتصفح المدمج، ثم يجمع روابط الصفحة وطلبات الشبكة المرصودة وملفات JavaScript داخل النطاق المحفوظ. لا ينفذ تخمين كلمات مرور أو brute-force أو اختبارات نشطة تلقائيًا.
+        </Text>
+        <View style={styles.actions}>
+          <Pressable
+            disabled={huntRunning || eligibleTargets.length === 0}
+            onPress={() => {
+              const target = eligibleTargets.find((item) => item.id === selectedTargetId) ?? eligibleTargets[0];
+              if (!target) return;
+              setHuntRunning(true);
+              const huntController = new AbortController();
+              huntAbortRef.current = huntController;
+              const rootHost = target.host.startsWith('*.') ? target.host.slice(2) : target.host;
+              const startUrl = target.host.startsWith('*.') ? `https://www.${rootHost}/` : `https://${rootHost}/`;
+              router.push({ pathname: '/browser', params: { url: startUrl } });
+              void runBrowserRecon(target, huntController.signal).then((run) => {
+                setLastHunt(run);
+                setActivePanel('activity');
+                alertCompat(
+                  run.status === 'stopped' ? 'تم إيقاف Hunting' : run.status === 'completed' ? 'اكتمل الاستطلاع الأولي' : 'اكتمل جزء من الاستطلاع',
+                  `الهدف: ${run.target}\nالروابط المرصودة: ${run.discoveredUrls.length}\nالنطاقات الفرعية: ${run.discoveredSubdomains.length}\nطلبات الشبكة: ${run.networkRequests}\nالحالة: ${run.status}\nراجع مكتبة الأدوات وسجل Hunting للتفاصيل.`,
+                );
+              }).catch((e) => alertCompat('تعذّر بدء Hunting', e instanceof Error ? e.message : 'خطأ غير معروف'))
+                .finally(() => { huntAbortRef.current = null; setHuntRunning(false); });
+            }}
+            style={[styles.primaryButton, { flex: 1, backgroundColor: colors.primary, opacity: huntRunning || eligibleTargets.length === 0 ? 0.5 : 1 }]}
+          >
+            {huntRunning ? <ActivityIndicator color={colors.primaryForeground} size="small" /> : <Feather name="crosshair" size={16} color={colors.primaryForeground} />}
+            <Text style={[styles.primaryText, { color: colors.primaryForeground }]}>{huntRunning ? 'جارٍ الاستطلاع…' : 'ابدأ Hunting تلقائي'}</Text>
+          </Pressable>
+          {huntRunning ? (
+            <Pressable onPress={() => huntAbortRef.current?.abort()} style={[styles.stopButton,{borderColor:colors.destructive}]}>
+              <Feather name="stop-circle" size={15} color={colors.destructive}/>
+              <Text style={[styles.secondaryText,{color:colors.destructive}]}>إيقاف Hunting</Text>
+            </Pressable>
+          ) : null}
+          <Pressable onPress={() => router.push('/(tabs)/hunter-tools')} style={[styles.secondaryButton, { borderColor: colors.border }]}>
+            <Feather name="database" size={15} color={colors.foreground} />
+            <Text style={[styles.secondaryText, { color: colors.foreground }]}>مكتبة الأدوات</Text>
+          </Pressable>
+        </View>
+        {lastHunt ? (
+          <>
+            <Text style={[styles.muted, { color: colors.mutedForeground }]}>
+              آخر تشغيل: {lastHunt.target} · {lastHunt.discoveredUrls.length} روابط · {lastHunt.status}
+            </Text>
+            <Pressable
+              disabled={safeChecksRunning || huntRunning || lastHunt.discoveredUrls.length === 0}
+              onPress={() => {
+                const target = targets.find((item) => item.id === selectedTargetId) ?? targets.find((item) => item.host.toLowerCase() === lastHunt.target.toLowerCase());
+                if (!target) { alertCompat('النطاق غير موجود', 'أعد إضافة النطاق المصرح به أولًا.'); return; }
+                setSafeChecksRunning(true);
+                void runSafeHttpHeaderChecks(target, lastHunt.id)
+                   .then((run) => { setLastHunt(run); setActivePanel('activity'); alertCompat('انتهت فحوص HTTP الآمنة', run.notes.filter((note) => note.startsWith('Safe HTTP header checks')).join('\n') || 'تم حفظ نتائج الفحص في سجل Hunting.'); })
+                  .catch((error) => alertCompat('تعذّر تشغيل الفحوص', error instanceof Error ? error.message : 'خطأ غير معروف'))
+                  .finally(() => setSafeChecksRunning(false));
+              }}
+              style={[styles.secondaryButton, { borderColor: colors.border, opacity: safeChecksRunning ? 0.5 : 1 }]}
+            >
+              {safeChecksRunning ? <ActivityIndicator size="small" color={colors.primary} /> : <Feather name="shield" size={15} color={colors.primary} />}
+              <Text style={[styles.secondaryText, { color: colors.primary }]}>{safeChecksRunning ? 'جارٍ فحص Security Headers…' : 'تشغيل فحوص HTTP الآمنة (HEAD)'}</Text>
+            </Pressable>
+            <Text style={[styles.muted, { color: colors.mutedForeground }]}>الفحص الإضافي اختياري ويتطلب ضغطك عليه. يرسل HEAD فقط إلى 6 روابط HTTPS كحد أقصى، دون payload أو تغيير بيانات.</Text>
+          </>
+        ) : null}
+      </Surface>
+        </>
+      ) : null}
+
+      {activePanel === 'request' ? (
+        showRequestEditor && selectedTargetId && targets.some((target) => target.id === selectedTargetId) ? <Surface style={styles.requestCard}>
         <View style={styles.sectionHeading}>
           <Feather name="git-pull-request" size={18} color={colors.primary} />
           <Text style={[styles.sectionTitle, { color: colors.foreground }]}>HTTP Request Editor</Text>
@@ -307,8 +491,37 @@ export default function CyberSecurityScreen() {
           </Pressable>
         </View>
         {error ? <Text accessibilityRole="alert" style={[styles.error, { color: '#FF5F56' }]}>{error}</Text> : null}
-      </Surface> : null}
+      </Surface> : (
+        <Surface style={styles.requestCard}>
+          <Text style={[styles.sectionTitle, { color: colors.foreground }]}>لا يوجد طلب مفتوح</Text>
+          <Text style={[styles.muted, { color: colors.mutedForeground }]}>ارجع إلى «النطاق والاستطلاع»، واختر تارجتًا مؤكد التصريح، ثم اضغط «فتح المختبر» لبدء إعداد طلب HTTP.</Text>
+        </Surface>
+        )
+      ) : null}
 
+      {activePanel === 'activity' ? (
+      <>
+      {lastHunt ? (
+        <Surface style={styles.resultCard}>
+          <View style={styles.sectionHeading}>
+            <Feather name="crosshair" size={17} color={colors.primary}/>
+            <Text style={[styles.sectionTitle,{color:colors.foreground}]}>آخر جلسة Hunting</Text>
+            <View style={{flex:1}}/>
+            <Text style={[styles.status,{color:lastHunt.status==='completed'?colors.success:lastHunt.status==='stopped'?colors.warning:colors.mutedForeground}]}>{lastHunt.status}</Text>
+          </View>
+          <Text style={[styles.muted,{color:colors.mutedForeground}]}>{lastHunt.target} · {new Date(lastHunt.startedAt).toLocaleString()}</Text>
+          <View style={styles.huntMetrics}>
+            <Text style={[styles.metricLabel,{color:colors.mutedForeground}]}>{lastHunt.discoveredUrls.length} روابط</Text>
+            <Text style={[styles.metricLabel,{color:colors.mutedForeground}]}>{lastHunt.discoveredSubdomains.length} نطاقات فرعية</Text>
+            <Text style={[styles.metricLabel,{color:colors.mutedForeground}]}>{lastHunt.networkRequests} طلبات شبكة</Text>
+          </View>
+          {lastHunt.notes.slice(-6).map((note,index)=><Text key={index} selectable style={[styles.muted,{color:colors.foreground}]}>{'• '}{note}</Text>)}
+          <Pressable onPress={()=>router.push('/(tabs)/hunter-tools')} style={[styles.secondaryButton,{borderColor:colors.border}]}>
+            <Feather name="list" size={14} color={colors.primary}/>
+            <Text style={[styles.secondaryText,{color:colors.primary}]}>فتح سجل Hunting ومكتبة الأدوات</Text>
+          </Pressable>
+        </Surface>
+      ) : null}
       {result ? (
         <Surface style={styles.resultCard}>
           <View style={styles.sectionHeading}>
@@ -322,6 +535,8 @@ export default function CyberSecurityScreen() {
           <Pressable onPress={() => {
             setMethod(result.method);
             setUrl(result.url);
+            setShowRequestEditor(true);
+            setActivePanel('request');
           }} style={[styles.secondaryButton, { borderColor: colors.border }]}>
             <Feather name="rotate-ccw" size={15} color={colors.foreground} />
             <Text style={[styles.secondaryText, { color: colors.foreground }]}>إعادة تجهيز الطلب</Text>
@@ -348,6 +563,8 @@ export default function CyberSecurityScreen() {
         )) : <Text style={[styles.muted, { color: colors.mutedForeground }]}>طلباتك ونتائجها هتظهر هنا بعد الإرسال.</Text>}
       </Surface>
 
+      </>) : null}
+
       <Text style={[styles.footer, { color: colors.mutedForeground }]}>
         ملاحظات مهمة: إيقاف الطلب يعتمد على دعم الشبكة للإلغاء، وقراءة الردود الكبيرة محدودة لحماية الذاكرة. في نسخة الويب، قد تمنع CORS بعض الطلبات؛ أندرويد يتبع صلاحيات الشبكة الخاصة به. لا تستخدم أدوات الاختبار خارج النطاق المصرّح.
       </Text>
@@ -364,6 +581,15 @@ function URLSafePath(url: string): string {
 }
 
 const styles = StyleSheet.create({
+  metricsCard: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-around', paddingVertical: 13, gap: 6 },
+  metricItem: { flex: 1, alignItems: 'center', gap: 3 },
+  metricValue: { fontSize: 21, fontWeight: '900', fontVariant: ['tabular-nums'] },
+  metricLabel: { fontSize: 10, fontWeight: '600', textAlign: 'center' },
+  metricDivider: { width: 1, height: 32 },
+  huntMetrics: { flexDirection: 'row-reverse', justifyContent: 'space-between', gap: 5, paddingVertical: 6 },
+  panelTabs: { flexDirection: 'row-reverse', gap: 6, paddingHorizontal: 1 },
+  panelTab: { flex: 1, minWidth: 0, minHeight: 42, borderWidth: 1, borderRadius: 11, paddingHorizontal: 5, flexDirection: 'row-reverse', alignItems: 'center', justifyContent: 'center', gap: 5 },
+  panelTabText: { fontSize: 10, fontWeight: '800' },
   scopeCard: { gap: 10, padding: 13 },
   requestCard: { gap: 11, padding: 13 },
   resultCard: { gap: 10, padding: 13 },
@@ -383,6 +609,7 @@ const styles = StyleSheet.create({
   stopButton: { minHeight: 43, borderWidth: 1, borderRadius: 11, paddingHorizontal: 13, flexDirection: 'row-reverse', alignItems: 'center', justifyContent: 'center', gap: 7 },
   secondaryButton: { minHeight: 38, borderWidth: 1, borderRadius: 10, paddingHorizontal: 12, flexDirection: 'row-reverse', alignItems: 'center', justifyContent: 'center', gap: 7 },
   secondaryText: { fontSize: 12, fontWeight: '700' },
+  attestationRow: { flexDirection: 'row-reverse', alignItems: 'flex-start', gap: 9, paddingVertical: 4 },
   scopeRow: { flexDirection: 'row-reverse', alignItems: 'center', gap: 9, borderTopWidth: StyleSheet.hairlineWidth, paddingTop: 9 },
   scopeHost: { fontSize: 12, fontWeight: '700', textAlign: 'left' },
   muted: { fontSize: 11, lineHeight: 17, textAlign: 'right' },

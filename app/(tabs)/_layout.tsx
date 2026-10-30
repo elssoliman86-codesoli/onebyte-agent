@@ -116,8 +116,10 @@ function ClassicTabLayout() {
       <Tabs.Screen name="github" options={{ href: null }} />
       {/* Studio modes — drawer-only access, no tab bar entries. */}
       <Tabs.Screen name="marketing" options={{ href: null }} />
-      <Tabs.Screen name="lab" options={{ href: null }} />\n      <Tabs.Screen name="developer" options={{ href: null }} />
+      <Tabs.Screen name="lab" options={{ href: null }} />
+      <Tabs.Screen name="developer" options={{ href: null }} />
       <Tabs.Screen name="hunter" options={{ href: null }} />
+      <Tabs.Screen name="hunter-tools" options={{ href: null }} />
     </Tabs>
   );
 }

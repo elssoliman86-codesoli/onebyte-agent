@@ -8,7 +8,7 @@
 
 **من تصميم سليمان**
 
-**OneByte Agent** مساعد ووكيل ذكاء اصطناعي لنظام Android بواجهة Neon، يجمع الشات والصوت والذاكرة والمهارات والمهام وأدوات الويب والتحكم الاختياري بالهاتف، مع مختبر تطوير وأمن سيبراني لاختبار نطاقات مصرح بها. يدعم مزوّدي API المتوافقين مع OpenAI، ويضع موافقات واضحة قبل الإجراءات الحساسة. البيانات المحلية تُحفظ على الجهاز، بينما تُرسل الطلبات إلى مزوّد النموذج الذي تختاره عند استخدامه.
+**OneByte Agent** مساعد ووكيل ذكاء اصطناعي لنظام Android بواجهة Neon، يجمع الشات والصوت والذاكرة والمهارات والمهام وأدوات الويب والتحكم الاختياري بالهاتف، مع Cybersecurity Lab يتضمن استطلاعًا آليًا للنطاقات المصرح بها، مكتبة أدوات Hunting دائمة، وتوليد أدوات Python محلية قابلة للاختبار وإعادة الاستخدام. يدعم مزوّدي API المتوافقين مع OpenAI، ويضع موافقات واضحة قبل الإجراءات الحساسة. البيانات المحلية تُحفظ على الجهاز، بينما تُرسل الطلبات إلى مزوّد النموذج الذي تختاره عند استخدامه.
 
 [![Build Android APK](https://github.com/elssoliman86-codesoli/onebyte-agent/actions/workflows/build-apk.yml/badge.svg)](https://github.com/elssoliman86-codesoli/onebyte-agent/actions/workflows/build-apk.yml)
 [![Expo SDK 57](https://img.shields.io/badge/Expo_SDK-57-000020?style=for-the-badge&logo=expo&logoColor=white)](https://expo.dev)
@@ -121,7 +121,14 @@
 
 - **Developer Lab:** مساحة لتجارب وتحرير المحتوى البرمجي وبعض أدوات المعاينة.
 - **Marketing Studio:** مركز سريع لفتح حسابات YouTube Studio وTikTok وFacebook وInstagram وWhatsApp Web/Desktop وTelegram Web، مع فتح مساعد التسويق لكتابة المحتوى وخطط الحملات.
-- **Cybersecurity Lab / Bug Hunter:** إدارة نطاقات الاختبار، وتحرير طلب HTTP (GET/POST/PUT/PATCH/DELETE/HEAD/OPTIONS)، وتعديل headers/body، وإرسال الطلب أو إلغاؤه، وقراءة status/الوقت/مقتطف الاستجابة، والرجوع إلى سجل الطلبات.
+- **Cybersecurity Lab / Bug Hunter:** مساحة مستقلة عن محادثات المطوّر والتسويق، مع أقسام للنطاق والاستطلاع وHTTP والنتائج. النطاق الدقيق يسمح بالمضيف المسجل فقط؛ لا تُسمح النطاقات الفرعية إلا بإدخال wildcard صريح مثل `*.example.com`. تأكيد التصريح هو إقرار من المستخدم وليس تحققًا آليًا من HackerOne أو مالك الموقع. إدارة نطاقات الاختبار، وتحرير طلب HTTP (GET/POST/PUT/PATCH/DELETE/HEAD/OPTIONS)، وتعديل headers/body، وإرسال الطلب أو إلغاؤه، وقراءة status/الوقت/مقتطف الاستجابة، والرجوع إلى سجل الطلبات.
+- **Autonomous Hunting Engine:** يبدأ من نطاق محفوظ ومصدر تصريح يضيفه المستخدم، ثم يفتح الهدف في المتصفح المدمج ويجمع DOM والنص ومصدر الصفحة بعد تنقيح مؤشرات الأسرار، ويقرأ سجلات fetch/XHR/sendBeacon التي يلتقطها المتصفح.
+- **Recon pipeline:** استخراج روابط وAPI path candidates وملفات JavaScript من الصفحة وحركة الشبكة، ثم جمع أسماء النطاقات الفرعية بشكل سلبي من Certificate Transparency عبر crt.sh. لا يتم إرسال طلبات إلى النطاقات الفرعية المكتشفة تلقائيًا.
+- **Adaptive Hunting Planner:** يرسل الأدلة المحدودة إلى موديل OneByte المحدد لبناء خطة تالية. إذا اقترح الموديل قدرة غير متوفرة، يستطيع توليد كود Python وحفظه كمسودة في المكتبة؛ لا يتم تشغيل المسودة تلقائيًا.
+- **Hunter Tool Registry:** مكتبة محلية دائمة منفصلة عن المحادثات، تحفظ ID واسم الأداة ووصفها ومخطط مدخلاتها ومخرجاتها والكود وإصداراته وحالة الاختبار وآخر استخدام. يستطيع Agent عرض المكتبة وإعادة استخدام الأدوات المعتمدة أو حفظ أدوات جديدة دون تكرار الاسم.
+- **Python Runtime:** يشغّل أدوات Python على الجهاز داخل Pyodide WebAssembly Worker منفصل داخل WebView. لكل تشغيل Worker وذاكرة ملفات افتراضية مؤقتة، ولا يحصل كود Python على Native Bridge أو شبكة مباشرة. يوجد حد للكود والمخرجات ووقت التنفيذ، مع إنهاء Worker عند انتهاء المهلة.
+- **اعتماد الأدوات:** الأداة الجديدة تبدأ Draft؛ يفتح المستخدم مصدر الإصدار ويؤكد أنه راجعه، ثم يشغّل اختبارًا يدويًا لعقد run(args)، وبعد نجاحه يعتمد الإصدار صراحةً قبل أن يصبح Verified ويستطيع Agent تشغيله. المراجعة والاختبار والاعتماد مرتبطة برقم الإصدار نفسه؛ أي تعديل ينشئ إصدارًا جديدًا ويلغي إقرار المراجعة السابق. تحديث الكود ينشئ إصدارًا جديدًا ويعيده إلى Draft.
+- **سجل Hunting:** يحفظ الهدف والخطة وملخص الصفحة والروابط والنطاقات الفرعية والطلبات المرصودة وملاحظات الموديل محليًا، منفصلًا عن رسائل الشات.
 - **اختبار ويب من المتصفح المدمج:**
   - فتح URL داخل WebView المدمج (يتطلب نطاقًا محفوظًا في Cybersecurity Lab).
   - قراءة الصفحة: عنوان، نص، عناصر تفاعلية مفهرسة.
@@ -142,30 +149,33 @@
 
 ```
 onebyte-agent/
-├── app/                    # Expo Router — مسارات الشاشات
-│   ├── (tabs)/             # تبويبات رئيسية: الشات، المختبرات، الإعدادات
-│   ├── labs/               # شاشات Cybersecurity Lab، Developer Lab، Marketing Studio
-│   ├── settings/           # إعدادات الموديل، API، الثيم، PC Server، المهارات
-│   └── _layout.tsx         # التخطيط الجذري مع موفري السياق
+├── app/
+│   ├── (tabs)/             # شاشات التطبيق ومسارات الاستوديوهات
+│   ├── assessment/         # تفاصيل التقييم
+│   ├── browser.tsx         # المتصفح المدمج والتقاط DOM/Network
+│   └── _layout.tsx         # Providers والتنقل الجذري
+├── components/
+│   ├── DeveloperWorkspace.tsx
+│   ├── HunterPythonRuntimeHost.tsx
+│   ├── PhoneDrawer.tsx
+│   └── Ui.tsx
 ├── src/
-│   ├── agents/             # حلقة الوكيل، قائمة الأدوات، وكلاء متخصصون
-│   ├── components/         # مكونات UI مشتركة
-│   ├── context/            # React Context: Chat، Settings، Skills، Memory، Tasks، Theme، PC Server
-│   ├── hooks/              # خطافات مخصصة
-│   ├── services/           # خدمات: API، Storage، TTS، STT، Network، PC Server
-│   ├── skills/             # مهارات مدمجة + محمل مهارات ديناميكي
-│   ├── utils/              # مساعدات: تنسيق، تحقق، تشفير، إلخ
-│   └── types/              # تعريفات TypeScript المشتركة
-├── android/                # مشروع Android الأصلي (وحدة Accessibility، Foreground Service)
-├── .github/
-│   ├── workflows/          # CI/CD: بناء APK، فحوصات
-│   └── assets/             # أصول مشتركة (الشعار، spiderweb)
-├── app.json                # إعدادات Expo (الإصدار 1.0.0، SDK 57)
-├── package.json            # تبعيات (React 19، RN 0.86، TS 6، Expo Router)
-├── tsconfig.json           # إعدادات TypeScript صارمة
-├── metro.config.js         # إعداد Metro مع React Compiler
-├── babel.config.js         # Babel مع React Compiler plugin
-└── README.md
+│   ├── agent.ts            # حلقة الوكيل والموافقات
+│   ├── assistant.tsx       # حالة الشات والإعدادات
+│   ├── developer-projects.ts
+│   ├── hunter.ts           # Targets والتصريحات وHTTP scope
+│   ├── hunter-scope.ts     # مطابقة Exact/Wildcard
+│   ├── hunter-tools.ts     # Hunting engine وTool Registry
+│   ├── hunter-parsers.ts
+│   ├── tools.ts            # تعريف وتنفيذ أدوات الوكيل
+│   ├── storage.ts
+│   └── workspace.tsx
+├── modules/                # وحدات Android الأصلية
+├── scripts/                # اختبارات السلامة والبناء
+├── server/                 # خادم PC الاختياري
+├── .github/workflows/      # CI وبناء APK
+├── app.json
+└── package.json
 ```
 
 ## 🚀 التثبيت والتشغيل
@@ -216,6 +226,9 @@ eas build --platform android --profile preview
 | `browser_navigate` | فتح URL في نطاق مصرح (Cybersecurity Lab) | نعم |
 | `browser_click` / `browser_type_text` / `browser_scroll` | التفاعل مع الصفحة | نعم |
 | `browser_send_request` | إرسال طلب HTTP مخصص من سياق الصفحة | نعم |
+| `hunter_list_saved_tools` | عرض مكتبة أدوات Hunting وإصداراتها | لا |
+| `hunter_save_python_tool` | حفظ أداة Python كمسودة غير قابلة للتشغيل حتى اختبارها واعتمادها | لا |
+| `hunter_run_saved_tool` | تشغيل أداة محفوظة ومعتمدة على أدلة مرصودة | لا |
 | `save_memory` / `search_history` | ذاكرة محلية وبحث محادثات | لا |
 | `create_task` | إنشاء تذكير يومي | لا |
 | `github_*` | عمليات GitHub (قراءة/كتابة ملفات، مستودعات) | نعم |
@@ -229,7 +242,8 @@ eas build --platform android --profile preview
 - **محليًا أولاً:** المحادثات، المهارات، الذاكرة، المهام — مخزنة في `AsyncStorage`/`MMKV` على الجهاز.
 - **الموديل:** نصوص المحادثات المرسلة للموديل تذهب إلى مزوّد API الذي تختاره. لا نملك وصولًا لها.
 - **أدوات الويب:** `web_search`/`web_fetch` تذهب إلى DuckDuckGo والموقع المستهدف مباشرة.
-- **المتصفح المدمج:** يعمل داخل WebView على الجهاز؛ الكوكيز وتخزين الموقع قد يستمران للجلسات التي تفتحها.
+- **المتصفح المدمج:** يعمل داخل WebView على الجهاز؛ الكوكيز وتخزين الموقع قد يستمران للجلسات التي تفتحها. يتم تنقيح نص الصفحة وsource snapshot وسجلات الشبكة قبل حفظ/تمرير مقتطفات منها قدر الإمكان، وتُمنع تنقلات الإطار الرئيسي خارج النطاق النشط.
+- **Certificate Transparency:** استعلام أسماء النطاقات الفرعية يرسل اسم النطاق إلى خدمة crt.sh ويستقبل سجلات عامة؛ لا يرسل طلبات إلى النطاقات الفرعية المكتشفة.
 - **لا جمع بيانات:** لا يوجد تتبع، تحليلات، أو إرسال بيانات لمخدومات المشروع.
 - **الترخيص:** MIT — راجع [LICENSE](./LICENSE).
 
@@ -238,6 +252,9 @@ eas build --platform android --profile preview
 - أدوات الهاتف (Accessibility) لا تعمل في Expo Go؛ تحتاج بناء APK مخصص وتفعيل الخدمة يدويًا.
 - React Compiler في وضع تجريبي (beta)؛ قد تظهر مشاكل مع مكتبات معينة.
 - `browser_send_request` خاضع لـ CORS وسياسات المتصفح؛ للطلبات المباشرة استخدم HTTP Lab.
+- Pyodide 0.29.5 يتم تحميل ملفاته أول مرة من jsDelivr؛ تشغيل Python نفسه محلي على الجهاز، لكن لا يوجد ضمان أن Runtime سيعمل Offline قبل تحميله أو بعد مسح WebView cache. ملفات Runtime ليست مضمنة داخل APK حاليًا.
+- بيئة Python تدعم المكتبات القياسية المتاحة في Pyodide فقط؛ لا توفر Raw Sockets أو وصولًا حرًا للشبكة أو Native Extensions غير المبنية لـ WebAssembly.
+- حدود الوقت وحجم الكود والمخرجات لا تعادل حدًا صارمًا للذاكرة أو عزلًا أمنيًا مطلقًا؛ لا تشغّل كودًا غير موثوق، ولا تعتمد أداة مولدة قبل مراجعتها واختبارها.
 - التقاط حركة الشبكة ليس Proxy كاملًا؛ لا يسجل كل الموارد الثابتة أو WebSocket.
 - PC Server مخصص للشبكة المحلية الموثوقة فقط؛ لا تفتحه للإنترنت العام.
 
@@ -258,7 +275,10 @@ pnpm tsc --noEmit
 # تنسيق الكود
 pnpm prettier --check .
 
-# تشغيل الاختبارات (إن وجدت)
+# اختبارات السلامة
+npm run test:safety
+
+# اختبارات المشروع (إن وجدت)
 pnpm test
 ```
 

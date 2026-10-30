@@ -14,6 +14,8 @@ export interface EmbeddedBrowserSnapshot {
   url: string;
   title: string;
   text: string;
+  /** Sanitized, bounded DOM source snapshot when supported by the embedded browser. */
+  source?: string;
   elements: EmbeddedBrowserElement[];
 }
 

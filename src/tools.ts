@@ -2,6 +2,7 @@ import { Linking, Platform } from 'react-native';
 import { router } from 'expo-router';
 import { getEmbeddedBrowser, waitForEmbeddedBrowser } from './embedded-browser';
 import { isAuthorized, loadTargets } from './hunter';
+import { listHunterToolCatalog, runHunterRegistryTool, saveHunterTool } from './hunter-tools';
 import { fetchWithRetry } from './fetch-with-retry';
 import * as Device from './device';
 import { createFile, getDefaultBranch, getRepoTree, listRepos, loadGithubToken, readFileSnapshot, verifyGithubToken, writeFile } from './github';
@@ -252,6 +253,36 @@ export const TOOL_SPECS: ToolSpec[] = [
       headers: { type: 'object', additionalProperties: { type: 'string' } },
       body: { type: 'string' },
     }, ['url', 'method']),
+  },
+  {
+    name: 'hunter_list_saved_tools',
+    group: 'browser',
+    label: 'عرض مكتبة أدوات Hunter',
+    description: 'List persistent Hunter tools with IDs, versions, descriptions, input schemas and verification status. Always check this registry before proposing a duplicate tool.',
+    parameters: obj({}),
+  },
+  {
+    name: 'hunter_save_python_tool',
+    group: 'browser',
+    label: 'حفظ أداة Python في Hunter',
+    description: 'Save a generated Python helper into the persistent Hunter registry as a DRAFT. Include input_schema (JSON Schema object), outputDescription, and source defining run(args). Analyze only supplied evidence; no network or filesystem. The user must review the exact source version, run its smoke test, and explicitly approve it.',
+    parameters: obj({
+      name: { type: 'string' },
+      description: { type: 'string' },
+      source: { type: 'string' },
+      input_schema: { type: 'object', additionalProperties: true },
+      outputDescription: { type: 'string' },
+    }, ['name', 'description', 'source']),
+  },
+  {
+    name: 'hunter_run_saved_tool',
+    group: 'browser',
+    label: 'تشغيل أداة Hunter محفوظة',
+    description: 'Run a previously verified tool from the persistent Hunter Tool Registry. Prefer existing verified tools over generating duplicates. Python tools execute in the isolated on-device WebAssembly worker with network disabled; never use this to probe a target directly. Supply only evidence already collected within the authorized scope.',
+    parameters: obj({
+      tool_id: { type: 'string' },
+      args: { type: 'object', additionalProperties: true },
+    }, ['tool_id', 'args']),
   },
   {
     name: 'web_fetch',
@@ -651,6 +682,24 @@ export async function executeTool(
     }
     case 'web_search':
       return await webSearch(str(args, 'query'));
+    case 'hunter_list_saved_tools':
+      return await listHunterToolCatalog();
+    case 'hunter_save_python_tool': {
+      const tool = await saveHunterTool({
+        name: str(args, 'name'),
+        description: str(args, 'description'),
+        source: str(args, 'source'),
+        inputSchema: args.input_schema && typeof args.input_schema === 'object' && !Array.isArray(args.input_schema) ? args.input_schema as Record<string, unknown> : undefined,
+        outputDescription: typeof args.outputDescription === 'string' ? args.outputDescription : undefined,
+        tags: ['agent-generated'],
+      });
+      return JSON.stringify({ saved: true, id: tool.id, name: tool.name, version: tool.version, status: tool.status, note: 'Draft only; run the smoke test and explicitly approve before execution.' });
+    }
+    case 'hunter_run_saved_tool': {
+      const toolId = str(args, 'tool_id');
+      const toolArgs = args.args && typeof args.args === 'object' && !Array.isArray(args.args) ? args.args as Record<string, unknown> : {};
+      return await runHunterRegistryTool(toolId, toolArgs);
+    }
     case 'web_fetch':
       return await webFetch(str(args, 'url'), args.includeSource === true);
     default:
