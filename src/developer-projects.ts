@@ -46,7 +46,7 @@ const id = (prefix: string) => `${prefix}-${Date.now()}-${Math.random().toString
 
 function safeProjectPath(value: string): string {
   const path = value.trim();
-  if (path !== value || !path || path.length > 240 || path.startsWith('/') ||
+  if (path !== value || !path || path.length > 240 || path.includes(String.fromCharCode(0)) || path.startsWith('/') ||
     path.includes(String.fromCharCode(92)) || /^[a-zA-Z]:/.test(path) ||
     path.split('/').some(part => !part || part === '.' || part === '..' || !part.trim())) {
     throw new Error('مسار الملف غير صالح.');
@@ -134,7 +134,7 @@ export async function importProjectFiles(
   let totalBytes = 0;
   for (const entry of entries) {
     const path = entry.path.trim();
-    if (!path || path.startsWith('/') || path.includes('\\') || /^[a-zA-Z]:/.test(path) ||
+    if (!path || path.includes(String.fromCharCode(0)) || path.startsWith('/') || path.includes('\\') || /^[a-zA-Z]:/.test(path) ||
       path.split('/').some(part => !part.trim() || part === '.' || part === '..')) {
       throw new Error('الأرشيف يحتوي على مسار ملف غير آمن.');
     }
