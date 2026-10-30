@@ -175,7 +175,7 @@ export default function BrowserScreen() {
     void loadTargets().then((targets) => {
       if (!active) return;
       const match = findAuthorizedTarget(initialUrl, targets);
-      activateScope(match?.host ?? '');
+      activateScope(match && isAuthorized(initialUrl, targets).ok ? match.host : '');
       setSourceUrl(initialUrl);
     }).catch(() => {
       if (active) setSourceUrl(initialUrl);
@@ -328,7 +328,7 @@ export default function BrowserScreen() {
       const targets = await loadTargets();
       const matchingTarget = findAuthorizedTarget(cleanUrl, targets);
       clearNetworkEntries();
-      activateScope(matchingTarget?.host ?? '');
+      activateScope(matchingTarget && isAuthorized(cleanUrl, targets).ok ? matchingTarget.host : '');
       setBrowserError('');
       setAddress(cleanUrl);
       setUrl(cleanUrl);
