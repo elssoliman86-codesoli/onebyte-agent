@@ -24,7 +24,7 @@ const MAX_TOOLS = 200;
 const MAX_SOURCE_LENGTH = 64_000;
 const MAX_RUNS = 100;
 
-export type HunterToolStatus = 'draft' | 'verified' | 'disabled';
+export type HunterToolStatus = 'draft' | 'smoke-tested' | 'verified' | 'disabled';
 export type HunterToolKind = 'python' | 'builtin';
 export interface HunterToolVersion {
   version: number;
@@ -212,6 +212,23 @@ export async function deleteHunterTool(id: string): Promise<void> {
   if (id.startsWith('hunter.')) throw new Error('لا يمكن حذف الأدوات الأساسية المدمجة.');
   const tools = await loadHunterTools();
   await persistTools(tools.filter((tool) => tool.id !== id));
+}
+
+export async function smokeTestHunterPythonTool(id: string): Promise<string> {
+  const tool = (await loadHunterTools()).find((item) => item.id === id);
+  if (!tool || tool.kind !== 'python') throw new Error('أداة Python غير موجودة.');
+  if (!pythonRuntime) throw new Error('محرك Python المحلي لم يجهز بعد.');
+  const result = await pythonRuntime.execute({ source: tool.source, args: { target: 'example.invalid', evidence: [], urls: [] }, timeoutMs: 8_000, maxOutputBytes: 64_000, network: 'disabled' });
+  if (!result.value || typeof result.value !== 'object') throw new Error('الأداة لم تُرجع نتيجة JSON منظمة.');
+  const summary = 'Smoke test passed: run(args) returned JSON-compatible output; network disabled.';
+  await setHunterToolStatus(id, 'smoke-tested', summary);
+  return result.output;
+}
+
+export async function approveHunterPythonTool(id: string): Promise<void> {
+  const tool = (await loadHunterTools()).find((item) => item.id === id);
+  if (!tool || tool.kind !== 'python' || tool.status !== 'smoke-tested') throw new Error('يجب نجاح اختبار التشغيل الأولي قبل الاعتماد.');
+  await setHunterToolStatus(id, 'verified', 'User reviewed source and approved after smoke test.');
 }
 
 export async function runPythonHunterTool(id: string, args: Record<string, unknown>): Promise<string> {
