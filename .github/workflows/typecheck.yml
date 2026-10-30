@@ -29,3 +29,5 @@ jobs:
         run: npm run typecheck
       - name: ZIP safety regression tests
         run: npm run test:safety
+      - name: Hunter parser regression tests
+        run: npm run test:hunter
