@@ -480,7 +480,7 @@ export async function runBrowserRecon(target: HunterTarget, signal?: AbortSignal
     if (modelPlan.nextSteps.length) record.notes.push('الخطوات المقترحة: ' + modelPlan.nextSteps.join(' | '));
     if (modelPlan.missingTool) {
       const generated = await generateHunterPythonTool(modelPlan.missingTool, { target: target.host, pageTitle: page.title, discoveredUrls: urls.slice(0, 80), networkRequestCount: network.length });
-      if (generated) record.notes.push('أنشأ Tool Builder مسودة أداة جديدة: ' + generated.name + ' (v' + generated.version + '). لم يتم تشغيلها أو اعتمادها.');
+      if (generated) record.notes.push(generated.status === 'verified' ? 'أنشأ Tool Builder الأداة واختبرها تلقائيًا واعتمدها بعد اجتياز بوابة Python الآمن: ' + generated.name + ' (v' + generated.version + ').' : 'أنشأ Tool Builder مسودة أداة: ' + generated.name + ' (v' + generated.version + '). لم تجتز شروط الاعتماد التلقائي؛ راجع الكود واختبرها يدويًا.');
     }
     plan[4].status = 'done';
     record.status = 'completed';
