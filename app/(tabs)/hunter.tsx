@@ -275,8 +275,7 @@ export default function CyberSecurityScreen() {
       </View>
       {activePanel === 'overview' ? (
         <>
-      {activePanel === 'overview' ? (
-        <Surface style={styles.metricsCard}>
+      <Surface style={styles.metricsCard}>
           <View style={styles.metricItem}>
             <Text style={[styles.metricValue, { color: colors.foreground }]}>{targets.length}</Text>
             <Text style={[styles.metricLabel, { color: colors.mutedForeground }]}>Targets محفوظة</Text>
@@ -292,7 +291,6 @@ export default function CyberSecurityScreen() {
             <Text style={[styles.metricLabel, { color: colors.mutedForeground }]}>روابط آخر استطلاع</Text>
           </View>
         </Surface>
-      ) : null}
       <Surface style={styles.scopeCard}>
         <View style={styles.sectionHeading}>
           <Feather name="shield" size={18} color={colors.primary} />
@@ -380,6 +378,7 @@ export default function CyberSecurityScreen() {
               router.push({ pathname: '/browser', params: { url: startUrl } });
               void runBrowserRecon(target, huntController.signal).then((run) => {
                 setLastHunt(run);
+                setActivePanel('activity');
                 alertCompat(
                   run.status === 'stopped' ? 'تم إيقاف Hunting' : run.status === 'completed' ? 'اكتمل الاستطلاع الأولي' : 'اكتمل جزء من الاستطلاع',
                   `الهدف: ${run.target}\nالروابط المرصودة: ${run.discoveredUrls.length}\nالنطاقات الفرعية: ${run.discoveredSubdomains.length}\nطلبات الشبكة: ${run.networkRequests}\nالحالة: ${run.status}\nراجع مكتبة الأدوات وسجل Hunting للتفاصيل.`,
@@ -502,6 +501,27 @@ export default function CyberSecurityScreen() {
 
       {activePanel === 'activity' ? (
       <>
+      {lastHunt ? (
+        <Surface style={styles.resultCard}>
+          <View style={styles.sectionHeading}>
+            <Feather name="crosshair" size={17} color={colors.primary}/>
+            <Text style={[styles.sectionTitle,{color:colors.foreground}]}>آخر جلسة Hunting</Text>
+            <View style={{flex:1}}/>
+            <Text style={[styles.status,{color:lastHunt.status==='completed'?colors.success:lastHunt.status==='stopped'?colors.warning:colors.mutedForeground}]}>{lastHunt.status}</Text>
+          </View>
+          <Text style={[styles.muted,{color:colors.mutedForeground}]}>{lastHunt.target} · {new Date(lastHunt.startedAt).toLocaleString()}</Text>
+          <View style={styles.huntMetrics}>
+            <Text style={[styles.metricLabel,{color:colors.mutedForeground}]}>{lastHunt.discoveredUrls.length} روابط</Text>
+            <Text style={[styles.metricLabel,{color:colors.mutedForeground}]}>{lastHunt.discoveredSubdomains.length} نطاقات فرعية</Text>
+            <Text style={[styles.metricLabel,{color:colors.mutedForeground}]}>{lastHunt.networkRequests} طلبات شبكة</Text>
+          </View>
+          {lastHunt.notes.slice(-6).map((note,index)=><Text key={index} selectable style={[styles.muted,{color:colors.foreground}]}>{'• '}{note}</Text>)}
+          <Pressable onPress={()=>router.push('/(tabs)/hunter-tools')} style={[styles.secondaryButton,{borderColor:colors.border}]}>
+            <Feather name="list" size={14} color={colors.primary}/>
+            <Text style={[styles.secondaryText,{color:colors.primary}]}>فتح سجل Hunting ومكتبة الأدوات</Text>
+          </Pressable>
+        </Surface>
+      ) : null}
       {result ? (
         <Surface style={styles.resultCard}>
           <View style={styles.sectionHeading}>
@@ -566,6 +586,7 @@ const styles = StyleSheet.create({
   metricValue: { fontSize: 21, fontWeight: '900', fontVariant: ['tabular-nums'] },
   metricLabel: { fontSize: 10, fontWeight: '600', textAlign: 'center' },
   metricDivider: { width: 1, height: 32 },
+  huntMetrics: { flexDirection: 'row-reverse', justifyContent: 'space-between', gap: 5, paddingVertical: 6 },
   panelTabs: { flexDirection: 'row-reverse', gap: 6, paddingHorizontal: 1 },
   panelTab: { flex: 1, minWidth: 0, minHeight: 42, borderWidth: 1, borderRadius: 11, paddingHorizontal: 5, flexDirection: 'row-reverse', alignItems: 'center', justifyContent: 'center', gap: 5 },
   panelTabText: { fontSize: 10, fontWeight: '800' },
