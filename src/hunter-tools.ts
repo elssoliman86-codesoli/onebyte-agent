@@ -379,7 +379,7 @@ function generatedPythonSourceIsAutoSafe(source: string): boolean {
   // Tools needing imports, dynamic execution, reflection, I/O, or network stay Draft.
   const forbidden = /\b(import|from|eval|exec|compile|open|input|__import__|globals|locals|vars|getattr|setattr|delattr|breakpoint|socket|subprocess|requests|urllib|http|os|sys|pathlib|js|pyodide)\b|__\w+__/i;
   if (forbidden.test(source)) return false;
-  if (!/^\s*def\s+run\s*\\(\s*args\s*:\s*dict\s*\\)\s*->\s*dict\s*:/m.test(source)) return false;
+  if (!/^\s*def\s+run\s*\(\s*args\s*:\s*dict\s*\)\s*->\s*dict\s*:/m.test(source)) return false;
   return true;
 }
 
