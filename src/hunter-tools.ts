@@ -425,7 +425,6 @@ export async function runBrowserRecon(target: HunterTarget, signal?: AbortSignal
     record.pageUrl = page.url;
     record.pageTextPreview = page.text.slice(0, 12_000);
     record.pageSourcePreview = (page.source ?? '').slice(0, 16_000);
-    record.pageSourcePreview = (page.source ?? '').slice(0, 16_000);
     const network = (await browser.getNetworkLog()).filter((entry) => {
       try {
         const host = new URL(entry.url).hostname.toLowerCase();
@@ -451,7 +450,6 @@ export async function runBrowserRecon(target: HunterTarget, signal?: AbortSignal
       record.notes.push('تعذّر الاستعلام السلبي عن النطاقات الفرعية: ' + (error instanceof Error ? error.message : 'network error'));
     }
     plan[3].status = 'done';
-    const jsAssets = collectJavaScriptAssets(urls);
     record.notes.push(`تم رصد ${urls.length} رابطًا داخل النطاق و${jsAssets.length} ملف JavaScript.`);
     record.notes.push('لم يتم إرسال طلبات تخمين أو brute-force أو اختبارات نشطة.');
     const modelPlan = await createAdaptiveHuntPlan(target, page, network, urls);
