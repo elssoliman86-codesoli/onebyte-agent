@@ -193,7 +193,7 @@ export async function streamCompletion({
     if (!reader) throw new Error('المزود أرجع استجابة غير قابلة للقراءة.');
     const decoder = new TextDecoder();
     let buffer = '';
-    const idleTimeoutMs = 120_000;
+    const idleTimeoutMs = 300_000;
     try {
       for (;;) {
         let idleTimer: ReturnType<typeof setTimeout> | undefined;
@@ -324,6 +324,7 @@ export async function runAgent({
   let activeSpecs = toolsUnavailable ? [] : specs;
   let toolsWereUnsupported = false;
   let startRound = 0;
+  let streamRecoveries = 0;
 
   if (checkpoint) {
     // Resume from checkpoint
@@ -392,6 +393,16 @@ export async function runAgent({
           round -= 1;
           continue;
         }
+        // If a network stream fails after delivering useful text, continue from
+        // that checkpoint instead of losing the answer or restarting it.
+        if (roundText.trim() && !signal?.aborted && streamRecoveries < 2 && round < maxSteps) {
+          streamRecoveries += 1;
+          finalText += roundText;
+          wire.push({ role: 'assistant', content: roundText });
+          wire.push({ role: 'user', content: 'انقطع الاتصال أثناء الرد. أكمل من آخر كلمة في النص السابق دون تكراره، وأنهِ الإجابة كاملة.' });
+          await saveCheckpoint(round + 1);
+          continue;
+        }
         throw error;
       }
 
@@ -410,7 +421,14 @@ export async function runAgent({
       onText(finalText);
     }
     if (!result.toolCalls.length && !result.streamComplete && result.text.trim()) {
-      finalText += '\n\n[تنبيه: انتهى الاتصال دون إشارة اكتمال مؤكدة من المزود؛ تم حفظ النص المستلم وقد يكون الرد ناقصًا.]';
+      if (streamRecoveries < 2 && round < maxSteps) {
+        streamRecoveries += 1;
+        wire.push({ role: 'assistant', content: result.text });
+        wire.push({ role: 'user', content: 'لم تصل إشارة اكتمال من الاتصال السابق. أكمل من آخر كلمة دون تكرار النص السابق.' });
+        await saveCheckpoint(round + 1);
+        continue;
+      }
+      finalText += '\n\n[تنبيه: انقطع تدفق الرد أكثر من مرة. تم حفظ النص المستلم وقد يكون غير مكتمل.]';
       onText(finalText);
     }
     if (!result.toolCalls.length) {
