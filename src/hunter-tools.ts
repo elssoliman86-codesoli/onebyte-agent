@@ -11,6 +11,7 @@ import { endpointFor } from './model-provider';
 import { collectEndpointCandidates, collectJavaScriptAssets } from './hunter-parsers';
 import {
   isAuthorized,
+  targetMatchesHost,
   loadTargets,
   type HunterTarget,
 } from './hunter';
@@ -498,7 +499,7 @@ export async function runBrowserRecon(target: HunterTarget, signal?: AbortSignal
     const network = (await browser.getNetworkLog()).filter((entry) => {
       try {
         const host = new URL(entry.url).hostname.toLowerCase();
-        return host === target.host.replace(/^\*\./, '') || host.endsWith('.' + target.host.replace(/^\*\./, ''));
+        return targetMatchesHost(target.host, host);
       } catch { return false; }
     });
     record.networkRequests = network.length;
