@@ -160,7 +160,7 @@ export function DeveloperWorkspace() {
       // Consume the complete SSE text as a compatibility fallback instead of
       // attempting response.json() on an event stream.
       const raw = await response.text();
-      raw.split(/\\r?\\n/).forEach(consumeLine);
+      raw.split(/\r?\n/).forEach(consumeLine);
       return complete;
     }
 
