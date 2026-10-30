@@ -7,7 +7,7 @@ import { useColors } from '@/hooks/useColors';
 import { ScreenTopBar } from '@/components/PhoneDrawer';
 import { AppScreen, Surface } from '@/components/Ui';
 import { alertCompat } from '@/src/web-alert';
-import { runBrowserRecon, type HunterRunRecord } from '@/src/hunter-tools';
+import { runBrowserRecon, runSafeHttpHeaderChecks, type HunterRunRecord } from '@/src/hunter-tools';
 import {
   hostOf,
   isAuthorized,
@@ -40,6 +40,7 @@ export default function CyberSecurityScreen() {
   const [result, setResult] = useState<HunterLogEntry | null>(null);
   const [error, setError] = useState('');
   const [huntRunning, setHuntRunning] = useState(false);
+  const [safeChecksRunning, setSafeChecksRunning] = useState(false);
   const [lastHunt, setLastHunt] = useState<HunterRunRecord | null>(null);
   const abortRef = useRef<AbortController | null>(null);
   const aliveRef = useRef(true);
@@ -289,9 +290,28 @@ export default function CyberSecurityScreen() {
           </Pressable>
         </View>
         {lastHunt ? (
-          <Text style={[styles.muted, { color: colors.mutedForeground }]}>
-            آخر تشغيل: {lastHunt.target} · {lastHunt.discoveredUrls.length} روابط · {lastHunt.status}
-          </Text>
+          <>
+            <Text style={[styles.muted, { color: colors.mutedForeground }]}>
+              آخر تشغيل: {lastHunt.target} · {lastHunt.discoveredUrls.length} روابط · {lastHunt.status}
+            </Text>
+            <Pressable
+              disabled={safeChecksRunning || huntRunning || lastHunt.discoveredUrls.length === 0}
+              onPress={() => {
+                const target = targets.find((item) => item.id === selectedTargetId) ?? targets.find((item) => item.host.toLowerCase() === lastHunt.target.toLowerCase());
+                if (!target) { alertCompat('النطاق غير موجود', 'أعد إضافة النطاق المصرح به أولًا.'); return; }
+                setSafeChecksRunning(true);
+                void runSafeHttpHeaderChecks(target, lastHunt.id)
+                  .then((run) => { setLastHunt(run); alertCompat('انتهت فحوص HTTP الآمنة', run.notes.filter((note) => note.startsWith('Safe HTTP header checks')).join('\\n') || 'تم حفظ نتائج الفحص في سجل Hunting.'); })
+                  .catch((error) => alertCompat('تعذّر تشغيل الفحوص', error instanceof Error ? error.message : 'خطأ غير معروف'))
+                  .finally(() => setSafeChecksRunning(false));
+              }}
+              style={[styles.secondaryButton, { borderColor: colors.border, opacity: safeChecksRunning ? 0.5 : 1 }]}
+            >
+              {safeChecksRunning ? <ActivityIndicator size="small" color={colors.primary} /> : <Feather name="shield" size={15} color={colors.primary} />}
+              <Text style={[styles.secondaryText, { color: colors.primary }]}>{safeChecksRunning ? 'جارٍ فحص Security Headers…' : 'تشغيل فحوص HTTP الآمنة (HEAD)'}</Text>
+            </Pressable>
+            <Text style={[styles.muted, { color: colors.mutedForeground }]}>الفحص الإضافي اختياري ويتطلب ضغطك عليه. يرسل HEAD فقط إلى 6 روابط HTTPS كحد أقصى، دون payload أو تغيير بيانات.</Text>
+          </>
         ) : null}
       </Surface>
 
