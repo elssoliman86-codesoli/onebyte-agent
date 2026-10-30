@@ -363,7 +363,7 @@ export async function runAgent({
     for (let round = startRound; round <= maxSteps; round += 1) {
       if (signal?.aborted) throw new Error('تم إيقاف المهمة.');
       let roundText = '';
-      let result: { text: string; toolCalls: ToolCall[] };
+      let result: { text: string; toolCalls: ToolCall[]; finishReason?: string; streamComplete: boolean };
       try {
         result = await streamCompletion({
           settings,
