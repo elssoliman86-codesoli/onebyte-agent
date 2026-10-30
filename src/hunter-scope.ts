@@ -6,6 +6,20 @@ export function normalizeHostPattern(value: string): string {
   return value.trim().toLowerCase().replace(/\.$/, '');
 }
 
+export function normalizeTargetPattern(value: string): string | null {
+  const raw = value.trim().toLowerCase().replace(/\.$/, '');
+  const wildcard = raw.startsWith('*.');
+  const host = wildcard ? raw.slice(2) : raw;
+  if (!host || /[\s/@?#:*]/.test(host)) return null;
+  try {
+    const parsed = new URL('https://' + host);
+    if (parsed.hostname !== host || parsed.port || parsed.username || parsed.password) return null;
+    return wildcard ? '*.' + host : host;
+  } catch {
+    return null;
+  }
+}
+
 export function targetMatchesHost(targetHost: string, actualHost: string): boolean {
   const pattern = normalizeHostPattern(targetHost);
   const host = normalizeHostPattern(actualHost);
