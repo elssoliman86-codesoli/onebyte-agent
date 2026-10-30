@@ -8,7 +8,8 @@
     "build": "node scripts/build.js",
     "serve": "node server/serve.js",
     "typecheck": "tsc -p tsconfig.json --noEmit",
-    "test:safety": "node scripts/test-zip-safety.cjs"
+    "test:safety": "node scripts/test-zip-safety.cjs",
+    "test:hunter": "node scripts/test-hunter-parsers.cjs"
   },
   "devDependencies": {
     "@babel/core": "^7.25.2",
