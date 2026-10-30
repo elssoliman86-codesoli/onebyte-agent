@@ -37,7 +37,7 @@ const HTML = `<!doctype html>
       "   'if inspect.isawaitable(__hunter_result): __hunter_result = await __hunter_result\\n' +",
       "   'sys.settrace(None)\\n' +",
       "   'if not isinstance(__hunter_result, (dict, list, str, int, float, bool, type(None))): raise TypeError(\\\"Tool result must be JSON-compatible\\\")\\n' +",
-      "   '__hunter_stdout = __hunter_out.getvalue()\\n__hunter_json = _json.dumps(__hunter_result, ensure_ascii=False)\\nif len(__hunter_json) > 64000: raise ValueError(\\\"Tool output exceeds 64KB\\\")';",
+      "   '__hunter_stdout = __hunter_out.getvalue()\\n__hunter_json = _json.dumps(__hunter_result, ensure_ascii=False)\\nif len(__hunter_json.encode(\\\"utf-8\\\")) > __hunter_max_output: raise ValueError(\\\"Tool output exceeds configured byte limit\\\")';",
       "  await pyodide.runPythonAsync(wrapper);",
       "  const result = pyodide.globals.get('__hunter_json');",
       "  const stdout = pyodide.globals.get('__hunter_stdout'); const output = String(stdout || '') + (self.__stdout || '') + (self.__stderr || '') + String(result || 'null');",
