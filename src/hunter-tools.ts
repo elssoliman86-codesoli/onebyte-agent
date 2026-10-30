@@ -262,7 +262,7 @@ export async function saveHunterTool(input: {
       inputSchema,
       outputDescription: input.outputDescription ?? existing.outputDescription,
       version,
-      versions: [...existing.versions, { version: existing.version, source: existing.source, inputSchema: existing.inputSchema, outputDescription: existing.outputDescription, createdAt: timestamp, testSummary: 'Previous version retained.' }].slice(-50),
+      versions: [...(existing.versions.some((item) => item.version === existing.version) ? existing.versions : [...existing.versions, { version: existing.version, source: existing.source, inputSchema: existing.inputSchema, outputDescription: existing.outputDescription, createdAt: existing.createdAt, testSummary: 'Previous version retained.' }]), { version, source, inputSchema, outputDescription: input.outputDescription ?? existing.outputDescription, createdAt: timestamp, testSummary: 'Draft — awaiting review and test.' }].slice(-50),
       updatedAt: timestamp,
       tags: input.tags ?? existing.tags,
     };
