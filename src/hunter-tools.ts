@@ -105,7 +105,8 @@ const now = () => new Date().toISOString();
 const makeId = (prefix: string) => `${prefix}_${Date.now()}_${Math.random().toString(36).slice(2, 9)}`;
 
 function assertToolInputSchema(schema: Record<string, unknown>): void {
-  if (JSON.stringify(schema).length > 16_000) throw new Error('مخطط مدخلات الأداة يتجاوز 16KB.');
+  const serializedSchema = JSON.stringify(schema) ?? '';
+  if (serializedSchema.length > 16_000) throw new Error('مخطط مدخلات الأداة يتجاوز 16KB.');
   if (schema.type !== undefined && schema.type !== 'object') throw new Error('مخطط مدخلات الأداة يجب أن يكون من النوع object.');
   if (schema.properties !== undefined && (!schema.properties || typeof schema.properties !== 'object' || Array.isArray(schema.properties))) {
     throw new Error('properties في مخطط الأداة غير صالح.');
@@ -116,7 +117,8 @@ function assertToolInputSchema(schema: Record<string, unknown>): void {
 }
 
 function validateToolArgs(schema: Record<string, unknown>, args: Record<string, unknown>): void {
-  if (Object.keys(args).length > 64 || JSON.stringify(args).length > 64_000) throw new Error('مدخلات الأداة تتجاوز الحدود المسموحة.');
+  const serializedArgs = JSON.stringify(args) ?? '';
+  if (Object.keys(args).length > 64 || serializedArgs.length > 64_000) throw new Error('مدخلات الأداة تتجاوز الحدود المسموحة.');
   if (!Object.keys(schema).length) return;
   assertToolInputSchema(schema);
   const properties = (schema.properties ?? {}) as Record<string, unknown>;
