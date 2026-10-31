@@ -112,7 +112,7 @@ function makeNetworkMonitorScript(scopePattern: string): string {
 
 export default function BrowserScreen() {
   const colors = useColors();
-  const params = useLocalSearchParams<{ url?: string | string[] }>();
+  const params = useLocalSearchParams<{ url?: string | string[]; hunt?: string | string[] }>();
   const initialUrl = (Array.isArray(params.url) ? params.url[0] : params.url) ?? '';
   const huntMode = (Array.isArray(params.hunt) ? params.hunt[0] : params.hunt) === '1';
   const [huntProgress, setHuntProgress] = useState<HunterRunRecord | null>(null);
