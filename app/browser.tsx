@@ -80,9 +80,9 @@ function sanitizeNetworkEntry(entry: EmbeddedBrowserNetworkEntry): EmbeddedBrows
 }
 
 /**
- * Instruments page-level fetch/XHR/beacon requests. This is intentionally not
- * described as a full proxy: browser internals, images and every static asset
- * cannot be captured reliably from JavaScript injection alone.
+ * Instruments page-level fetch/XHR/beacon requests. Static resources are also
+ * harvested on a best-effort basis through Resource Timing after load. This is
+ * intentionally not described as a full proxy or a complete packet capture.
  */
 function makeNetworkMonitorScript(scopePattern: string): string {
   const pattern = JSON.stringify(scopePattern.toLowerCase());
