@@ -19,7 +19,7 @@ export interface EmbeddedBrowserSnapshot {
   elements: EmbeddedBrowserElement[];
 }
 
-export type EmbeddedBrowserNetworkSource = 'fetch' | 'xhr' | 'beacon' | 'navigation';
+export type EmbeddedBrowserNetworkSource = 'fetch' | 'xhr' | 'beacon' | 'navigation' | 'resource';
 export interface EmbeddedBrowserNetworkEntry {
   id: string;
   source: EmbeddedBrowserNetworkSource;
