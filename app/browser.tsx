@@ -25,6 +25,7 @@ import {
   type EmbeddedBrowserNetworkEntry,
 } from '@/src/embedded-browser';
 import { findAuthorizedTarget, isAuthorized, loadTargets, targetMatchesHost } from '@/src/hunter';
+import { requestHunterStop, subscribeHunterProgress, type HunterRunRecord } from '@/src/hunter-tools';
 
 function isHostInScope(url: string, scopePattern: string): boolean {
   try {
@@ -113,6 +114,9 @@ export default function BrowserScreen() {
   const colors = useColors();
   const params = useLocalSearchParams<{ url?: string | string[] }>();
   const initialUrl = (Array.isArray(params.url) ? params.url[0] : params.url) ?? '';
+  const huntMode = (Array.isArray(params.hunt) ? params.hunt[0] : params.hunt) === '1';
+  const [huntProgress, setHuntProgress] = useState<HunterRunRecord | null>(null);
+  const [huntCardOpen, setHuntCardOpen] = useState(true);
   const [address, setAddress] = useState(redactUrl(initialUrl));
   const [url, setUrl] = useState(initialUrl);
   const [sourceUrl, setSourceUrl] = useState('');
@@ -162,6 +166,20 @@ export default function BrowserScreen() {
     networkLogRef.current = next;
     setNetworkLog(next);
   };
+
+  useEffect(() => {
+    if (!huntMode) { setHuntProgress(null); return; }
+    const unsubscribe = subscribeHunterProgress((run) => {
+      try {
+        const currentHost = new URL(initialUrl).hostname.toLowerCase();
+        const targetHost = run.target.replace(/^\*\./, '').toLowerCase();
+        if (currentHost === targetHost || currentHost.endsWith('.' + targetHost) || targetHost === currentHost) {
+          setHuntProgress(run);
+        }
+      } catch { setHuntProgress(run); }
+    });
+    return unsubscribe;
+  }, [huntMode, initialUrl]);
 
   useEffect(() => {
     let active = true;
@@ -416,6 +434,33 @@ export default function BrowserScreen() {
         ) : null}
       </View>
 
+      {huntMode && huntProgress ? (
+        <View style={[styles.huntProgressCard,{backgroundColor:colors.card,borderColor:colors.border}]}>
+          <Pressable onPress={()=>setHuntCardOpen(value=>!value)} style={styles.huntProgressHeader}>
+            {huntProgress.status==='completed'?<Feather name="check-circle" size={16} color={colors.success}/>:huntProgress.status==='failed'||huntProgress.status==='partial'?<Feather name="alert-circle" size={16} color={colors.warning}/>:<ActivityIndicator size="small" color={colors.primary}/>}
+            <View style={{flex:1,minWidth:0}}>
+              <Text style={{color:colors.foreground,fontSize:12,fontWeight:'800'}}>OneByte Hunter · {huntProgress.target}</Text>
+              <Text style={{color:colors.mutedForeground,fontSize:10}}>{huntProgress.status==='completed'?'اكتمل الفحص':huntProgress.status==='stopped'?'تم الإيقاف':huntProgress.status==='failed'?'فشل الفحص':huntProgress.status==='partial'?'اكتمل جزئيًا':'يعمل الآن'} · {huntProgress.discoveredUrls.length} روابط · {huntProgress.networkRequests} طلبات</Text>
+            </View>
+            {huntProgress.status==='partial'||huntProgress.status==='completed'||huntProgress.status==='failed'||huntProgress.status==='stopped'?null:<Pressable accessibilityRole="button" onPress={requestHunterStop} style={styles.huntStop}><Feather name="stop-circle" size={14} color={colors.destructive}/><Text style={{fontSize:10,color:colors.destructive,fontWeight:'800'}}>إيقاف</Text></Pressable>}
+            <Feather name={huntCardOpen?'chevron-up':'chevron-down'} size={14} color={colors.mutedForeground}/>
+          </Pressable>
+          {huntCardOpen ? (
+            <ScrollView style={styles.huntProgressSteps} nestedScrollEnabled>
+              {huntProgress.plan.map((step,index)=>(
+                <View key={step.id} style={styles.huntProgressStep}>
+                  {step.status==='done'?<Feather name="check-circle" size={13} color={colors.success}/>:step.status==='running'?<ActivityIndicator size="small" color={colors.primary}/>:step.status==='error'?<Feather name="x-circle" size={13} color={colors.destructive}/>:<Feather name="circle" size={12} color={colors.mutedForeground}/>}
+                  <View style={{flex:1,minWidth:0}}>
+                    <Text style={{color:colors.foreground,fontSize:11,fontWeight:'700'}}>{step.title}</Text>
+                    <Text style={{color:colors.mutedForeground,fontSize:10,lineHeight:15}}>{step.detail}</Text>
+                  </View>
+                </View>
+              ))}
+            </ScrollView>
+          ):null}
+        </View>
+      ):null}
+
       {!isWeb && networkVisible ? (
         <View style={[styles.networkPanel, { backgroundColor: colors.card, borderColor: colors.border }]}>
           <View style={styles.networkPanelHeader}>
@@ -653,6 +698,11 @@ const styles = StyleSheet.create({
   networkToLabText: { fontSize: 11, fontWeight: '800' },
   networkError: { fontSize: 11, lineHeight: 16 },
   webview: { flex: 1 },
+  huntProgressCard: { marginHorizontal: 9, marginTop: 7, borderWidth: 1, borderRadius: 12, padding: 9, maxHeight: 270, zIndex: 6, elevation: 6 },
+  huntProgressHeader: { minHeight: 28, flexDirection: 'row-reverse', alignItems: 'center', gap: 7 },
+  huntStop: { minHeight: 28, paddingHorizontal: 7, borderWidth: 1, borderColor: 'rgba(220,60,60,0.35)', borderRadius: 8, flexDirection: 'row', alignItems: 'center', gap: 4 },
+  huntProgressSteps: { maxHeight: 190, marginTop: 7, borderTopWidth: StyleSheet.hairlineWidth, borderTopColor: 'rgba(128,128,128,0.25)' },
+  huntProgressStep: { minHeight: 34, flexDirection: 'row-reverse', alignItems: 'flex-start', gap: 7, paddingVertical: 5 },
   browserErrorBanner: { flexDirection: 'row-reverse', alignItems: 'center', gap: 8, marginHorizontal: 10, marginTop: 8, paddingHorizontal: 10, paddingVertical: 8, borderWidth: 1, borderRadius: 10 },
   browserErrorBannerText: { flex: 1, minWidth: 0, fontSize: 11, lineHeight: 16 },
   browserErrorRetry: { width: 32, height: 32, alignItems: 'center', justifyContent: 'center' },
