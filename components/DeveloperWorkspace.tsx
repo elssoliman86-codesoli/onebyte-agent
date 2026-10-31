@@ -13,6 +13,8 @@ import { endpointFor } from '@/src/model-provider';
 import { getStoredModelApiKey } from '@/src/assistant';
 import { ModelPicker } from '@/components/ModelPicker';
 import type { ModelInfo } from '@/src/model-catalog';
+import { HtmlPreview } from '@/components/HtmlPreview';
+import { loadGithubToken, listRepos, getDefaultBranch, readFileSnapshot, createFile as createGithubFile, writeFile as updateGithubFile, type GhRepo } from '@/src/github';
 import fetchWithRetry from '@/src/fetch-with-retry';
 import { base64ToBytes, preflightZip, ZIP_IMPORT_LIMITS } from '@/src/zip-safety';
 import {
@@ -58,6 +60,15 @@ export function DeveloperWorkspace() {
   const [reviewProposed, setReviewProposed] = useState('');
   const [reviewPath, setReviewPath] = useState('');
   const [reviewOpen, setReviewOpen] = useState(false);
+  const [manualEditMode, setManualEditMode] = useState(false);
+  const [manualComment, setManualComment] = useState('');
+  const [previewOpen, setPreviewOpen] = useState(false);
+  const [previewHtml, setPreviewHtml] = useState('');
+  const [publishOpen, setPublishOpen] = useState(false);
+  const [publishRepository, setPublishRepository] = useState('');
+  const [publishBranch, setPublishBranch] = useState('');
+  const [publishRepos, setPublishRepos] = useState<GhRepo[]>([]);
+  const [publishing, setPublishing] = useState(false);
   const [codeModelPickerOpen, setCodeModelPickerOpen] = useState(false);
   const [filesDrawerOpen, setFilesDrawerOpen] = useState(false);
 
@@ -113,8 +124,10 @@ export function DeveloperWorkspace() {
     messages: Array<{ role: string; content: string }>,
     temperature = 0.2,
     onChunk?: (chunk: string) => void,
+    modelId?: string,
   ): Promise<string> {
-    if (!provider.baseUrl.trim() || !(project?.codeModelId || provider.model).trim()) {
+    const selectedModel = (modelId || project?.codeModelId || provider.model).trim();
+    if (!provider.baseUrl.trim() || !selectedModel) {
       throw new Error('اختار مزودًا وموديلًا من الإعدادات أولًا.');
     }
     const apiKey = provider.keyless ? '' : await getStoredModelApiKey();
@@ -122,7 +135,7 @@ export function DeveloperWorkspace() {
       method: 'POST',
       headers: { 'Content-Type': 'application/json', ...(apiKey ? { Authorization: `Bearer ${apiKey}` } : {}) },
       body: JSON.stringify({
-        model: project?.codeModelId || provider.model,
+        model: selectedModel,
         temperature,
         stream: !!onChunk,
         messages,
@@ -406,11 +419,12 @@ export function DeveloperWorkspace() {
     if (!provider.baseUrl.trim() || !provider.model.trim()) { alertCompat('الموديل غير مضبوط', 'اختار مزودًا وموديلًا من إعدادات التطبيق.'); return; }
     setBusy(true);
     try {
-      const callModel = callCodeModel;
-      const rawPlan=await callModel([
-        {role:'system',content:'Plan a software project as a practical ordered list of files. Return ONLY JSON: {"files":[{"path":"relative/path.ext","task":"specific task"}]}. Include only necessary source/config/test/docs files. No absolute paths, no .. segments, no secrets, max 30 files.'},
+      // The primary chat/planning model creates the plan. The secondary model
+      // is reserved for writing and reviewing code inside this editor only.
+      const rawPlan=await callCodeModel([
+        {role:'system',content:'Plan a software project as a practical ordered list of files. Return ONLY JSON: {"files":[{"path":"relative/path.ext","task":"specific task"}]}. Include only necessary source/config/test/docs files. No absolute paths, no .. segments, no secrets, max 30 files. Make each task describe exact responsibilities and acceptance criteria for that file.'},
         {role:'user',content:`Project: ${activeSession.title}\nRequirements:\n${goal}\nExisting files:\n${(project?.files??[]).map(f=>f.path).join('\n')}`},
-      ]);
+      ],0.2,undefined,provider.model);
       const json=rawPlan.replace(/^\`\`\`(?:json)?\s*/i,'').replace(/\s*\`\`\`$/,'');
       const parsed=JSON.parse(json) as {files?:Array<{path?:string;task?:string}>};
       const files=(parsed.files??[]).filter(f=>typeof f.path==='string'&&typeof f.task==='string').slice(0,30);
