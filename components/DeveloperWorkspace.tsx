@@ -499,6 +499,7 @@ export function DeveloperWorkspace() {
         const after=await getDeveloperProject(activeSession.id,activeSession.title);
         const step=after.plan[i];
         if(step) await updatePlanStep(activeSession.id,step.id,'done');
+        await refresh(item.path);
       }
       const finished=await getDeveloperProject(activeSession.id,activeSession.title);
       const completedSteps = finished.plan.filter(step => step.status === 'done');
@@ -559,7 +560,7 @@ export function DeveloperWorkspace() {
     catch (e) { alertCompat('تعذّر تنفيذ القرار', e instanceof Error ? e.message : 'خطأ غير معروف'); }
   }
 
-  const planComplete = !project?.plan.length || project.plan.every(step => step.status === 'done');
+  const planComplete = !!project?.plan.length && project.plan.every(step => step.status === 'done');
 
   async function openProjectPreview() {
     if (!project?.files.length) { alertCompat('لا توجد ملفات للمعاينة', 'أنشئ ملفات المشروع أولًا.'); return; }
@@ -625,7 +626,7 @@ export function DeveloperWorkspace() {
       for (const file of project.files) {
         const reviewRaw = await callCodeModel([
           { role: 'system', content: 'Perform a full-file pre-publication code review for correctness, security, consistency and integration risks. Return ONLY JSON {"should_change":boolean,"reason":"short","proposed_code":"complete file"}. Do not claim tests were run. Preserve existing intended behavior. If there is no real issue, should_change=false.' },
-          { role: 'user', content: `Repository target: ${publishRepository}\nProject: ${activeSession.title}\nFile path: ${file.path}\nComplete source:\n${file.content}\nReview for publication.` },
+          { role: 'user', content: `Repository target: ${publishRepository}\nProject: ${activeSession.title}\nProject file manifest:\n${project.files.map(item => item.path).join('\n')}\nRelated files context (read-only, do not rewrite these):\n${project.files.filter(item => item.path !== file.path).map(item => `--- ${item.path} ---\n${item.content.slice(0, 5000)}`).join('\n').slice(0, 30000)}\nFile to review: ${file.path}\nComplete source:\n${file.content}\nReview this entire file together with its integration context before publication.` },
         ], 0.1);
         const reviewJson = reviewRaw.trim().replace(/^\`\`\`(?:json)?\s*/i, '').replace(/\s*\`\`\`$/, '');
         const review = JSON.parse(reviewJson) as { should_change?: boolean; reason?: string; proposed_code?: string };
