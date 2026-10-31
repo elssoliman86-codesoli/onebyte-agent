@@ -1,6 +1,5 @@
 import React, { useState } from 'react';
-import { ActivityIndicator } from 'react-native';
-import { Modal, Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
+import { ActivityIndicator, Modal, Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
 import { Feather } from '@expo/vector-icons';
 import { router } from 'expo-router';
 import { useColors } from '@/hooks/useColors';
@@ -290,7 +289,7 @@ export function PhoneDrawer({
                           <Pressable key={session.id} disabled={!!openingSessionId} onPress={() => void openSession(session.id)} style={[styles.sessionRow, session.id === activeSessionId && { backgroundColor: colors.accentSubtle, borderRadius: 8 }]}>
                             <Feather name={session.id === activeSessionId ? 'message-square' : 'message-circle'} size={14} color={session.id === activeSessionId ? colors.primary : colors.mutedForeground} />
                             <Text numberOfLines={1} style={[styles.sessionTitle, { color: session.id === activeSessionId ? colors.primary : colors.foreground }]}>{session.title || 'محادثة جديدة'}</Text>
-                            {session.id === activeSessionId ? <Feather name="check" size={13} color={colors.primary} /> : null}
+                            {openingSessionId === session.id ? <ActivityIndicator size="small" color={colors.primary}/> : session.id === activeSessionId ? <Feather name="check" size={13} color={colors.primary} /> : null}
                           </Pressable>
                         )) : (
                           <Text style={[styles.emptyStudio, { color: colors.mutedForeground }]}>لا توجد محادثات بعد. اضغط + للبدء.</Text>
