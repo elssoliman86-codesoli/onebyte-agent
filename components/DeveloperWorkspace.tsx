@@ -20,7 +20,7 @@ import { base64ToBytes, preflightZip, ZIP_IMPORT_LIMITS } from '@/src/zip-safety
 import {
   buildProjectOutline, decideCodeReview, deleteProjectFile, getDeveloperProject, proposeCodeReview,
   renameProjectFile, replaceProjectPlan, saveProjectFile, setDeveloperCodeModel, updatePlanStep,
-  type DeveloperProject, type DeveloperPlanStep,
+  type DeveloperProject, type DeveloperProjectFile, type DeveloperPlanStep,
 } from '@/src/developer-projects';
 
 function toBase64(bytes: Uint8Array): string {
@@ -494,10 +494,10 @@ export function DeveloperWorkspace() {
         selectedPathRef.current = item.path;
         setSelectedPath(item.path);
         setDraft('');
-        const generated=await callModel([
+        const generated=await callCodeModel([
           {role:'system',content:'You are a code-writing worker in an IDE. Return only the complete contents of this one file, no markdown fences. Keep interfaces consistent with the provided existing project files. Secure, maintainable code. Never claim tests ran.'},
           {role:'user',content:`Project: ${activeSession.title}\nOverall requirements:\n${goal}\nFile ${i+1}/${normalized.length}: ${item.path}\nTask: ${item.task}\nExisting project files (path and contents):\n${current.files.map(f=>`--- ${f.path} ---\n${f.content.slice(0,12000)}`).join('\n').slice(0,50000)}\nExisting content for target file:\n${old}\nReturn the full new contents for ${item.path} only.`},
-        ],0.2,chunk=>setDraft(value=>value+chunk));
+        ],0.2,(chunk: string)=>setDraft(value=>value+chunk));
         const output=generated.replace(/^\`\`\`[a-zA-Z0-9_-]*\s*\n/,'').replace(/\n\`\`\`\s*$/,'');
         if(!output.trim()) throw new Error(`الموديل لم ينتج محتوى للملف ${item.path}`);
         await saveProjectFile(activeSession.id,activeSession.title,item.path,output);
