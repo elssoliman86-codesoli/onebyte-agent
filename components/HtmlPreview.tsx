@@ -71,7 +71,7 @@ export function HtmlPreview({
           <iframe
             key={reloadKey}
             srcDoc={html}
-            sandbox="allow-scripts allow-modals allow-popups"
+            sandbox="allow-scripts allow-modals"
             style={{
               flex: 1,
               width: '100%',
@@ -84,9 +84,17 @@ export function HtmlPreview({
             key={reloadKey}
             source={{ html }}
             style={styles.webview}
-            originWhitelist={['*']}
+            originWhitelist={['about:blank']}
+            onShouldStartLoadWithRequest={(request) => request.url === 'about:blank'}
             javaScriptEnabled
-            domStorageEnabled
+            javaScriptCanOpenWindowsAutomatically={false}
+            setSupportMultipleWindows={false}
+            domStorageEnabled={false}
+            cacheEnabled={false}
+            allowFileAccess={false}
+            allowFileAccessFromFileURLs={false}
+            allowUniversalAccessFromFileURLs={false}
+            mixedContentMode="never"
             startInLoadingState
           />
         )}
