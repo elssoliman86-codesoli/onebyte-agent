@@ -66,6 +66,8 @@ function buildProjectPreviewHtml(files: DeveloperProject['files'], selectedPath:
     return js === null ? tag : '<script>\n' + js.replace(/<\/script/gi, '<\\/script') + '\n</script>';
   });
   if (!/<head[\s>]/i.test(html)) html = '<!doctype html><html><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1"></head><body>' + html + '</body></html>';
+  const previewCsp = "default-src 'none'; img-src data: blob:; style-src 'unsafe-inline' data:; script-src 'unsafe-inline'; font-src data:; media-src data: blob:; connect-src 'none'; frame-src 'none'; object-src 'none'; base-uri 'none'; form-action 'none'";
+  html = html.replace(/<head\b[^>]*>/i, (head) => head + '<meta http-equiv="Content-Security-Policy" content="' + previewCsp + '">');
   return html;
 }
 
