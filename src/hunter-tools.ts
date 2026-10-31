@@ -658,6 +658,23 @@ export async function runBrowserRecon(
   };
   await checkpoint();
 
+  // Surface prerequisites up front: model planning and Python execution are
+  // separate capabilities. Never silently imply the generated helper ran.
+  try {
+    const provider = await storage.getProvider();
+    const apiKey = provider.keyless ? '' : (await storage.readApiKey()) ?? '';
+    if (!provider.baseUrl.trim() || !provider.model.trim() || (!provider.keyless && !apiKey)) {
+      record.notes.push('تنبيه: لم يتم إعداد مزود/مفتاح API صالح؛ سيستمر الاكتشاف الآلي الأساسي، لكن تحليل الموديل وتوليد أدوات مخصصة لن يعمل.');
+    }
+    if (!pythonRuntime) {
+      record.notes.push('تنبيه مهم: محرك Python المعزول غير مدمج في هذا الإصدار. يمكن حفظ مسودة الأداة ومراجعة مصدرها، لكن لا يمكن تشغيلها أو الادعاء بأنها اختُبرت.');
+    }
+    await checkpoint();
+  } catch {
+    record.notes.push('تعذّر التحقق من جاهزية مزود الذكاء الاصطناعي ومحرك Python قبل بدء Hunting.');
+    await checkpoint();
+  }
+
   try {
     await assertRunning();
     await updateStep('browser', 'running', 'المتصفح يفتح الهدف وينتظر اكتمال التحميل.');
@@ -740,6 +757,7 @@ export async function runBrowserRecon(
     await updateStep('planning', 'running', 'الموديل يحلل الأدلة ويقارنها بالأدوات المسجلة.');
     const modelPlan = await createAdaptiveHuntPlan(target, page, network, record.discoveredUrls, scriptEvidence);
     if (modelPlan.summary) record.notes.push('تحليل الموديل: ' + modelPlan.summary);
+    else record.notes.push('لم يرجع الموديل خطة تحليل صالحة؛ تم استخدام خطة الاستطلاع الأساسية.');
     if (modelPlan.nextSteps.length) record.notes.push('خطة الموديل: ' + modelPlan.nextSteps.join(' | '));
     await updateStep('planning', 'done', 'انتهى تحليل الأدلة ووضع الخطوات التالية.');
 
@@ -784,7 +802,7 @@ export async function runBrowserRecon(
         record.notes.push('فشل الفحص الآلي للأداة المولدة: ' + generatedToolFailure);
       }
     }
-    const pythonStageFailed = !!generatedToolFailure || (!!generatedTool && !generatedToolTestPassed);
+    const pythonStageFailed = !!generatedToolFailure || (!!generatedTool && (!generatedToolTestPassed || !pythonRuntime));
     await updateStep('python', pythonStageFailed ? 'error' : 'done', generatedTool
       ? generatedToolTestPassed
         ? 'تم إنشاء المسودة وفحصها وتشغيلها على الأدلة دون شبكة؛ لم يتم اعتمادها.'
