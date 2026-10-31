@@ -276,31 +276,35 @@ export function DeveloperWorkspace() {
   }
 
   async function reviewFileWithModel() {
-    if (!activeSession || !selectedPath || !selectedFile) return;
+    if (!activeSession || !selectedPath || !selectedFile || !manualEditMode) return;
     setBusy(true);
     try {
       const source = draft;
+      const comment = manualComment.trim();
       await saveProjectFile(activeSession.id, activeSession.title, selectedPath, source);
       await refresh(selectedPath);
       const raw = await callCodeModel([
-        { role: 'system', content: 'Review the complete source file for correctness, logic bugs, security, maintainability, and edge cases. Return ONLY JSON with keys should_change (boolean), reason (short string), and proposed_code (complete source file). Never claim tests were run. If no meaningful improvement is needed, set should_change false.' },
-        { role: 'user', content: `Review this file. Path: ${selectedPath}\n\n${source}\n\nReturn JSON only.` },
+        { role: 'system', content: 'You are reviewing a developer\'s manual edit and optional instruction comment. Review the entire file and the full edit in context. Preserve the user\'s intentional changes. If the comment requests a code change, implement that request in the proposed complete file, integrating it with existing logic; remove an instruction comment only when it has been implemented, otherwise preserve it. Fix only real correctness, security, consistency, and workflow issues. Return ONLY JSON: {"should_change":boolean,"reason":"short explanation","proposed_code":"complete updated file"}. Never claim tests were run. Do not erase the manual changes.' },
+        { role: 'user', content: `File: ${selectedPath}\nManual user comment/instruction: ${comment || '(none)'}\n\nComplete manually edited source:\n${source}\n\nReview the full file and reconcile the comment with the implementation. Return JSON only.` },
       ], 0.1);
-      const jsonText = raw.trim().replace(/^```(?:json)?\s*/i, '').replace(/\s*```$/, '');
+      const jsonText = raw.trim().replace(/^\`\`\`(?:json)?\s*/i, '').replace(/\s*\`\`\`$/, '');
       const parsed = JSON.parse(jsonText) as { should_change?: boolean; reason?: string; proposed_code?: string };
       if (parsed.should_change && typeof parsed.proposed_code === 'string' && parsed.proposed_code.trim() && parsed.proposed_code !== source) {
-        await proposeCodeReview(activeSession.id, selectedPath, source, parsed.proposed_code, parsed.reason || 'مراجعة AI');
+        await proposeCodeReview(activeSession.id, selectedPath, source, parsed.proposed_code, parsed.reason || 'مراجعة التعديل اليدوي والتعليق');
         await refresh(selectedPath);
-        alertCompat('المراجعة جاهزة', 'الموديل اقترح تعديلًا. لم يتم تطبيقه؛ راجعه ثم وافق عليه يدويًا.');
+        alertCompat('يوجد اقتراح تعديل صحيح', 'حافظنا على تعديلك، والموديل جهّز نسخة محسّنة متوافقة مع الملف كاملًا. لن تُطبق إلا بعد موافقتك.');
       } else {
-        alertCompat('انتهت المراجعة', 'لم يقترح الموديل تغييرًا جوهريًا. لم يتم تشغيل الاختبارات.');
+        alertCompat('اجتازت المراجعة', 'لم يجد الموديل تغييرًا جوهريًا مطلوبًا. تم حفظ تعديلك كما هو.');
       }
+      setManualEditMode(false);
+      setManualComment('');
     } catch (error) {
       alertCompat('تعذّرت مراجعة الملف', error instanceof Error ? error.message : 'استجابة غير صالحة من الموديل.');
     } finally {
       setBusy(false);
     }
   }
+
 
   function selectProjectFile(path: string, discardUnsaved = false) {
     if (path === selectedPath) return;
@@ -554,6 +558,113 @@ export function DeveloperWorkspace() {
     try { await decideCodeReview(activeSession.id, id, approve); await refresh(); }
     catch (e) { alertCompat('تعذّر تنفيذ القرار', e instanceof Error ? e.message : 'خطأ غير معروف'); }
   }
+
+  const planComplete = !project?.plan.length || project.plan.every(step => step.status === 'done');
+
+  async function openProjectPreview() {
+    if (!project?.files.length) { alertCompat('لا توجد ملفات للمعاينة', 'أنشئ ملفات المشروع أولًا.'); return; }
+    try {
+      const files = project.files.map(file => file.path === selectedPath && draft !== file.content ? { ...file, content: draft } : file);
+      const html = buildProjectPreviewHtml(files, selectedPath);
+      setPreviewHtml(html);
+      setPreviewOpen(true);
+    } catch (error) {
+      alertCompat('المعاينة غير متاحة', error instanceof Error ? error.message : 'لا يوجد مدخل HTML صالح.');
+    }
+  }
+
+  async function openPublishDialog() {
+    if (!activeSession || !project?.files.length) { alertCompat('المشروع فارغ', 'أضف ملفات قبل النشر.'); return; }
+    if (selectedFile && draft !== selectedFile.content) { alertCompat('احفظ التعديل أولًا', 'احفظ الملف المفتوح قبل مراجعة ونشر المشروع.'); return; }
+    try {
+      const token = await loadGithubToken();
+      if (!token) { alertCompat('GitHub غير متصل', 'أضف GitHub token من صفحة الإعدادات أو GitHub أولًا.'); return; }
+      setPublishing(true);
+      const repos = await listRepos(token);
+      setPublishRepos(repos);
+      if (!publishRepository && repos[0]) {
+        setPublishRepository(repos[0].full_name);
+        setPublishBranch(repos[0].default_branch);
+      }
+      setPublishOpen(true);
+    } catch (error) {
+      alertCompat('تعذّر تحميل مستودعات GitHub', error instanceof Error ? error.message : 'خطأ في الاتصال.');
+    } finally { setPublishing(false); }
+  }
+
+  async function choosePublishRepository(fullName: string) {
+    setPublishRepository(fullName);
+    setPublishBranch('');
+    try {
+      const token = await loadGithubToken();
+      if (!token) throw new Error('GitHub token غير متاح.');
+      const branch = await getDefaultBranch(token, fullName);
+      setPublishBranch(branch);
+    } catch (error) {
+      alertCompat('تعذّر قراءة الفرع الافتراضي', error instanceof Error ? error.message : 'خطأ غير معروف');
+    }
+  }
+
+  async function publishProjectToGithub() {
+    if (!activeSession || !project?.files.length || !publishRepository.trim()) return;
+    if (selectedFile && draft !== selectedFile.content) { alertCompat('احفظ التعديل أولًا', 'احفظ الملف المفتوح قبل النشر.'); return; }
+    setPublishing(true);
+    let published = 0;
+    let unchanged = 0;
+    try {
+      const token = await loadGithubToken();
+      if (!token) throw new Error('GitHub token غير متاح.');
+      if (project.files.length > 50) throw new Error('المشروع يحتوي على أكثر من 50 ملفًا. قسّم النشر إلى وحدات أصغر حتى يمكن مراجعة كل ملف قبل النشر.');
+      for (const file of project.files) {
+        const bytes = new TextEncoder().encode(file.content).byteLength;
+        if (bytes > 250_000) throw new Error(`الملف ${file.path} يتجاوز حد GitHub البالغ 250KB.`);
+      }
+
+      // Full-project code review comes before the first GitHub write.
+      const proposals: Array<{ file: DeveloperProjectFile; proposed: string; reason: string }> = [];
+      for (const file of project.files) {
+        const reviewRaw = await callCodeModel([
+          { role: 'system', content: 'Perform a full-file pre-publication code review for correctness, security, consistency and integration risks. Return ONLY JSON {"should_change":boolean,"reason":"short","proposed_code":"complete file"}. Do not claim tests were run. Preserve existing intended behavior. If there is no real issue, should_change=false.' },
+          { role: 'user', content: `Repository target: ${publishRepository}\nProject: ${activeSession.title}\nFile path: ${file.path}\nComplete source:\n${file.content}\nReview for publication.` },
+        ], 0.1);
+        const reviewJson = reviewRaw.trim().replace(/^\`\`\`(?:json)?\s*/i, '').replace(/\s*\`\`\`$/, '');
+        const review = JSON.parse(reviewJson) as { should_change?: boolean; reason?: string; proposed_code?: string };
+        if (review.should_change && typeof review.proposed_code === 'string' && review.proposed_code.trim() && review.proposed_code !== file.content) {
+          proposals.push({ file, proposed: review.proposed_code, reason: review.reason || 'مراجعة ما قبل النشر' });
+        }
+      }
+      if (proposals.length) {
+        for (const item of proposals) await proposeCodeReview(activeSession.id, item.file.path, item.file.content, item.proposed, item.reason);
+        await refresh(selectedPath);
+        setPublishOpen(false);
+        alertCompat('تم إيقاف النشر للمراجعة', `اكتشف الموديل ${proposals.length} ملفات تحتاج إلى تحسين. أضفنا اقتراحات للمراجعة والموافقة؛ لم نرفع أي ملف إلى GitHub.`);
+        return;
+      }
+
+      const branch = publishBranch.trim() || await getDefaultBranch(token, publishRepository.trim());
+      let commitUrls: string[] = [];
+      for (const file of project.files) {
+        try {
+          const remote = await readFileSnapshot(token, publishRepository.trim(), file.path, branch);
+          if (remote.content === file.content) { unchanged += 1; continue; }
+          const result = await updateGithubFile(token, publishRepository.trim(), file.path, file.content, `Update ${file.path} from OneByte Agent`, branch, remote.sha);
+          if (result.commitUrl) commitUrls.push(result.commitUrl);
+          published += 1;
+        } catch (error) {
+          const message = error instanceof Error ? error.message : String(error);
+          if (!/404/.test(message)) throw error;
+          const result = await createGithubFile(token, publishRepository.trim(), file.path, file.content, `Create ${file.path} from OneByte Agent`, branch);
+          if (result.commitUrl) commitUrls.push(result.commitUrl);
+          published += 1;
+        }
+      }
+      setPublishOpen(false);
+      alertCompat('اكتمل النشر على GitHub', `المستودع: ${publishRepository}\nالفرع: ${branch}\nملفات مرفوعة/محدّثة: ${published}\nملفات مطابقة دون تغيير: ${unchanged}\n${commitUrls.slice(0, 3).join('\n')}`);
+    } catch (error) {
+      alertCompat('توقف النشر', `تم رفع ${published} ملفًا قبل التوقف. ${error instanceof Error ? error.message : 'خطأ غير معروف'}`);
+    } finally { setPublishing(false); }
+  }
+
 
   return <View style={[s.root,{backgroundColor:colors.background}]}>
     <ScreenTopBar active="developer" center={<Text style={{color:colors.foreground,fontWeight:'700'}}>مختبر المطوّر</Text>} />
