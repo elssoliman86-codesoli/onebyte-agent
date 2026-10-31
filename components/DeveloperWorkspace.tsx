@@ -14,6 +14,7 @@ import { getStoredModelApiKey } from '@/src/assistant';
 import { ModelPicker } from '@/components/ModelPicker';
 import type { ModelInfo } from '@/src/model-catalog';
 import { HtmlPreview } from '@/components/HtmlPreview';
+import { buildReactPreviewHtml } from '@/src/react-preview';
 import { loadGithubToken, listRepos, getDefaultBranch, readFileSnapshot, createFile as createGithubFile, writeFile as updateGithubFile, type GhRepo } from '@/src/github';
 import fetchWithRetry from '@/src/fetch-with-retry';
 import { base64ToBytes, preflightZip, ZIP_IMPORT_LIMITS } from '@/src/zip-safety';
@@ -554,7 +555,7 @@ export function DeveloperWorkspace() {
     if (!project?.files.length) { alertCompat('لا توجد ملفات للمعاينة', 'أنشئ ملفات المشروع أولًا.'); return; }
     try {
       const files = project.files.map(file => file.path === selectedPath && draft !== file.content ? { ...file, content: draft } : file);
-      const html = buildProjectPreviewHtml(files, selectedPath);
+      const html = buildReactPreviewHtml(files) ?? buildProjectPreviewHtml(files, selectedPath);
       setPreviewHtml(html);
       setPreviewOpen(true);
     } catch (error) {
