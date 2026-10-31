@@ -83,7 +83,6 @@ function renderHighlightedCode(source: string, colors: ReturnType<typeof useColo
     const color = /^(?:\/\/|\/\*|#)/.test(token) ? colors.mutedForeground
       : /^(?:["'])/.test(token) ? colors.success
       : /^\d/.test(token) ? '#C084FC'
-      : /^\d/.test(token) ? '#C084FC'
       : /^(?:const|let|var|function|return|if|else|for|while|class|new|import|from|export|default|async|await|try|catch|throw|public|private|static|void|int|string|bool|def|print|self|SELECT|FROM|WHERE|INSERT|UPDATE|DELETE|CREATE|TABLE)$/.test(token) ? '#60A5FA'
       : colors.foreground;
     nodes.push(<Text key={match.index} style={{ color }}>{token}</Text>);
