@@ -35,6 +35,40 @@ function toBase64(bytes: Uint8Array): string {
 }
 const timeLabel = (value?: string) => value ? new Date(value).toLocaleTimeString([], {hour:'2-digit',minute:'2-digit'}) : 'لم تبدأ';
 
+function buildProjectPreviewHtml(files: DeveloperProject['files'], selectedPath: string): string {
+  const byPath = new Map(files.map(file => [file.path, file.content]));
+  const htmlFile = files.find(file => file.path === selectedPath && file.path.toLowerCase().endsWith('.html'))
+    ?? files.find(file => /(^|\/)index\.html$/i.test(file.path))
+    ?? files.find(file => file.path.toLowerCase().endsWith('.html'));
+  if (!htmlFile) throw new Error('المشروع لا يحتوي على ملف HTML لعرض Preview. المشاريع التي تحتاج إلى تشغيل React/Native/Backend تتطلب بيئة Build منفصلة.');
+  const normalize = (value: string) => {
+    const parts: string[] = [];
+    for (const part of value.replace(/\\/g, '/').split('/')) {
+      if (!part || part === '.') continue;
+      if (part === '..') parts.pop();
+      else parts.push(part);
+    }
+    return parts.join('/');
+  };
+  const resolveAsset = (src: string) => {
+    if (/^(?:https?:|data:|blob:|\/\/|#)/i.test(src)) return null;
+    const base = htmlFile.path.split('/').slice(0, -1).join('/');
+    const path = normalize([base, src.split(/[?#]/)[0]].filter(Boolean).join('/'));
+    return byPath.get(path) ?? null;
+  };
+  let html = htmlFile.content;
+  html = html.replace(/<link\b([^>]*?)href=(["'])([^"']+\.css(?:[?#][^"']*)?)\2([^>]*)>/gi, (tag, before, quote, href) => {
+    const css = resolveAsset(href);
+    return css === null ? tag : '<style>\n' + css.replace(/<\/style/gi, '<\\/style') + '\n</style>';
+  });
+  html = html.replace(/<script\b([^>]*?)src=(["'])([^"']+\.js(?:[?#][^"']*)?)\2([^>]*)>\s*<\/script>/gi, (tag, before, quote, src) => {
+    const js = resolveAsset(src);
+    return js === null ? tag : '<script>\n' + js.replace(/<\/script/gi, '<\\/script') + '\n</script>';
+  });
+  if (!/<head[\s>]/i.test(html)) html = '<!doctype html><html><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1"></head><body>' + html + '</body></html>';
+  return html;
+}
+
 export function DeveloperWorkspace() {
   const colors = useColors();
   const { width: viewportWidth } = useWindowDimensions();
