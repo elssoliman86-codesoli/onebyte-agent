@@ -432,12 +432,15 @@ export async function runAgent({
       finalText += '\n\n[تنبيه: انقطع تدفق الرد أكثر من مرة. تم حفظ النص المستلم وقد يكون غير مكتمل.]';
       onText(finalText);
     }
-    if (!result.toolCalls.length && result.text.trim() && round < maxSteps - 1 && actionRecoveryAttempts < 2 && activeSpecs.length > 0 && steps.length === 0) {
+    if (!result.toolCalls.length && result.text.trim() && round < maxSteps - 1 && actionRecoveryAttempts < 3 && activeSpecs.length > 0) {
       const requestedExecution = /(?:\b(?:upload|push|commit|create|update|edit|delete|publish|deploy|install|run|execute|build|test|open|read|inspect|scan|crawl|recon)\b|(?:ارفع|رفع|ارفعه|ارفعها|نزّل|نزله|انشئ|أنشئ|عدّل|عدل|احذف|انشر|شغّل|شغل|نفّذ|نفذ|اختبر|افحص|افحصه|افتح|اقرأ|اقرا|اجلب|هات).{0,90}(?:ملف|ملفات|ريبو|مستودع|GitHub|جيت.?هاب|موقع|رابط|مشروع|تطبيق|كود|اختبار|بناء))/i.test(originalUserMessage);
-      if (requestedExecution) {
+      const continuationRequested = /^(?:كمل|كمّل|تابع|استمر|اكمل|أكمل|واصل|continue|keep going|finish(?: the task)?)(?:\s|[.!،؟]|$)/i.test(originalUserMessage.trim());
+      if ((requestedExecution && steps.length === 0) || continuationRequested) {
         actionRecoveryAttempts += 1;
         wire.push({ role: 'assistant', content: result.text });
-        wire.push({ role: 'user', content: 'طلبك الأصلي يتطلب تنفيذًا فعليًا، وليس شرحًا أو أوامر تنفذها بنفسك. استخدم الأدوات المتاحة الآن لإنجاز المهمة خطوة بخطوة. اقرأ الملفات عند الحاجة، ثم أنشئ/حدّث الملفات أو المستودع بالأداة المناسبة. لا تطلب من المستخدم تشغيل أوامر Terminal/PowerShell إذا كان بإمكانك تنفيذ العملية عبر الأدوات. إذا كانت معلومة أساسية أو موافقة خارجية ناقصة فاسأل عنها فقط؛ ولا تدّعِ نجاح أي خطوة قبل نتيجة الأداة.' });
+        wire.push({ role: 'user', content: continuationRequested
+          ? 'هذه متابعة لمهمة سابقة وليست طلبًا لإعادة شرح ما سبق. استرجع المطلوب الأصلي من سياق المحادثة، وافحص ما تم إنجازه فعليًا وما بقي، ثم واصل التنفيذ من آخر نقطة مكتملة. لا تتوقف بعد جملتين أو تحديث حالة؛ استخدم الأدوات المتاحة وأنهِ أكبر قدر ممكن من المهمة. لا تكرر العمل المنجز ولا تدّعِ نجاح خطوة لم تؤكدها نتيجة أداة.'
+          : 'طلبك الأصلي يتطلب تنفيذًا فعليًا، وليس شرحًا أو أوامر تنفذها بنفسك. استخدم الأدوات المتاحة الآن لإنجاز المهمة خطوة بخطوة. اقرأ الملفات عند الحاجة، ثم أنشئ/حدّث الملفات أو المستودع بالأداة المناسبة. لا تطلب من المستخدم تشغيل أوامر Terminal/PowerShell إذا كان بإمكانك تنفيذ العملية عبر الأدوات. إذا كانت معلومة أساسية أو موافقة خارجية ناقصة فاسأل عنها فقط؛ ولا تدّعِ نجاح أي خطوة قبل نتيجة الأداة.' });
         await saveCheckpoint(round + 1);
         continue;
       }
