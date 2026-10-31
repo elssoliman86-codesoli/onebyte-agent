@@ -52,8 +52,8 @@ export function buildReactPreviewHtml(files: ReactPreviewFile[]): string | null 
 
   const appEntry = /(^|\/)App\.(?:tsx|jsx)$/i.test(entry);
   const hasReact = appEntry || sourceFiles.some(file =>
-    /(?:from\\s*|require\\s*\\(\\s*)['"]react(?:-dom(?:\\/client)?|\\/jsx-runtime)?['"]/.test(file.content) ||
-    /<\\s*[A-Z][A-Za-z0-9_.]*(?:\\s|\\/|>)/.test(file.content),
+    /(?:from\s*|require\s*\(\s*)['"]react(?:-dom(?:\/client)?|\/jsx-runtime)?['"]/.test(file.content) ||
+    /<\s*[A-Z][A-Za-z0-9_.]*(?:\s|\/|>)/.test(file.content),
   );
   if (!hasReact) return null;
   const moduleJson = JSON.stringify(sources).replace(/</g, '\\u003c');
