@@ -189,7 +189,6 @@ export function DeveloperWorkspace() {
         ? value.map((part: any) => typeof part?.text === 'string' ? part.text : '').join('') : '';
     };
     const contentType = response.headers.get('content-type') || '';
-    const reader = response.body?.getReader?.();
     let complete = '';
     const consumeLine = (line: string) => {
       const trimmed = line.trim();
@@ -205,10 +204,10 @@ export function DeveloperWorkspace() {
       } catch { /* Ignore incomplete/non-JSON SSE lines; the next frame is parsed separately. */ }
     };
     if (!onChunk || !contentType.includes('text/event-stream')) {
-      // Read a cloned response exactly once. Some React Native fetch adapters
-      // mark the original body as consumed while exposing stream metadata;
-      // response.json() then throws "Response body is already used".
-      const payloadText = await response.clone().text();
+      // Do not lock response.body before deciding how to consume the response.
+      // Read the original body once: locking it with getReader() and then
+      // cloning/parsing it is not portable across React Native fetch adapters.
+      const payloadText = await response.text();
       let payload: any;
       try {
         payload = JSON.parse(payloadText);
@@ -220,10 +219,12 @@ export function DeveloperWorkspace() {
       if (onChunk) onChunk(full);
       return full;
     }
+    // Only streaming SSE responses acquire a reader. A Response body must
+    // have exactly one active consumption strategy.
+    const reader = response.body?.getReader?.();
     if (!reader) {
       // React Native fetch implementations may expose no ReadableStream reader.
-      // Consume the complete SSE text as a compatibility fallback instead of
-      // attempting response.json() on an event stream.
+      // Consume the complete SSE text as a compatibility fallback.
       const raw = await response.text();
       raw.split(/\r?\n/).forEach(consumeLine);
       return complete;
