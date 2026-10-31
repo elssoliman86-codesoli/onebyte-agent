@@ -83,16 +83,18 @@ export function buildReactPreviewHtml(files: ReactPreviewFile[]): string | null 
       function resolve(from, request) {
         if (request.endsWith('.css')) return null;
         let raw;
-        if (request.startsWith('@/')) raw = request.slice(2);
+        const aliasPath = request.startsWith('@/') ? request.slice(2) : '';
+        if (aliasPath) raw = aliasPath;
         else if (request.startsWith('.')) raw = (dirname(from) ? dirname(from) + '/' : '') + request;
         else throw new Error('المكتبة "' + request + '" غير مضمّنة في المعاينة. يدعم المشغّل React وملفات المشروع المحلية فقط.');
-        const base = normalize(raw);
-        const options = [
+        const bases = [normalize(raw)];
+        if (aliasPath) bases.push(normalize('src/' + aliasPath));
+        const options = bases.flatMap(base => [
           base, base + '.tsx', base + '.ts', base + '.jsx', base + '.js',
           base + '.mjs', base + '.cjs', base + '.json',
           base + '/index.tsx', base + '/index.ts', base + '/index.jsx',
           base + '/index.js', base + '/index.json'
-        ];
+        ]);
         const match = options.find(path => Object.prototype.hasOwnProperty.call(sources, path));
         if (!match) throw new Error('لم يتم العثور على الملف المستورد "' + request + '" من ' + from + '.');
         return match;
