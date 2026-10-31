@@ -36,7 +36,7 @@ export function HtmlPreview({
       <View style={[styles.root, { backgroundColor: colors.background }]}>
         <View style={[styles.header, { borderBottomColor: colors.border }]}>
           <Text style={[styles.title, { color: colors.foreground }]}>
-            معاينة حية — HTML
+            معاينة حية — Web / React
           </Text>
           <View style={styles.actions}>
             <Pressable
