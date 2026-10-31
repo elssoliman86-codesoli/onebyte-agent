@@ -84,7 +84,7 @@ export function HtmlPreview({
             key={reloadKey}
             source={{ html }}
             style={styles.webview}
-            originWhitelist={['about:blank']}
+            originWhitelist={['*']}
             onShouldStartLoadWithRequest={(request) => request.url === 'about:blank'}
             javaScriptEnabled
             javaScriptCanOpenWindowsAutomatically={false}
