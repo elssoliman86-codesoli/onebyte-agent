@@ -14,6 +14,7 @@ import { getStoredModelApiKey } from '@/src/assistant';
 import { ModelPicker } from '@/components/ModelPicker';
 import type { ModelInfo } from '@/src/model-catalog';
 import { HtmlPreview } from '@/components/HtmlPreview';
+import { buildReactPreviewHtml } from '@/src/react-preview';
 import { loadGithubToken, listRepos, getDefaultBranch, readFileSnapshot, createFile as createGithubFile, writeFile as updateGithubFile, type GhRepo } from '@/src/github';
 import fetchWithRetry from '@/src/fetch-with-retry';
 import { base64ToBytes, preflightZip, ZIP_IMPORT_LIMITS } from '@/src/zip-safety';
@@ -106,6 +107,7 @@ export function DeveloperWorkspace() {
   const [publishing, setPublishing] = useState(false);
   const [codeModelPickerOpen, setCodeModelPickerOpen] = useState(false);
   const [filesDrawerOpen, setFilesDrawerOpen] = useState(false);
+  const [planOpen, setPlanOpen] = useState(false);
 
   useEffect(() => { draftRef.current = draft; }, [draft]);
 
@@ -129,6 +131,7 @@ export function DeveloperWorkspace() {
       setManualComment('');
       setDetails(null);
       setFilesDrawerOpen(false);
+      setPlanOpen(false);
       setReviewOpen(false);
     }
     const next = await getDeveloperProject(sessionId, activeSession.title);
@@ -552,7 +555,7 @@ export function DeveloperWorkspace() {
     if (!project?.files.length) { alertCompat('لا توجد ملفات للمعاينة', 'أنشئ ملفات المشروع أولًا.'); return; }
     try {
       const files = project.files.map(file => file.path === selectedPath && draft !== file.content ? { ...file, content: draft } : file);
-      const html = buildProjectPreviewHtml(files, selectedPath);
+      const html = buildReactPreviewHtml(files) ?? buildProjectPreviewHtml(files, selectedPath);
       setPreviewHtml(html);
       setPreviewOpen(true);
     } catch (error) {
@@ -655,17 +658,34 @@ export function DeveloperWorkspace() {
 
   return <View style={[s.root,{backgroundColor:colors.background}]}>
     <ScreenTopBar active="developer" center={<Text style={{color:colors.foreground,fontWeight:'700'}}>مختبر المطوّر</Text>} />
-    <View style={s.header}><View style={{flex:1}}><Text style={[s.heading,{color:colors.foreground}]}>مساحة المشروع</Text><Text style={{color:colors.mutedForeground,fontSize:12}}>{activeSession?.title ?? 'اختر محادثة مطوّر'}</Text></View><Pressable accessibilityRole="button" accessibilityLabel="إنشاء مشروع جديد" onPress={() => void newProject()} style={[s.button,{borderColor:colors.border,paddingHorizontal:compactLayout?9:12}]}><Feather name="plus" size={14} color={colors.foreground}/>{!compactLayout?<Text style={{color:colors.foreground}}>مشروع جديد</Text>:null}</Pressable></View>
+    <View style={s.header}>
+      <View style={{flex:1,minWidth:0}}>
+        <Text style={[s.heading,{color:colors.foreground}]}>مساحة المشروع</Text>
+        <Text numberOfLines={1} style={{color:colors.mutedForeground,fontSize:12}}>{activeSession?.title ?? 'اختر محادثة مطوّر'}</Text>
+      </View>
+      <Pressable accessibilityRole="button" accessibilityLabel={planOpen?'إخفاء خطة التنفيذ':'إظهار خطة التنفيذ'} onPress={()=>setPlanOpen(value=>!value)} style={[s.planToggle,{borderColor:planOpen?colors.primary:colors.border,backgroundColor:planOpen?colors.accentSubtle:colors.card}]}>
+        <Feather name="activity" size={13} color={colors.primary}/>
+        <Text style={{color:colors.foreground,fontSize:10,fontWeight:'800'}}>الخطة {project?.plan.filter(step=>step.status==='done').length??0}/{project?.plan.length??0}</Text>
+        <Feather name={planOpen?'chevron-up':'chevron-down'} size={12} color={colors.mutedForeground}/>
+      </Pressable>
+      <Pressable accessibilityRole="button" accessibilityLabel="إنشاء مشروع جديد" onPress={() => void newProject()} style={[s.button,{borderColor:colors.border,paddingHorizontal:compactLayout?9:12}]}>
+        <Feather name="plus" size={14} color={colors.foreground}/>
+        {!compactLayout?<Text style={{color:colors.foreground}}>مشروع جديد</Text>:null}
+      </Pressable>
+    </View>
     {compactLayout ? (
       <View style={[s.mobileFileBar,{borderColor:colors.border,backgroundColor:colors.card}]}>
-        <Pressable onPress={()=>setFilesDrawerOpen(true)} style={[s.mobileFilesButton,{backgroundColor:colors.accentSubtle,borderColor:colors.border}]}>
-          <Feather name="folder" size={15} color={colors.primary}/>
-          <Text numberOfLines={1} style={{color:colors.foreground,fontSize:12,fontWeight:'700',flex:1}}>الملفات · {project?.files.length??0}</Text>
-          <Feather name="chevron-down" size={14} color={colors.mutedForeground}/>
+        <Pressable accessibilityRole="button" accessibilityLabel="فتح قائمة ملفات المشروع من اليسار" onPress={()=>setFilesDrawerOpen(true)} style={[s.mobileFilesButton,{backgroundColor:colors.accentSubtle,borderColor:colors.border,flex:0}]}>
+          <Feather name="folder" size={16} color={colors.primary}/>
+          <Text style={{color:colors.foreground,fontSize:11,fontWeight:'800'}}>الملفات</Text>
+          <Text style={{color:colors.mutedForeground,fontSize:10}}>{project?.files.length??0}</Text>
         </Pressable>
-        <Pressable accessibilityRole="button" accessibilityLabel="معاينة المشروع بالكامل" onPress={()=>void openProjectPreview()} style={[s.mobileToolButton,{borderColor:colors.border,backgroundColor:colors.background,paddingHorizontal:7}]}>
-          <Feather name="play" size={15} color={colors.primary}/>
-          <Text style={{color:colors.foreground,fontSize:10,fontWeight:'700'}}>Preview</Text>
+        <View style={{flex:1,minWidth:0,paddingHorizontal:5}}>
+          <Text numberOfLines={1} style={{color:colors.foreground,fontSize:11,fontWeight:'700',textAlign:'left'}}>{selectedPath||'اختر ملفًا من القائمة'}</Text>
+        </View>
+        <Pressable accessibilityRole="button" accessibilityLabel="معاينة المشروع بالكامل" onPress={()=>void openProjectPreview()} style={[s.mobileToolButton,{borderColor:colors.border,backgroundColor:colors.background,paddingHorizontal:8}]}>
+          <Feather name="play" size={14} color={colors.primary}/>
+          <Text style={{color:colors.foreground,fontSize:10,fontWeight:'800'}}>Preview</Text>
         </Pressable>
       </View>
     ) : null}
@@ -742,7 +762,7 @@ export function DeveloperWorkspace() {
         {openPaths.length ? <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={s.fileTabs}>{openPaths.map(path=><Pressable key={path} onPress={()=>selectProjectFile(path)} style={[s.fileTab,{borderColor:path===selectedPath?colors.primary:colors.border,backgroundColor:path===selectedPath?colors.accentSubtle:colors.background}]}><Text numberOfLines={1} style={{color:path===selectedPath?colors.primary:colors.mutedForeground,fontSize:11,fontWeight:'700'}}>{path.split('/').pop()}</Text></Pressable>)}</ScrollView> : null}
         {renameOpen ? <View style={[s.renamePanel,{borderColor:colors.border,backgroundColor:colors.background}]}><TextInput value={renameDraft} onChangeText={setRenameDraft} autoCapitalize="none" autoCorrect={false} placeholder="المسار الجديد للملف" placeholderTextColor={colors.mutedForeground} style={[s.path,{color:colors.foreground,borderColor:colors.border,flex:1}]}/><Pressable onPress={()=>void renameFile()} style={[s.primary,{backgroundColor:colors.primary}]}><Text style={{color:colors.primaryForeground,fontSize:11}}>حفظ الاسم</Text></Pressable><Pressable onPress={()=>setRenameOpen(false)} style={[s.button,{borderColor:colors.border}]}><Text style={{color:colors.foreground,fontSize:11}}>إلغاء</Text></Pressable></View> : null}
         {selectedFile ? (
-          <TextInput value={draft} onChangeText={setDraft} editable={manualEditMode && !busy} multiline autoCapitalize="none" autoCorrect={false} spellCheck={false} textAlignVertical="top" placeholder="اكتب الكود أو عدّله هنا..." placeholderTextColor={colors.mutedForeground} style={[s.code,{color:colors.foreground,borderColor:colors.border}]}/>
+          <TextInput value={draft} onChangeText={setDraft} editable={manualEditMode && !busy} multiline autoCapitalize="none" autoCorrect={false} spellCheck={false} textAlign="left" textAlignVertical="top" placeholder="اكتب الكود أو عدّله هنا..." placeholderTextColor={colors.mutedForeground} style={[s.code,{color:colors.foreground,borderColor:colors.border}]}/>
         ) : (
           <View style={[s.emptyEditor,{borderColor:colors.border,backgroundColor:colors.background}]}>
             <Feather name="code" size={30} color={colors.primary}/>
@@ -763,38 +783,41 @@ export function DeveloperWorkspace() {
         )}
       </View>
     </View>
-    <View style={[s.planStrip,{borderColor:colors.border,backgroundColor:colors.card}]}>
-      <View style={s.planStripHeader}>
-        <View style={s.inline}><Feather name="activity" size={15} color={colors.primary}/><Text style={{color:colors.foreground,fontWeight:'800',fontSize:12}}>خطة التنفيذ</Text></View>
-        <Text style={{color:colors.mutedForeground,fontSize:10}}>{project?.plan.filter(step=>step.status==='done').length??0} / {project?.plan.length??0} مكتملة</Text>
-        <View style={{flex:1}}/>
-        {busy?<ActivityIndicator size="small" color={colors.primary}/>:null}
+    {planOpen ? (
+      <View style={[s.planStrip,s.planPopover,{borderColor:colors.border,backgroundColor:colors.card}]}>
+        <View style={s.planStripHeader}>
+          <View style={s.inline}>
+            <Feather name="activity" size={15} color={colors.primary}/>
+            <Text style={{color:colors.foreground,fontWeight:'800',fontSize:12}}>خطة التنفيذ</Text>
+          </View>
+          <Text style={{color:colors.mutedForeground,fontSize:10}}>{project?.plan.filter(step=>step.status==='done').length??0} / {project?.plan.length??0} مكتملة</Text>
+          <View style={{flex:1}}/>
+          {busy?<ActivityIndicator size="small" color={colors.primary}/>:null}
+          <Pressable accessibilityRole="button" accessibilityLabel="إخفاء الخطة" onPress={()=>setPlanOpen(false)} style={s.fileAction}>
+            <Feather name="x" size={17} color={colors.mutedForeground}/>
+          </Pressable>
+        </View>
+        {(project?.plan.length??0)>0 ? (
+          <>
+            <ScrollView style={[s.planTaskList,{maxHeight:compactLayout?190:260}]} nestedScrollEnabled showsVerticalScrollIndicator={(project?.plan.length??0)>3} contentContainerStyle={s.planTasks}>
+              {(project?.plan??[]).map((step,index)=>(
+                <Pressable key={step.id} onPress={()=>setDetails(details===step.id?null:step.id)} style={[s.planTask,{borderColor:step.status==='done'?colors.success:step.status==='running'?colors.primary:step.status==='error'?colors.destructive:colors.border,backgroundColor:details===step.id?colors.accentSubtle:colors.background}]}>
+                  <View style={s.planTaskStatus}>
+                    {step.status==='done'?<Feather name="check-circle" size={15} color={colors.success}/>:step.status==='running'?<ActivityIndicator size="small" color={colors.primary}/>:step.status==='error'?<Feather name="alert-circle" size={15} color={colors.destructive}/>:<Text style={{color:colors.mutedForeground,fontSize:11,fontWeight:'800'}}>{index+1}</Text>}
+                  </View>
+                  <View style={{flex:1,minWidth:0,gap:2}}>
+                    <Text numberOfLines={2} style={{color:colors.foreground,fontSize:11,fontWeight:'700'}}>{step.title}</Text>
+                    <Text numberOfLines={details===step.id?undefined:1} style={{color:colors.mutedForeground,fontSize:10}}>{step.detail}</Text>
+                  </View>
+                  <Feather name={details===step.id?'chevron-up':'chevron-down'} size={13} color={colors.mutedForeground}/>
+                </Pressable>
+              ))}
+            </ScrollView>
+            {details ? <View style={[s.planDetail,{borderTopColor:colors.border}]}><Text style={{color:colors.foreground,fontSize:11,fontWeight:'700'}}>{project?.plan.find(step=>step.id===details)?.title}</Text><Text style={{color:colors.mutedForeground,fontSize:10,lineHeight:15}}>{project?.plan.find(step=>step.id===details)?.detail}</Text></View> : null}
+          </>
+        ) : <Text style={{color:colors.mutedForeground,fontSize:10}}>ستظهر هنا خطوات المشروع بعد تحليل وصفه.</Text>}
       </View>
-      {(project?.plan.length??0)>0 ? (
-        <>
-          <ScrollView
-            style={[s.planTaskList,{maxHeight:compactLayout?230:300}]}
-            nestedScrollEnabled
-            showsVerticalScrollIndicator={(project?.plan.length ?? 0) > 3}
-            contentContainerStyle={s.planTasks}
-          >
-            {(project?.plan??[]).map((step,index)=>(
-              <Pressable key={step.id} onPress={()=>setDetails(details===step.id?null:step.id)} style={[s.planTask,{borderColor:step.status==='done'?colors.success:step.status==='running'?colors.primary:step.status==='error'?colors.destructive:colors.border,backgroundColor:details===step.id?colors.accentSubtle:colors.background}]}>
-                <View style={s.planTaskStatus}>
-                  {step.status==='done'?<Feather name="check-circle" size={15} color={colors.success}/>:step.status==='running'?<ActivityIndicator size="small" color={colors.primary}/>:step.status==='error'?<Feather name="alert-circle" size={15} color={colors.destructive}/>:<Text style={{color:colors.mutedForeground,fontSize:11,fontWeight:'800'}}>{index+1}</Text>}
-                </View>
-                <View style={{flex:1,minWidth:0,gap:2}}>
-                  <Text numberOfLines={2} style={{color:colors.foreground,fontSize:11,fontWeight:'700'}}>{step.title}</Text>
-                  <Text numberOfLines={details===step.id?undefined:1} style={{color:colors.mutedForeground,fontSize:10}}>{step.detail}</Text>
-                </View>
-                <Feather name={details===step.id?'chevron-up':'chevron-down'} size={13} color={colors.mutedForeground}/>
-              </Pressable>
-            ))}
-          </ScrollView>
-          {details ? <View style={[s.planDetail,{borderTopColor:colors.border}]}><Text style={{color:colors.foreground,fontSize:11,fontWeight:'700'}}>{project?.plan.find(step=>step.id===details)?.title}</Text><Text style={{color:colors.mutedForeground,fontSize:10,lineHeight:15}}>{project?.plan.find(step=>step.id===details)?.detail}</Text></View> : null}
-        </>
-      ) : <Text style={{color:colors.mutedForeground,fontSize:10}}>ستظهر هنا كل مهام الملفات بعد تحليل وصف المشروع بالموديل الأساسي.</Text>}
-    </View>
+    ) : null}
     {pendingReviews.length>0&&<View style={[s.review,{borderColor:colors.warning,backgroundColor:colors.card}]}><Text style={{color:colors.foreground,fontWeight:'700'}}>اقتراحات تنتظر الموافقة</Text>{pendingReviews.map(r=><View key={r.id} style={{gap:6,marginTop:5}}><Text style={{color:colors.foreground}}>{r.filePath} — {r.reason}</Text><View style={s.inline}><Pressable onPress={()=>void decideReview(r.id,true)} style={[s.primary,{backgroundColor:colors.success}]}><Text style={{color:'#fff'}}>موافقة وتطبيق</Text></Pressable><Pressable onPress={()=>void decideReview(r.id,false)} style={[s.button,{borderColor:colors.border}]}><Text style={{color:colors.foreground}}>رفض</Text></Pressable></View></View>)}</View>}
     <View style={[s.promptBar,{borderColor:colors.border,backgroundColor:colors.card}]}>
       <TextInput value={goal} onChangeText={setGoal} placeholder="اكتب وصف المشروع أو التعديل المطلوب..." placeholderTextColor={colors.mutedForeground} style={[s.promptInput,{color:colors.foreground}]} returnKeyType="send" onSubmitEditing={()=>{if(!busy) void buildProjectAutomatically();}} />
@@ -851,5 +874,5 @@ export function DeveloperWorkspace() {
   </View>;
 }
 const s=StyleSheet.create({
- root:{flex:1,minHeight:0,paddingHorizontal:12,gap:7},modelSelectCard:{borderWidth:1,borderRadius:10,padding:9,gap:6},publishButton:{minHeight:40,borderRadius:9,flexDirection:'row',alignItems:'center',justifyContent:'center',gap:7,paddingHorizontal:10},toolButton:{minHeight:32,borderWidth:1,borderRadius:8,paddingHorizontal:7,flexDirection:'row',alignItems:'center',justifyContent:'center',gap:5},planStrip:{borderWidth:1,borderRadius:11,paddingHorizontal:9,paddingVertical:7,gap:6},planStripHeader:{minHeight:22,flexDirection:'row',alignItems:'center',gap:8},planTaskList:{maxHeight:300},planTasks:{gap:5,paddingVertical:2},planTask:{minHeight:42,borderWidth:1,borderRadius:9,paddingHorizontal:9,paddingVertical:7,flexDirection:'row',alignItems:'center',gap:8},planTaskStatus:{width:22,height:22,alignItems:'center',justifyContent:'center'},planDetail:{borderTopWidth:1,paddingTop:6,gap:3},manualReviewPanel:{gap:7,paddingTop:3},manualComment:{minHeight:46,maxHeight:80,borderWidth:1,borderRadius:8,padding:8,fontSize:11,textAlign:'right'},publishOverlay:{flex:1,backgroundColor:'rgba(0,0,0,0.6)',alignItems:'center',justifyContent:'center',padding:14},publishModal:{width:'100%',maxWidth:520,maxHeight:'88%',borderWidth:1,borderRadius:16,padding:13,gap:10},publishModalHeader:{flexDirection:'row',alignItems:'center',gap:8},publishInput:{minHeight:38,borderWidth:1,borderRadius:8,paddingHorizontal:9,fontSize:12},repoList:{maxHeight:210,borderTopWidth:1,borderBottomWidth:1,borderColor:'rgba(128,128,128,0.2)'},repoRow:{minHeight:36,borderWidth:1,borderRadius:8,marginVertical:3,paddingHorizontal:8,flexDirection:'row',alignItems:'center',gap:7},mobileFileBar:{minHeight:40,borderWidth:1,borderRadius:10,paddingHorizontal:6,flexDirection:'row',alignItems:'center',gap:5},mobileFilesButton:{height:32,borderWidth:1,borderRadius:8,paddingHorizontal:8,flex:1,flexDirection:'row',alignItems:'center',gap:6},mobileToolButton:{minHeight:34,borderWidth:1,flexDirection:'row',alignItems:'center',justifyContent:'center',gap:5,borderRadius:8},mobileFilesOverlay:{flex:1,backgroundColor:'rgba(0,0,0,0.58)',justifyContent:'flex-end'},mobileFilesSheet:{height:'78%',borderTopLeftRadius:20,borderTopRightRadius:20,borderWidth:1,padding:12,gap:9},mobileFilesHeader:{flexDirection:'row',alignItems:'center',gap:7},mobileFilesList:{flex:1,minHeight:0,borderTopWidth:1,borderBottomWidth:1,borderColor:'rgba(128,128,128,0.2)'},mobileFilesActions:{flexDirection:'row',gap:8},promptBar:{minHeight:48,borderWidth:1,borderRadius:15,padding:5,flexDirection:'row',alignItems:'center',gap:7},promptInput:{flex:1,minHeight:38,paddingHorizontal:9,fontSize:13},promptSend:{width:36,height:36,borderRadius:12,alignItems:'center',justifyContent:'center'},header:{flexDirection:'row',alignItems:'center',gap:8,paddingTop:8},heading:{fontSize:20,fontWeight:'800'},button:{minHeight:33,paddingHorizontal:9,borderWidth:1,borderRadius:8,flexDirection:'row',alignItems:'center',justifyContent:'center',gap:5},sessions:{gap:7,paddingVertical:3,minHeight:52},chip:{paddingHorizontal:9,paddingVertical:6,borderWidth:1,borderRadius:8,maxWidth:180},body:{flex:1,minHeight:260,flexDirection:'row',gap:8},bodyCompact:{flexDirection:'column',gap:7,minHeight:0},sidebar:{width:205,borderWidth:1,borderRadius:13,padding:9,gap:7},sidebarCompact:{width:'100%',maxHeight:166},sectionTitle:{fontWeight:'700',fontSize:12},inline:{flexDirection:'row',alignItems:'center',gap:7,flexWrap:'wrap'},path:{flex:1,minHeight:32,borderWidth:1,borderRadius:7,paddingHorizontal:7,fontSize:11},plus:{width:32,height:32,borderRadius:7,alignItems:'center',justifyContent:'center'},tree:{minHeight:26,flexDirection:'row',alignItems:'center',gap:5,paddingVertical:4,paddingRight:3,borderRadius:5},editor:{flex:1,minWidth:0,borderWidth:1,borderRadius:13,padding:9,gap:8},editorCompact:{minHeight:0,flex:1},fileTabs:{gap:6,paddingVertical:2},fileTab:{maxWidth:180,borderWidth:1,borderRadius:8,paddingHorizontal:9,paddingVertical:6},renamePanel:{flexDirection:'row-reverse',alignItems:'center',gap:6,borderWidth:1,borderRadius:9,padding:7},filePanelHeading:{flexDirection:'row-reverse',alignItems:'center',justifyContent:'space-between'},emptyEditor:{flex:1,minHeight:190,borderWidth:1,borderStyle:'dashed',borderRadius:10,alignItems:'center',justifyContent:'center',padding:18,gap:9},fileHeading:{flexDirection:'row',alignItems:'center',gap:6,minWidth:0},fileActions:{flexDirection:'row',alignItems:'center',gap:1,flexShrink:0},fileAction:{width:31,height:34,alignItems:'center',justifyContent:'center',borderRadius:7},code:{flex:1,minHeight:80,borderWidth:1,borderRadius:7,padding:7,fontFamily:'monospace',fontSize:12,lineHeight:18},primary:{minHeight:33,paddingHorizontal:10,borderRadius:8,flexDirection:'row',alignItems:'center',justifyContent:'center',gap:5},timeline:{borderWidth:1,borderRadius:11,padding:8,maxHeight:260},timelineHead:{minHeight:28,flexDirection:'row',alignItems:'center',gap:7},planInput:{minHeight:48,maxHeight:90,borderWidth:1,borderRadius:7,padding:7,fontSize:12,marginVertical:5},step:{flexDirection:'row',gap:8},rail:{width:12,alignItems:'center'},dot:{width:9,height:9,borderRadius:5,marginTop:4},connector:{width:2,flex:1,minHeight:22,marginTop:2},review:{borderWidth:1,borderRadius:10,padding:9,gap:6,maxHeight:220},timelinePopover:{position:'absolute',right:8,bottom:48,width:'94%',maxHeight:360,zIndex:30,elevation:12,shadowColor:'#000',shadowOpacity:0.22,shadowRadius:12,shadowOffset:{width:0,height:4}},timelineClosed:{alignSelf:'flex-start',maxHeight:40,borderWidth:0,paddingHorizontal:0,paddingVertical:0,backgroundColor:'transparent'}
+ root:{flex:1,minHeight:0,paddingHorizontal:12,gap:7},modelSelectCard:{borderWidth:1,borderRadius:10,padding:9,gap:6},publishButton:{minHeight:40,borderRadius:9,flexDirection:'row',alignItems:'center',justifyContent:'center',gap:7,paddingHorizontal:10},toolButton:{minHeight:32,borderWidth:1,borderRadius:8,paddingHorizontal:7,flexDirection:'row',alignItems:'center',justifyContent:'center',gap:5},planStrip:{borderWidth:1,borderRadius:11,paddingHorizontal:9,paddingVertical:7,gap:6},planPopover:{position:'absolute',left:12,right:12,bottom:58,maxHeight:'58%',zIndex:40,elevation:18,shadowColor:'#000',shadowOpacity:0.25,shadowRadius:14,shadowOffset:{width:0,height:5}},planToggle:{minHeight:32,borderWidth:1,borderRadius:8,paddingHorizontal:8,flexDirection:'row',alignItems:'center',justifyContent:'center',gap:5},planStripHeader:{minHeight:22,flexDirection:'row',alignItems:'center',gap:8},planTaskList:{maxHeight:300},planTasks:{gap:5,paddingVertical:2},planTask:{minHeight:42,borderWidth:1,borderRadius:9,paddingHorizontal:9,paddingVertical:7,flexDirection:'row',alignItems:'center',gap:8},planTaskStatus:{width:22,height:22,alignItems:'center',justifyContent:'center'},planDetail:{borderTopWidth:1,paddingTop:6,gap:3},manualReviewPanel:{gap:7,paddingTop:3},manualComment:{minHeight:46,maxHeight:80,borderWidth:1,borderRadius:8,padding:8,fontSize:11,textAlign:'right'},publishOverlay:{flex:1,backgroundColor:'rgba(0,0,0,0.6)',alignItems:'center',justifyContent:'center',padding:14},publishModal:{width:'100%',maxWidth:520,maxHeight:'88%',borderWidth:1,borderRadius:16,padding:13,gap:10},publishModalHeader:{flexDirection:'row',alignItems:'center',gap:8},publishInput:{minHeight:38,borderWidth:1,borderRadius:8,paddingHorizontal:9,fontSize:12},repoList:{maxHeight:210,borderTopWidth:1,borderBottomWidth:1,borderColor:'rgba(128,128,128,0.2)'},repoRow:{minHeight:36,borderWidth:1,borderRadius:8,marginVertical:3,paddingHorizontal:8,flexDirection:'row',alignItems:'center',gap:7},mobileFileBar:{minHeight:40,borderWidth:1,borderRadius:10,paddingHorizontal:6,flexDirection:'row',alignItems:'center',gap:5},mobileFilesButton:{height:32,borderWidth:1,borderRadius:8,paddingHorizontal:8,flex:1,flexDirection:'row',alignItems:'center',gap:6},mobileToolButton:{minHeight:34,borderWidth:1,flexDirection:'row',alignItems:'center',justifyContent:'center',gap:5,borderRadius:8},mobileFilesOverlay:{flex:1,backgroundColor:'rgba(0,0,0,0.58)'},mobileFilesSheet:{position:'absolute',left:0,top:0,bottom:0,width:'84%',maxWidth:340,borderTopRightRadius:20,borderBottomRightRadius:20,borderWidth:1,padding:12,paddingTop:46,gap:9},mobileFilesHeader:{flexDirection:'row',alignItems:'center',gap:7},mobileFilesList:{flex:1,minHeight:0,borderTopWidth:1,borderBottomWidth:1,borderColor:'rgba(128,128,128,0.2)'},mobileFilesActions:{flexDirection:'row',gap:8},promptBar:{minHeight:48,borderWidth:1,borderRadius:15,padding:5,flexDirection:'row',alignItems:'center',gap:7},promptInput:{flex:1,minHeight:38,paddingHorizontal:9,fontSize:13},promptSend:{width:36,height:36,borderRadius:12,alignItems:'center',justifyContent:'center'},header:{flexDirection:'row',alignItems:'center',gap:8,paddingTop:8},heading:{fontSize:20,fontWeight:'800'},button:{minHeight:33,paddingHorizontal:9,borderWidth:1,borderRadius:8,flexDirection:'row',alignItems:'center',justifyContent:'center',gap:5},sessions:{gap:7,paddingVertical:3,minHeight:52},chip:{paddingHorizontal:9,paddingVertical:6,borderWidth:1,borderRadius:8,maxWidth:180},body:{flex:1,minHeight:260,flexDirection:'row',gap:8},bodyCompact:{flexDirection:'column',gap:7,minHeight:0},sidebar:{width:205,borderWidth:1,borderRadius:13,padding:9,gap:7},sidebarCompact:{width:'100%',maxHeight:166},sectionTitle:{fontWeight:'700',fontSize:12},inline:{flexDirection:'row',alignItems:'center',gap:7,flexWrap:'wrap'},path:{flex:1,minHeight:32,borderWidth:1,borderRadius:7,paddingHorizontal:7,fontSize:11},plus:{width:32,height:32,borderRadius:7,alignItems:'center',justifyContent:'center'},tree:{minHeight:26,flexDirection:'row',alignItems:'center',gap:5,paddingVertical:4,paddingRight:3,borderRadius:5},editor:{flex:1,minWidth:0,borderWidth:1,borderRadius:13,padding:9,gap:8},editorCompact:{minHeight:0,flex:1,padding:7,gap:6},fileTabs:{gap:6,paddingVertical:2},fileTab:{maxWidth:180,borderWidth:1,borderRadius:8,paddingHorizontal:9,paddingVertical:6},renamePanel:{flexDirection:'row-reverse',alignItems:'center',gap:6,borderWidth:1,borderRadius:9,padding:7},filePanelHeading:{flexDirection:'row-reverse',alignItems:'center',justifyContent:'space-between'},emptyEditor:{flex:1,minHeight:190,borderWidth:1,borderStyle:'dashed',borderRadius:10,alignItems:'center',justifyContent:'center',padding:18,gap:9},fileHeading:{flexDirection:'row',alignItems:'center',gap:6,minWidth:0},fileActions:{flexDirection:'row',alignItems:'center',gap:1,flexShrink:0},fileAction:{width:31,height:34,alignItems:'center',justifyContent:'center',borderRadius:7},code:{flex:1,minHeight:80,borderWidth:1,borderRadius:7,padding:7,fontFamily:'monospace',fontSize:12,lineHeight:18},primary:{minHeight:33,paddingHorizontal:10,borderRadius:8,flexDirection:'row',alignItems:'center',justifyContent:'center',gap:5},timeline:{borderWidth:1,borderRadius:11,padding:8,maxHeight:260},timelineHead:{minHeight:28,flexDirection:'row',alignItems:'center',gap:7},planInput:{minHeight:48,maxHeight:90,borderWidth:1,borderRadius:7,padding:7,fontSize:12,marginVertical:5},step:{flexDirection:'row',gap:8},rail:{width:12,alignItems:'center'},dot:{width:9,height:9,borderRadius:5,marginTop:4},connector:{width:2,flex:1,minHeight:22,marginTop:2},review:{borderWidth:1,borderRadius:10,padding:9,gap:6,maxHeight:220},timelinePopover:{position:'absolute',right:8,bottom:48,width:'94%',maxHeight:360,zIndex:30,elevation:12,shadowColor:'#000',shadowOpacity:0.22,shadowRadius:12,shadowOffset:{width:0,height:4}},timelineClosed:{alignSelf:'flex-start',maxHeight:40,borderWidth:0,paddingHorizontal:0,paddingVertical:0,backgroundColor:'transparent'}
 });

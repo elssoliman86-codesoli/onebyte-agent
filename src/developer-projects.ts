@@ -72,9 +72,24 @@ export async function putDeveloperProject(project: DeveloperProject): Promise<vo
   await saveDeveloperProjects([next, ...all.filter(p => p.sessionId !== project.sessionId)]);
 }
 export function languageForPath(path: string): string {
-  const ext = path.split('.').pop()?.toLowerCase() ?? '';
-  const map: Record<string,string> = { ts:'TypeScript',tsx:'TSX',js:'JavaScript',jsx:'JSX',py:'Python',json:'JSON',md:'Markdown',html:'HTML',css:'CSS',sql:'SQL',sh:'Shell',rs:'Rust',go:'Go',java:'Java',cs:'C#',cpp:'C++',c:'C',swift:'Swift' };
-  return map[ext] ?? 'Text';
+  const base = path.split('/').pop()?.toLowerCase() ?? '';
+  const ext = base.includes('.') ? base.split('.').pop() ?? '' : base;
+  const map: Record<string,string> = {
+    ts:'TypeScript',tsx:'React TSX',js:'JavaScript',jsx:'React JSX',mjs:'JavaScript (ESM)',cjs:'JavaScript (CommonJS)',
+    py:'Python',pyi:'Python Stub',ipynb:'Jupyter Notebook',json:'JSON',jsonc:'JSONC',md:'Markdown',mdx:'MDX',
+    html:'HTML',htm:'HTML',css:'CSS',scss:'SCSS',sass:'Sass',less:'Less',vue:'Vue',svelte:'Svelte',astro:'Astro',
+    sql:'SQL',sh:'Shell',bash:'Bash',zsh:'Zsh',ps1:'PowerShell',psm1:'PowerShell Module',bat:'Batch',cmd:'Command Script',
+    rs:'Rust',go:'Go',java:'Java',kt:'Kotlin',kts:'Kotlin Script',cs:'C#',fs:'F#',fsx:'F# Script',vb:'Visual Basic',
+    cpp:'C++',cc:'C++',cxx:'C++',hpp:'C++ Header',hh:'C++ Header',hxx:'C++ Header',c:'C',h:'C Header',
+    swift:'Swift',m:'Objective-C',mm:'Objective-C++',dart:'Dart',rb:'Ruby',php:'PHP',lua:'Lua',r:'R',jl:'Julia',
+    scala:'Scala',sc:'Scala',clj:'Clojure',cljs:'ClojureScript',ex:'Elixir',exs:'Elixir Script',erl:'Erlang',
+    hs:'Haskell',lhs:'Literate Haskell',ml:'OCaml',mli:'OCaml Interface',pl:'Perl',pm:'Perl Module',
+    graphql:'GraphQL',gql:'GraphQL',proto:'Protocol Buffers',yml:'YAML',yaml:'YAML',toml:'TOML',xml:'XML',
+    svg:'SVG',dockerfile:'Dockerfile',makefile:'Makefile',gradle:'Gradle',properties:'Java Properties',
+    tf:'Terraform',hcl:'HCL',ini:'INI',conf:'Config',env:'Environment',txt:'Plain Text',log:'Log',
+    diff:'Diff',patch:'Patch',gitignore:'Git Ignore',editorconfig:'EditorConfig',lock:'Lockfile'
+  };
+  return map[ext] ?? 'Plain Text';
 }
 export async function setDeveloperCodeModel(sessionId: string, modelId: string | undefined): Promise<void> {
   const project = await getDeveloperProject(sessionId);

@@ -80,9 +80,9 @@ function sanitizeNetworkEntry(entry: EmbeddedBrowserNetworkEntry): EmbeddedBrows
 }
 
 /**
- * Instruments page-level fetch/XHR/beacon requests. This is intentionally not
- * described as a full proxy: browser internals, images and every static asset
- * cannot be captured reliably from JavaScript injection alone.
+ * Instruments page-level fetch/XHR/beacon requests. Static resources are also
+ * harvested on a best-effort basis through Resource Timing after load. This is
+ * intentionally not described as a full proxy or a complete packet capture.
  */
 function makeNetworkMonitorScript(scopePattern: string): string {
   const pattern = JSON.stringify(scopePattern.toLowerCase());
@@ -105,6 +105,20 @@ function makeNetworkMonitorScript(scopePattern: string): string {
     'XHR.prototype.send=function(body){var xhr=this;var r=xhr.__onebyteRequest;if(r){r.body=body;r.started=Date.now();xhr.addEventListener("loadend",function(){if(!matches(r.url))return;var h={};try{xhr.getAllResponseHeaders().trim().split(/[\\r\\n]+/).forEach(function(line){var i=line.indexOf(":");if(i>0)h[line.slice(0,i).trim()]=line.slice(i+1).trim();});}catch(_){}var preview="";try{preview=typeof xhr.responseText==="string"?xhr.responseText:"[non-text response]";}catch(_){}emit(makeEntry("xhr",r.method,r.url,r.headers,r.body,r.started,xhr.status,xhr.statusText,h,preview,xhr.status===0?"request failed or blocked":""));},{once:true});}return oldSend.apply(this,arguments);};}',
     'if(navigator.sendBeacon){var oldBeacon=navigator.sendBeacon.bind(navigator);try{navigator.sendBeacon=function(url,data){var started=Date.now();var ok=oldBeacon(url,data);if(matches(url))emit(makeEntry("beacon","POST",url,{},data,started,null,"",{}, "",ok?"queued":"not queued"));return ok;};}catch(_){}}',
     '}',
+    '})();',
+    'true;',
+  ].join('\n');
+}
+
+/** Collect same-scope static resources from Resource Timing after page load. */
+function makeResourceMonitorScript(scopePattern: string): string {
+  const pattern = JSON.stringify(scopePattern.toLowerCase());
+  return [
+    '(function(){',
+    'var scope=' + pattern + ';',
+    'function matches(raw){try{var h=new URL(raw,location.href).hostname.toLowerCase();var p=scope.toLowerCase();if(p.indexOf("*.")===0){var root=p.slice(2);return h!==root&&h.endsWith("."+root);}return h===p;}catch(_){return false;}}',
+    'function safeUrl(raw){try{var u=new URL(raw,location.href);Array.from(u.searchParams.keys()).forEach(function(k){if(/token|secret|password|api[_-]?key|authorization|cookie|session|credential|access[_-]?token|refresh[_-]?token/i.test(k))u.searchParams.set(k,"[REDACTED]");});return u.toString();}catch(_){return String(raw||"");}}',
+    'try{if(window.performance&&performance.getEntriesByType&&window.ReactNativeWebView){performance.getEntriesByType("resource").slice(-300).forEach(function(item){var kind=String(item.initiatorType||"").toLowerCase();if(kind==="fetch"||kind==="xmlhttprequest"||kind==="beacon")return;if(!matches(item.name))return;window.ReactNativeWebView.postMessage(JSON.stringify({__onebyteNetworkRecord:{id:"resource-"+Date.now()+"-"+Math.random().toString(36).slice(2,8),source:"resource",method:"GET",url:safeUrl(item.name),createdAt:new Date().toISOString(),elapsedMs:Math.max(0,Math.round(item.duration||0)),status:null,requestHeaders:{},requestBody:""}}));});}}catch(_){}',
     '})();',
     'true;',
   ].join('\n');
@@ -162,6 +176,10 @@ export default function BrowserScreen() {
   const appendNetworkEntry = (rawEntry: EmbeddedBrowserNetworkEntry) => {
     if (!scopeHostRef.current || !isHostInScope(rawEntry.url, scopeHostRef.current)) return;
     const safeEntry = sanitizeNetworkEntry(rawEntry);
+    const duplicate = networkLogRef.current.some((entry) =>
+      entry.url === safeEntry.url && entry.method === safeEntry.method && entry.source === safeEntry.source,
+    );
+    if (duplicate) return;
     const next = [...networkLogRef.current, safeEntry].slice(-100);
     networkLogRef.current = next;
     setNetworkLog(next);
@@ -492,7 +510,7 @@ export default function BrowserScreen() {
             ))}
             {!networkLog.length ? (
               <Text style={[styles.networkPanelHint, { color: colors.mutedForeground }]}>
-                لا توجد طلبات ملتقطة. افتح هدفًا مسجلًا ثم تفاعل معه؛ يجري تسجيل fetch وXHR وsendBeacon والتنقلات الرئيسية فقط، وليس كل مورد ثابت أو حركة مثل Proxy.
+                لا توجد طلبات أو موارد ملتقطة. يسجل المتصفح fetch وXHR وsendBeacon والموارد الثابتة المرصودة والتنقلات داخل النطاق؛ لكنه ليس Proxy ولا يضمن كل حركة الشبكة.
               </Text>
             ) : null}
           </ScrollView>
@@ -558,13 +576,10 @@ export default function BrowserScreen() {
             scopeHost ? makeNetworkMonitorScript(scopeHost) : 'true;'
           }
           onShouldStartLoadWithRequest={(request) => {
-            if (!/^https?:\/\//i.test(request.url)) return false;
-            if (!scopeHostRef.current) return true;
-            try {
-              return isHostInScope(request.url, scopeHostRef.current);
-            } catch {
-              return false;
-            }
+            // Ordinary browsing must allow website redirects (www, CDN, SSO).
+            // Hunter requests, captured evidence and active tests are still
+            // constrained by the explicit authorized target in their own APIs.
+            return /^https?:\/\//i.test(request.url);
           }}
           onLoadStart={(event) => {
             currentUrlRef.current = event.nativeEvent.url;
@@ -581,19 +596,18 @@ export default function BrowserScreen() {
             currentUrlRef.current = loadedUrl;
             setAddress(redactUrl(loadedUrl));
             setUrl(loadedUrl);
-            pageReadyRef.current = true;
+            // Do not signal readiness until the in-scope monitor has been attached.
+            // Hunter waits on this flag before reading page evidence and counters.
+            pageReadyRef.current = false;
             setPageLoading(false);
             setBrowserError('');
-            readyWaitersRef.current.splice(0).forEach((waiter) => {
-              clearTimeout(waiter.timer);
-              waiter.resolve(loadedUrl);
-            });
             void (async () => {
               try {
                 const targets = await loadTargets();
                 const match = findAuthorizedTarget(loadedUrl, targets);
                 if (!scopeHostRef.current && match && isAuthorized(loadedUrl, targets).ok) activateScope(match.host);
-                if (scopeHostRef.current && isHostInScope(loadedUrl, scopeHostRef.current)) {
+                const activeScope = scopeHostRef.current;
+                if (activeScope && isHostInScope(loadedUrl, activeScope)) {
                   appendNetworkEntry({
                     id: 'navigation-' + Date.now() + '-' + Math.random().toString(36).slice(2, 8),
                     source: 'navigation',
@@ -605,10 +619,17 @@ export default function BrowserScreen() {
                     requestHeaders: {},
                     requestBody: '',
                   });
-                  webRef.current?.injectJavaScript(makeNetworkMonitorScript(scopeHostRef.current));
+                  webRef.current?.injectJavaScript(makeNetworkMonitorScript(activeScope));
+                  webRef.current?.injectJavaScript(makeResourceMonitorScript(activeScope));
                 }
               } catch (error) {
                 setBrowserError(error instanceof Error ? error.message : 'تعذّر تفعيل مراقبة الشبكة.');
+              } finally {
+                pageReadyRef.current = true;
+                readyWaitersRef.current.splice(0).forEach((waiter) => {
+                  clearTimeout(waiter.timer);
+                  waiter.resolve(loadedUrl);
+                });
               }
             })();
           }}
@@ -623,9 +644,16 @@ export default function BrowserScreen() {
             });
           }}
           onHttpError={(event) => {
-            const message = 'فشل تحميل الصفحة: ' + event.nativeEvent.description;
+            const status = event.nativeEvent.statusCode;
+            const message = 'فشل تحميل الصفحة' + (typeof status === 'number' ? ' (HTTP ' + status + ')' : '') + ': ' + (event.nativeEvent.description || event.nativeEvent.url || 'استجابة HTTP غير ناجحة.');
             setBrowserError(message);
             setPageLoading(false);
+          }}
+          onRenderProcessGone={(event) => {
+            const detail = event.nativeEvent.didCrash ? 'تعطّل محرك WebView أثناء عرض الصفحة.' : 'أُغلق محرك WebView لتحرير الذاكرة.';
+            setBrowserError(detail + ' أعد تحميل الصفحة للمتابعة.');
+            setPageLoading(false);
+            pageReadyRef.current = false;
           }}
           onMessage={(event) => {
             try {

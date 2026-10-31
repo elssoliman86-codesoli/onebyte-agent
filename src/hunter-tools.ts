@@ -686,7 +686,12 @@ export async function runBrowserRecon(
     record.pageUrl = page.url;
     record.pageTextPreview = page.text.slice(0, 12_000);
     record.pageSourcePreview = (page.source ?? '').slice(0, 16_000);
-    await updateStep('browser', 'done', `تم فتح ${page.url} وقراءة ${page.text.length} حرفًا.`);
+    const landedScope = isAuthorized(page.url, [target]);
+    if (!landedScope.ok) {
+      const landedHost = (() => { try { return new URL(page.url).hostname; } catch { return 'غير معروف'; } })();
+      throw new Error(`الموقع أعاد التوجيه إلى ${landedHost} خارج النطاق المصرّح به ${target.host}. تم إيقاف جمع الأدلة خارج التصريح؛ أضف النطاق النهائي إلى Targets بعد تأكيد الإذن أو استخدم نطاقًا أوسع مصرحًا به.`);
+    }
+    await updateStep('browser', 'done', `تم فتح ${page.url} وقراءة ${page.text.length} حرفًا داخل النطاق المصرّح.`);
     void snapshot;
 
     await updateStep('network', 'running', 'قراءة سجل الشبكة وتنقية كل عنوان وفق تصريح الهدف.');
