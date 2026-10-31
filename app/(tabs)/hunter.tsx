@@ -75,7 +75,15 @@ export default function CyberSecurityScreen() {
       if (huntAbortRef.current) setActivePanel('activity');
     });
     const unsubscribeStop = subscribeHunterStop(() => huntAbortRef.current?.abort());
+    // Progress events update the active run; polling also reloads persisted logs/runs
+    // so delayed browser responses and writes from a background route are not missed.
+    const refreshTimer = setInterval(() => {
+      void refresh().catch((error) => {
+        if (aliveRef.current) setError(error instanceof Error ? error.message : 'تعذّر تحديث سجل Hunting.');
+      });
+    }, 2500);
     return () => {
+      clearInterval(refreshTimer);
       aliveRef.current = false;
       abortRef.current?.abort();
       unsubscribeProgress();
