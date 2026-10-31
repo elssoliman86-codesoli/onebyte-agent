@@ -318,6 +318,26 @@ export function DeveloperWorkspace() {
       setSelectedPath(newPath.trim()); setDraft(''); await refresh(newPath.trim());
     } catch (e) { alertCompat('تعذّر إنشاء الملف', e instanceof Error ? e.message : 'مسار غير صالح'); }
   }
+  async function flushEditorSave() {
+    if (!activeSession || !selectedPath || !selectedFile || draftRef.current === selectedFile.content) return;
+    if (autosaveTimerRef.current) clearTimeout(autosaveTimerRef.current);
+    const sessionId = activeSession.id;
+    const title = activeSession.title;
+    const path = selectedPath;
+    const content = draftRef.current;
+    setSaveStatus('saving');
+    saveQueueRef.current = saveQueueRef.current.catch(() => undefined).then(async () => {
+      await saveProjectFile(sessionId, title, path, content);
+      setProject(current => current && current.sessionId === sessionId
+        ? { ...current, files: current.files.map(file => file.path === path ? { ...file, content, updatedAt: new Date().toISOString() } : file) }
+        : current);
+      if (selectedPathRef.current === path && draftRef.current === content) setSaveStatus('saved');
+    }).catch(() => {
+      if (selectedPathRef.current === path && draftRef.current === content) setSaveStatus('error');
+    });
+    await saveQueueRef.current;
+  }
+
   async function saveFile() {
     if (!activeSession || !selectedPath) return;
     setBusy(true);
@@ -787,6 +807,7 @@ export function DeveloperWorkspace() {
             {selectedFile ? <Pressable hitSlop={7} accessibilityRole="button" accessibilityLabel="إعادة تسمية الملف" onPress={()=>{setRenameDraft(selectedPath);setRenameOpen(true);}} style={s.fileAction}><Feather name="edit-2" size={15} color={colors.mutedForeground}/></Pressable> : null}
             {selectedFile ? <Pressable hitSlop={7} accessibilityRole="button" accessibilityLabel="حذف الملف" onPress={confirmDeleteFile} style={s.fileAction}><Feather name="trash-2" size={15} color={colors.destructive}/></Pressable> : null}
             <Pressable hitSlop={7} accessibilityRole="button" accessibilityLabel="معاينة المشروع بالكامل" onPress={()=>void openProjectPreview()} style={[s.toolButton,{borderColor:colors.border}]}><Feather name="play" size={14} color={colors.primary}/><Text style={{fontSize:10,color:colors.foreground,fontWeight:'700'}}>Preview</Text></Pressable>
+            {selectedFile ? <Pressable hitSlop={7} disabled={busy||saveStatus==='saving'} accessibilityRole="button" accessibilityLabel="حفظ الملف الآن" onPress={()=>void flushEditorSave()} style={[s.toolButton,{borderColor:colors.border,opacity:busy?0.5:1}]}><Feather name="save" size={14} color={colors.success}/><Text style={{fontSize:10,color:colors.foreground,fontWeight:'700'}}>حفظ</Text></Pressable> : null}
             {selectedFile ? <Pressable hitSlop={7} disabled={busy} accessibilityRole="button" accessibilityLabel="مراجعة والتحقق من الملف" onPress={()=>void reviewFileWithModel()} style={[s.toolButton,{borderColor:colors.border,opacity:busy?0.5:1}]}><Feather name="check-circle" size={14} color={colors.success}/><Text style={{fontSize:10,color:colors.foreground,fontWeight:'700'}}>Verify</Text></Pressable> : null}
             {selectedFile ? <Pressable hitSlop={7} accessibilityRole="button" accessibilityLabel="تعديل يدوي" onPress={()=>{const next=!manualEditMode;setManualEditMode(next);if(next)requestAnimationFrame(()=>editorInputRef.current?.focus());}} style={[s.toolButton,{borderColor:manualEditMode?colors.primary:colors.border,backgroundColor:manualEditMode?colors.accentSubtle:colors.background}]}><Feather name="edit-3" size={14} color={colors.primary}/><Text style={{fontSize:10,color:colors.foreground,fontWeight:'700'}}>{manualEditMode?'إغلاق القلم':'تعديل'}</Text></Pressable> : null}
           </View>
@@ -798,7 +819,7 @@ export function DeveloperWorkspace() {
             <ScrollView ref={lineGutterRef} scrollEnabled={false} showsVerticalScrollIndicator={false} style={s.lineGutter}>
               <Text selectable={false} style={[s.lineNumbers,{color:colors.mutedForeground}]}>{Array.from({length:editorLineCount},(_,index)=>String(index+1)).join('\n')}</Text>
             </ScrollView>
-            <TextInput ref={editorInputRef} value={draft} onChangeText={setDraft} editable={manualEditMode && !busy} multiline autoCapitalize="none" autoCorrect={false} spellCheck={false} textAlign="left" textAlignVertical="top" scrollEnabled onScroll={(event)=>lineGutterRef.current?.scrollTo({y:event.nativeEvent.contentOffset.y,animated:false})} placeholder="اكتب الكود أو عدّله هنا..." placeholderTextColor={colors.mutedForeground} selectionColor={colors.primary} cursorColor={colors.primary} style={[s.codeInput,{color:colors.foreground}]}/>
+            <TextInput ref={editorInputRef} value={draft} onChangeText={setDraft} editable={manualEditMode && !busy} multiline autoCapitalize="none" autoCorrect={false} spellCheck={false} textAlign="left" textAlignVertical="top" scrollEnabled onScroll={(event)=>lineGutterRef.current?.scrollTo({y:event.nativeEvent.contentOffset.y,animated:false})} onBlur={()=>{void flushEditorSave();}} placeholder="اكتب الكود أو عدّله هنا..." placeholderTextColor={colors.mutedForeground} selectionColor={colors.primary} cursorColor={colors.primary} style={[s.codeInput,{color:colors.foreground}]}/>
           </View>
         ) : (
           <View style={[s.emptyEditor,{borderColor:colors.border,backgroundColor:colors.background}]}>
