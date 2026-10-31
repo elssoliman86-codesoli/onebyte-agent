@@ -611,6 +611,8 @@ const styles = StyleSheet.create({
   metricLabel: { fontSize: 10, fontWeight: '600', textAlign: 'center' },
   metricDivider: { width: 1, height: 32 },
   huntMetrics: { flexDirection: 'row-reverse', justifyContent: 'space-between', gap: 5, paddingVertical: 6 },
+  huntPlanList: { borderTopWidth: StyleSheet.hairlineWidth, borderTopColor: 'rgba(128,128,128,0.25)', paddingTop: 7, gap: 5 },
+  huntPlanRow: { minHeight: 30, flexDirection: 'row-reverse', alignItems: 'flex-start', gap: 7, paddingVertical: 3 },
   panelTabs: { flexDirection: 'row-reverse', gap: 6, paddingHorizontal: 1 },
   panelTab: { flex: 1, minWidth: 0, minHeight: 42, borderWidth: 1, borderRadius: 11, paddingHorizontal: 5, flexDirection: 'row-reverse', alignItems: 'center', justifyContent: 'center', gap: 5 },
   panelTabText: { fontSize: 10, fontWeight: '800' },
