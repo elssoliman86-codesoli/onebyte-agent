@@ -51,6 +51,11 @@ export function buildReactPreviewHtml(files: ReactPreviewFile[]): string | null 
   if (!entry) return null;
 
   const appEntry = /(^|\/)App\.(?:tsx|jsx)$/i.test(entry);
+  const hasReact = appEntry || sourceFiles.some(file =>
+    /(?:from\\s*|require\\s*\\(\\s*)['"]react(?:-dom(?:\\/client)?|\\/jsx-runtime)?['"]/.test(file.content) ||
+    /<\\s*[A-Z][A-Za-z0-9_.]*(?:\\s|\\/|>)/.test(file.content),
+  );
+  if (!hasReact) return null;
   const moduleJson = JSON.stringify(sources).replace(/</g, '\\u003c');
   const css = inlineCss(files);
   const runner = String.raw`(function () {
