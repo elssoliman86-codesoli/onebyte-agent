@@ -7,7 +7,7 @@ import { useColors } from '@/hooks/useColors';
 import { ScreenTopBar } from '@/components/PhoneDrawer';
 import { AppScreen, Surface } from '@/components/Ui';
 import { alertCompat } from '@/src/web-alert';
-import { loadHunterRuns, runBrowserRecon, runSafeHttpHeaderChecks, type HunterRunRecord } from '@/src/hunter-tools';
+import { loadHunterRuns, runBrowserRecon, runSafeHttpHeaderChecks, subscribeHunterProgress, subscribeHunterStop, type HunterRunRecord } from '@/src/hunter-tools';
 import {
   hostOf,
   isAuthorized,
@@ -69,10 +69,19 @@ export default function CyberSecurityScreen() {
   useEffect(() => {
     aliveRef.current = true;
     void refresh().catch((error) => setError(error instanceof Error ? error.message : 'تعذّر تحميل بيانات مختبر الأمن.'));
+    const unsubscribeProgress = subscribeHunterProgress((run) => {
+      if (!aliveRef.current) return;
+      setLastHunt(run);
+      if (huntAbortRef.current) setActivePanel('activity');
+    });
+    const unsubscribeStop = subscribeHunterStop(() => huntAbortRef.current?.abort());
     return () => {
       aliveRef.current = false;
       abortRef.current?.abort();
-      huntAbortRef.current?.abort();
+      unsubscribeProgress();
+      unsubscribeStop();
+      // Hunting is user-stoppable and may continue while the browser route is
+      // on top of this screen. Do not abort merely because navigation changed.
     };
   }, [refresh]);
 
@@ -375,13 +384,19 @@ export default function CyberSecurityScreen() {
               huntAbortRef.current = huntController;
               const rootHost = target.host.startsWith('*.') ? target.host.slice(2) : target.host;
               const startUrl = target.host.startsWith('*.') ? `https://www.${rootHost}/` : `https://${rootHost}/`;
-              router.push({ pathname: '/browser', params: { url: startUrl } });
-              void runBrowserRecon(target, huntController.signal).then((run) => {
+              setActivePanel('activity');
+              router.push({ pathname: '/browser', params: { url: startUrl, hunt: '1' } });
+              void runBrowserRecon(target, huntController.signal, (progress) => {
+                if (aliveRef.current) {
+                  setLastHunt(progress);
+                  setActivePanel('activity');
+                }
+              }).then((run) => {
                 setLastHunt(run);
                 setActivePanel('activity');
                 alertCompat(
-                  run.status === 'stopped' ? 'تم إيقاف Hunting' : run.status === 'completed' ? 'اكتمل الاستطلاع الأولي' : 'اكتمل جزء من الاستطلاع',
-                  `الهدف: ${run.target}\nالروابط المرصودة: ${run.discoveredUrls.length}\nالنطاقات الفرعية: ${run.discoveredSubdomains.length}\nطلبات الشبكة: ${run.networkRequests}\nالحالة: ${run.status}\nراجع مكتبة الأدوات وسجل Hunting للتفاصيل.`,
+                  run.status === 'stopped' ? 'تم إيقاف Hunting' : run.status === 'completed' ? 'اكتمل Hunting' : 'اكتمل جزء من Hunting',
+                  `الهدف: ${run.target}\nالروابط المرصودة: ${run.discoveredUrls.length}\nالنطاقات الفرعية السلبية: ${run.discoveredSubdomains.length}\nطلبات الشبكة: ${run.networkRequests}\nالحالة: ${run.status}\nتم حفظ مراحل التنفيذ والنتائج في سجل Hunting.`,
                 );
               }).catch((e) => alertCompat('تعذّر بدء Hunting', e instanceof Error ? e.message : 'خطأ غير معروف'))
                 .finally(() => { huntAbortRef.current = null; setHuntRunning(false); });
