@@ -73,7 +73,7 @@ function buildProjectPreviewHtml(files: DeveloperProject['files'], selectedPath:
 }
 
 function renderHighlightedCode(source: string, colors: ReturnType<typeof useColors>) {
-  const tokenPattern = /(\/\/[^\n]*|\/\*[\s\S]*?\*\/|#[^\n]*|"(?:\\\\.|[^"\\\\])*"|'(?:\\\\.|[^'\\\\])*'|\\b(?:const|let|var|function|return|if|else|for|while|class|new|import|from|export|default|async|await|try|catch|throw|true|false|null|undefined|public|private|static|void|int|string|bool|def|print|self|SELECT|FROM|WHERE|INSERT|UPDATE|DELETE|CREATE|TABLE)\\b|\\b\\d+(?:\\.\\d+)?\\b|\\x3c\\/?[A-Za-z][^>]*>)/g;
+  const tokenPattern = /(\/\/[^\n]*|\/\*[\s\S]*?\*\/|#[^\n]*|"(?:\\.|[^"\\])*"|'(?:\\.|[^'\\])*'|\b(?:const|let|var|function|return|if|else|for|while|class|new|import|from|export|default|async|await|try|catch|throw|true|false|null|undefined|public|private|static|void|int|string|bool|def|print|self|SELECT|FROM|WHERE|INSERT|UPDATE|DELETE|CREATE|TABLE)\b|\b\d+(?:\.\d+)?\b)/g;
   const nodes: React.ReactNode[] = [];
   let cursor = 0;
   let match: RegExpExecArray | null;
@@ -82,7 +82,7 @@ function renderHighlightedCode(source: string, colors: ReturnType<typeof useColo
     const token = match[0];
     const color = /^(?:\/\/|\/\*|#)/.test(token) ? colors.mutedForeground
       : /^(?:["'])/.test(token) ? colors.success
-      : token.charCodeAt(0) === 60 ? colors.primary
+      : /^\d/.test(token) ? '#C084FC'
       : /^\d/.test(token) ? '#C084FC'
       : /^(?:const|let|var|function|return|if|else|for|while|class|new|import|from|export|default|async|await|try|catch|throw|public|private|static|void|int|string|bool|def|print|self|SELECT|FROM|WHERE|INSERT|UPDATE|DELETE|CREATE|TABLE)$/.test(token) ? '#60A5FA'
       : colors.foreground;
