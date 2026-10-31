@@ -124,6 +124,12 @@ export function DeveloperWorkspace() {
       projectSessionRef.current = sessionId;
       selectedPathRef.current = '';
       setOpenPaths([]);
+      setManualEditMode(false);
+      setManualComment('');
+      setPlanOpen(false);
+      setDetails(null);
+      setFilesDrawerOpen(false);
+      setReviewOpen(false);
     }
     const next = await getDeveloperProject(sessionId, activeSession.title);
     if (sequence !== refreshSequenceRef.current) return;
@@ -556,8 +562,22 @@ export function DeveloperWorkspace() {
   }
   async function decideReview(id: string, approve: boolean) {
     if (!activeSession) return;
-    try { await decideCodeReview(activeSession.id, id, approve); await refresh(); }
-    catch (e) { alertCompat('تعذّر تنفيذ القرار', e instanceof Error ? e.message : 'خطأ غير معروف'); }
+    try {
+      const pending = project?.reviews.find(item => item.id === id);
+      await decideCodeReview(activeSession.id, id, approve);
+      if (approve && pending?.filePath === selectedPath) {
+        const latest = await getDeveloperProject(activeSession.id, activeSession.title);
+        const applied = latest.files.find(file => file.path === pending.filePath);
+        if (applied) {
+          // Apply the approved full-file proposal to the visible editor too;
+          // do not let refresh treat the pre-approval text as an unsaved draft.
+          draftRef.current = applied.content;
+          setDraft(applied.content);
+        }
+      }
+      await refresh(selectedPath);
+      alertCompat(approve ? 'تم تطبيق التعديل الموافق عليه' : 'تم رفض الاقتراح', approve ? 'تم تحديث الملف في المشروع والمحرر.' : 'لم يتغير محتوى الملف.');
+    } catch (e) { alertCompat('تعذّر تنفيذ القرار', e instanceof Error ? e.message : 'خطأ غير معروف'); }
   }
 
   const planComplete = !!project?.plan.length && project.plan.every(step => step.status === 'done');
@@ -772,8 +792,7 @@ export function DeveloperWorkspace() {
           <View style={s.manualReviewPanel}>
             <TextInput value={manualComment} onChangeText={setManualComment} multiline placeholder="اكتب تعليقًا أو تعليمات للموديل حول التعديل اليدوي..." placeholderTextColor={colors.mutedForeground} style={[s.manualComment,{color:colors.foreground,borderColor:colors.border,backgroundColor:colors.background}]}/>
             <View style={s.inline}>
-              <Pressable disabled={!selectedFile||busy} onPress={()=>void saveFile()} style={[s.primary,{backgroundColor:colors.primary,opacity:busy?0.6:1}]}><Feather name="save" size={13} color={colors.primaryForeground}/><Text style={{color:colors.primaryForeground,fontSize:12}}>حفظ التعديل</Text></Pressable>
-              <Pressable disabled={!selectedFile||busy} onPress={()=>void reviewFileWithModel()} style={[s.primary,{backgroundColor:colors.success,opacity:busy?0.6:1}]}><Feather name="shield-check" size={13} color="#fff"/><Text style={{color:'#fff',fontSize:12}}>تحقق ومراجعة</Text></Pressable>
+              <Pressable disabled={!selectedFile||busy} onPress={()=>void reviewFileWithModel()} style={[s.primary,{backgroundColor:colors.success,opacity:busy?0.6:1}]}><Feather name="save" size={13} color="#fff"/><Text style={{color:'#fff',fontSize:12}}>حفظ ثم مراجعة</Text></Pressable>
             </View>
           </View>
         ) : (
