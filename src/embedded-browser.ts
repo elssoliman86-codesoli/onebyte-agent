@@ -92,7 +92,7 @@ export function getEmbeddedBrowser(): EmbeddedBrowserDriver | null {
 }
 
 export function waitForEmbeddedBrowser(
-  timeoutMs = 15_000,
+  timeoutMs = 60_000,
   afterDriver?: EmbeddedBrowserDriver | null,
 ): Promise<EmbeddedBrowserDriver> {
   if (activeDriver && activeDriver !== afterDriver) return Promise.resolve(activeDriver);
@@ -103,7 +103,7 @@ export function waitForEmbeddedBrowser(
       afterDriver,
       timer: setTimeout(() => {
         driverWaiters.delete(waiter);
-        reject(new Error('المتصفح المدمج لم يصبح جاهزًا. ارجع للشات وافتحه مرة أخرى.'));
+        reject(new Error('المتصفح المدمج لم يصبح جاهزًا بعد 60 ثانية. تأكد من فتح صفحة المتصفح وانتظر اكتمال تحميلها ثم أعد المحاولة.'));
       }, timeoutMs),
     };
     driverWaiters.add(waiter);

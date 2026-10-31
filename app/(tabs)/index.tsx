@@ -120,6 +120,9 @@ function StepList({ steps }: { steps: ToolStep[] }) {
       </Pressable>
       {expanded ? visibleSteps.map((step) => {
         const label = TOOL_SPECS.find((tool) => tool.name === step.tool)?.label ?? step.tool;
+        const path = [step.args?.path, step.args?.file_path, step.args?.repository, step.args?.url]
+          .find((value) => typeof value === 'string' && value.trim());
+        const detail = typeof path === 'string' ? path : '';
         const tone =
           step.status === 'done'
             ? colors.success
@@ -130,9 +133,13 @@ function StepList({ steps }: { steps: ToolStep[] }) {
                 : colors.destructive;
         return (
           <View key={step.id} style={styles.stepRow}>
-            <Text numberOfLines={1} style={[styles.stepText, { color: colors.mutedForeground }]}>
-              {label}
-            </Text>
+            <View style={{ flex: 1, minWidth: 0 }}>
+              <Text numberOfLines={1} style={[styles.stepText, { color: colors.foreground }]}>
+                {label}
+              </Text>
+              {detail ? <Text numberOfLines={1} selectable style={[styles.stepDetail, { color: colors.mutedForeground }]}>{detail}</Text> : null}
+              {step.status === 'error' && step.result ? <Text numberOfLines={2} style={[styles.stepDetail, { color: colors.destructive }]}>{step.result}</Text> : null}
+            </View>
             <Feather name={STEP_ICON[step.status]} size={13} color={tone} />
           </View>
         );
@@ -2360,6 +2367,7 @@ const styles = StyleSheet.create({
   stepSummaryText: { fontSize: typography.xs + 1, fontWeight: typography.weightMedium, flexShrink: 1, textAlign: 'right' },
   stepRow: { flexDirection: 'row-reverse', alignItems: 'center', gap: spacing.xs + 2 },
   stepText: { fontSize: typography.xs + 1, flexShrink: 1, textAlign: 'right' },
+  stepDetail: { fontSize: typography.xs, lineHeight: 14, marginTop: 2, textAlign: 'left' },
   typingRow: { flexDirection: 'row-reverse', alignItems: 'center', gap: spacing.sm, padding: spacing.sm + spacing.xs },
   typingText: { fontSize: typography.sm },
   errorBox: {
