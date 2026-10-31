@@ -530,6 +530,15 @@ export default function CyberSecurityScreen() {
             <Text style={[styles.metricLabel,{color:colors.mutedForeground}]}>{lastHunt.discoveredSubdomains.length} نطاقات فرعية</Text>
             <Text style={[styles.metricLabel,{color:colors.mutedForeground}]}>{lastHunt.networkRequests} طلبات شبكة</Text>
           </View>
+          <View style={styles.huntPlanList}>
+            {lastHunt.plan.map((step,index)=><View key={step.id} style={styles.huntPlanRow}>
+              {step.status==='done'?<Feather name="check-circle" size={13} color={colors.success}/>:step.status==='running'?<ActivityIndicator size="small" color={colors.primary}/>:step.status==='error'?<Feather name="x-circle" size={13} color={colors.destructive}/>:<Feather name="circle" size={12} color={colors.mutedForeground}/>}
+              <View style={{flex:1,minWidth:0}}>
+                <Text style={[styles.muted,{color:colors.foreground,fontWeight:'700'}]}>{step.title}</Text>
+                <Text style={[styles.muted,{color:colors.mutedForeground,fontSize:10}]}>{step.detail}</Text>
+              </View>
+            </View>)}
+          </View>
           {lastHunt.notes.slice(-6).map((note,index)=><Text key={index} selectable style={[styles.muted,{color:colors.foreground}]}>{'• '}{note}</Text>)}
           <Pressable onPress={()=>router.push('/(tabs)/hunter-tools')} style={[styles.secondaryButton,{borderColor:colors.border}]}>
             <Feather name="list" size={14} color={colors.primary}/>
