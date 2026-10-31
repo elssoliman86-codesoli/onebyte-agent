@@ -89,7 +89,6 @@ export function DeveloperWorkspace() {
   const draftRef = useRef('');
   const [newPath, setNewPath] = useState('src/main.ts');
   const [goal, setGoal] = useState('');
-  const [planOpen, setPlanOpen] = useState(false);
   const [details, setDetails] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
   const [reviewReason, setReviewReason] = useState('');
@@ -128,7 +127,6 @@ export function DeveloperWorkspace() {
       setOpenPaths([]);
       setManualEditMode(false);
       setManualComment('');
-      setPlanOpen(false);
       setDetails(null);
       setFilesDrawerOpen(false);
       setReviewOpen(false);
@@ -426,39 +424,6 @@ export function DeveloperWorkspace() {
       alertCompat('اكتمل استيراد المشروع', `تم استيراد ${count} ملفًا نصيًا إلى هذه المحادثة. الملفات الثنائية تم تجاهلها.`);
     } catch (e) { alertCompat('فشل استيراد ZIP', e instanceof Error ? e.message : 'ملف غير صالح أو كبير جدًا.'); }
   }
-  async function generateFile() {
-    if (!activeSession || !selectedPath || !goal.trim()) {
-      alertCompat('بيانات ناقصة', 'اختار ملفًا واكتب المطلوب في حقل الخطة/المهمة أولًا.');
-      return;
-    }
-    setBusy(true);
-    const plan = project?.plan ?? [];
-    const step = plan.find(item => item.status === 'pending') ?? plan.find(item => item.status === 'running');
-    try {
-      if (!provider.baseUrl.trim() || !provider.model.trim()) throw new Error('اختار مزودًا وموديلًا من الإعدادات أولًا.');
-      if (activeSession.mode !== 'developer') await patchSession(activeSession.id, { mode: 'developer' });
-      if (step) await updatePlanStep(activeSession.id, step.id, 'running');
-      await refresh();
-      const existingContent = draft;
-      setDraft('');
-      const generated = await callCodeModel([
-        { role: 'system', content: 'You are the code-generation worker inside an IDE. Return only the complete file contents, no markdown fences or commentary. Preserve requested language and produce maintainable, secure code. Do not claim to have run tests. Never generate secrets or hardcode credentials.' },
-        { role: 'user', content: `Project: ${activeSession.title}\nFile path: ${selectedPath}\nTask: ${goal}\nExisting file content (replace/update as appropriate):\n${existingContent}\nReturn the complete contents for this one file only.` },
-      ], 0.2, chunk => setDraft(current => current + chunk));
-      if (!generated.trim()) throw new Error('الموديل لم يرجع محتوى كود صالحًا.');
-      const clean = generated.replace(/^\`\`\`[a-zA-Z0-9_-]*\s*\n/, '').replace(/\n\`\`\`\s*$/, '');
-      await saveProjectFile(activeSession.id, activeSession.title, selectedPath, clean);
-      setDraft(clean);
-      if (step) await updatePlanStep(activeSession.id, step.id, 'done');
-      await refresh(selectedPath);
-      alertCompat('اكتمل توليد الملف', 'تم حفظ الكود في مساحة المشروع. لم يتم تشغيله تلقائيًا؛ راجعه واختبره قبل الاستخدام.');
-    } catch (error) {
-      if (step) await updatePlanStep(activeSession.id, step.id, 'error').catch(() => undefined);
-      await refresh();
-      alertCompat('تعذّر توليد الكود', error instanceof Error ? error.message : 'خطأ غير معروف');
-    } finally { setBusy(false); }
-  }
-
   async function buildProjectAutomatically() {
     if (selectedFile && draft !== selectedFile.content) { alertCompat('احفظ التعديلات أولًا', 'احفظ الملف المفتوح قبل البناء التلقائي حتى لا يستبدل محتوى غير محفوظ.'); return; }
     if (!activeSession || !goal.trim()) { alertCompat('اكتب وصف المشروع أولًا', 'اكتب المطلوب في حقل المهمة ثم ابدأ البناء التلقائي.'); return; }
@@ -538,19 +503,6 @@ export function DeveloperWorkspace() {
     } finally { setBusy(false); }
   }
 
-  async function savePlan() {
-    if (!activeSession || !goal.trim()) return;
-    try {
-      const lines = goal.split(/\n+/).map(x => x.trim()).filter(Boolean);
-      await replaceProjectPlan(activeSession.id, activeSession.title, lines.map(line => ({title: line.slice(0,70), detail: line})));
-      await refresh(); setPlanOpen(true);
-    } catch (error) { alertCompat('تعذّر حفظ الخطة', error instanceof Error ? error.message : 'خطأ غير معروف.'); }
-  }
-  async function markStep(step: DeveloperPlanStep, status: DeveloperPlanStep['status']) {
-    if (!activeSession) return;
-    try { await updatePlanStep(activeSession.id, step.id, status); await refresh(); }
-    catch (error) { alertCompat('تعذّر تحديث الخطوة', error instanceof Error ? error.message : 'خطأ غير معروف.'); }
-  }
   async function submitReview() {
     if (!activeSession || !reviewPath.trim()) return;
     try {
@@ -707,9 +659,9 @@ export function DeveloperWorkspace() {
           <Feather name="cpu" size={15} color={colors.primary}/>
           <Text style={{color:colors.foreground,fontSize:10,fontWeight:'700'}}>موديل الكود</Text>
         </Pressable>
-        <Pressable accessibilityRole="button" accessibilityLabel="فتح خطة التنفيذ" onPress={()=>setPlanOpen(v=>!v)} style={[s.mobileToolButton,{borderColor:colors.border,backgroundColor:colors.background,paddingHorizontal:7}]}>
-          <Feather name="activity" size={15} color={colors.primary}/>
-          <Text style={{color:colors.foreground,fontSize:10,fontWeight:'700'}}>الخطة</Text>
+        <Pressable accessibilityRole="button" accessibilityLabel="معاينة المشروع بالكامل" onPress={()=>void openProjectPreview()} style={[s.mobileToolButton,{borderColor:colors.border,backgroundColor:colors.background,paddingHorizontal:7}]}>
+          <Feather name="play" size={15} color={colors.primary}/>
+          <Text style={{color:colors.foreground,fontSize:10,fontWeight:'700'}}>Preview</Text>
         </Pressable>
       </View>
     ) : null}
