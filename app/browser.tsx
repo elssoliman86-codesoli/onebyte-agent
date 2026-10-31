@@ -1,5 +1,6 @@
 import React, { useEffect, useMemo, useRef, useState } from 'react';
 import {
+  ActivityIndicator,
   Linking,
   Platform,
   Pressable,
@@ -120,6 +121,7 @@ export default function BrowserScreen() {
   const [selectedNetworkEntry, setSelectedNetworkEntry] = useState<EmbeddedBrowserNetworkEntry | null>(null);
   const [scopeHost, setScopeHost] = useState('');
   const [browserError, setBrowserError] = useState('');
+  const [pageLoading, setPageLoading] = useState(false);
   const isWeb = Platform.OS === 'web';
   // Keep the WebView source object stable across URL-label/network-log state updates;
   // a fresh inline { uri } object can trigger unwanted navigations on some Android versions.
@@ -168,6 +170,7 @@ export default function BrowserScreen() {
     setSourceUrl('');
     currentUrlRef.current = initialUrl;
     pageReadyRef.current = false;
+    setPageLoading(Boolean(initialUrl));
     clearNetworkEntries();
     activateScope('');
     if (!initialUrl) return () => { active = false; };
@@ -245,6 +248,7 @@ export default function BrowserScreen() {
         setUrl(nextUrl);
         currentUrlRef.current = nextUrl;
         pageReadyRef.current = false;
+        setPageLoading(true);
         setSourceUrl(nextUrl);
         await driver.waitUntilReady(20_000);
         return driver.readPage();
@@ -335,6 +339,7 @@ export default function BrowserScreen() {
       setUrl(cleanUrl);
       currentUrlRef.current = cleanUrl;
       pageReadyRef.current = false;
+      setPageLoading(true);
       setSourceUrl(cleanUrl);
     } catch (error) {
       alertCompat('تعذّر فتح الرابط', error instanceof Error ? error.message : 'رابط غير صالح.');
@@ -476,6 +481,23 @@ export default function BrowserScreen() {
         </View>
       ) : null}
 
+      {browserError && !isWeb ? (
+        <View style={[styles.browserErrorBanner, { backgroundColor: colors.card, borderColor: colors.destructive }]}>
+          <Feather name="alert-circle" size={16} color={colors.destructive} />
+          <Text selectable style={[styles.browserErrorBannerText, { color: colors.foreground }]}>{browserError}</Text>
+          <Pressable accessibilityRole="button" onPress={() => webRef.current?.reload()} style={styles.browserErrorRetry}>
+            <Feather name="refresh-cw" size={16} color={colors.primary} />
+          </Pressable>
+        </View>
+      ) : null}
+
+      {pageLoading && !isWeb ? (
+        <View pointerEvents="none" style={styles.loadingOverlay}>
+          <ActivityIndicator size="small" color={colors.primary} />
+          <Text style={{ color: colors.mutedForeground, fontSize: 12 }}>جارٍ تحميل الصفحة…</Text>
+        </View>
+      ) : null}
+
       {sourceUrl && !isWeb ? (
         <WebView
           ref={webRef}
@@ -502,6 +524,7 @@ export default function BrowserScreen() {
           onLoadStart={(event) => {
             currentUrlRef.current = event.nativeEvent.url;
             pageReadyRef.current = false;
+            setPageLoading(true);
           }}
           onNavigationStateChange={(state) => {
             setAddress(redactUrl(state.url));
@@ -514,6 +537,7 @@ export default function BrowserScreen() {
             setAddress(redactUrl(loadedUrl));
             setUrl(loadedUrl);
             pageReadyRef.current = true;
+            setPageLoading(false);
             setBrowserError('');
             readyWaitersRef.current.splice(0).forEach((waiter) => {
               clearTimeout(waiter.timer);
@@ -546,13 +570,18 @@ export default function BrowserScreen() {
           onError={(event) => {
             const message = event.nativeEvent.description || 'تعذّر تحميل الصفحة داخل المتصفح المدمج.';
             setBrowserError(message);
+            setPageLoading(false);
             pageReadyRef.current = false;
             readyWaitersRef.current.splice(0).forEach((waiter) => {
               clearTimeout(waiter.timer);
               waiter.reject(new Error(message));
             });
           }}
-          onHttpError={(event) => setBrowserError('فشل تحميل الصفحة: ' + event.nativeEvent.description)}
+          onHttpError={(event) => {
+            const message = 'فشل تحميل الصفحة: ' + event.nativeEvent.description;
+            setBrowserError(message);
+            setPageLoading(false);
+          }}
           onMessage={(event) => {
             try {
               const data = JSON.parse(event.nativeEvent.data);
@@ -624,6 +653,10 @@ const styles = StyleSheet.create({
   networkToLabText: { fontSize: 11, fontWeight: '800' },
   networkError: { fontSize: 11, lineHeight: 16 },
   webview: { flex: 1 },
+  browserErrorBanner: { flexDirection: 'row-reverse', alignItems: 'center', gap: 8, marginHorizontal: 10, marginTop: 8, paddingHorizontal: 10, paddingVertical: 8, borderWidth: 1, borderRadius: 10 },
+  browserErrorBannerText: { flex: 1, minWidth: 0, fontSize: 11, lineHeight: 16 },
+  browserErrorRetry: { width: 32, height: 32, alignItems: 'center', justifyContent: 'center' },
+  loadingOverlay: { position: 'absolute', top: 58, left: 0, right: 0, zIndex: 5, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 8, paddingVertical: 8 },
   empty: { flex: 1, alignItems: 'center', justifyContent: 'center', gap: 12, padding: 26 },
   host: { maxWidth: '100%', fontSize: 15, fontWeight: '700', textAlign: 'center' },
   note: { fontSize: 13, lineHeight: 21, textAlign: 'center' },
