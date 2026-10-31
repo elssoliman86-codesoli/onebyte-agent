@@ -27,17 +27,17 @@ function normalizeModulePath(path: string): string {
 
 function inlineCss(files: ReactPreviewFile[]): string {
   return files
-    .filter(file => /\\.css$/i.test(file.path))
-    .map(file => file.content.replace(/<\\/style/gi, '<\\\\/style'))
-    .join('\\n');
+    .filter(file => /\.css$/i.test(file.path))
+    .map(file => file.content.replace(/<\/style/gi, '<\\/style'))
+    .join('\n');
 }
 
 export function buildReactPreviewHtml(files: ReactPreviewFile[]): string | null {
   const sources: Record<string, string> = {};
   const sourceFiles = files.filter(file =>
-    /\\.(?:tsx?|jsx?|mjs|cjs|json)$/i.test(file.path) &&
-    !/(?:^|\\/)package-lock\\.json$/i.test(file.path) &&
-    !/(?:^|\\/)node_modules\\//i.test(file.path),
+    /\.(?:tsx?|jsx?|mjs|cjs|json)$/i.test(file.path) &&
+    !/(?:^|\/)package-lock\.json$/i.test(file.path) &&
+    !/(?:^|\/)node_modules\//i.test(file.path),
   );
   if (!sourceFiles.length) return null;
 
@@ -50,14 +50,14 @@ export function buildReactPreviewHtml(files: ReactPreviewFile[]): string | null 
   const entry = ENTRY_CANDIDATES.find(path => Object.prototype.hasOwnProperty.call(sources, path));
   if (!entry) return null;
 
-  const appEntry = /(^|\\/)App\\.(?:tsx|jsx)$/i.test(entry);
+  const appEntry = /(^|\/)App\.(?:tsx|jsx)$/i.test(entry);
   const moduleJson = JSON.stringify(sources).replace(/</g, '\\u003c');
   const css = inlineCss(files);
   const runner = String.raw`(function () {
     const output = document.getElementById('preview-error');
     const showError = (error) => {
       output.hidden = false;
-      output.textContent = 'تعذّر تشغيل مشروع React داخل المعاينة:\\n' +
+      output.textContent = 'تعذّر تشغيل مشروع React داخل المعاينة:\n' +
         String(error && (error.stack || error.message) || error);
     };
     window.addEventListener('error', event => showError(event.error || event.message));
@@ -68,7 +68,7 @@ export function buildReactPreviewHtml(files: ReactPreviewFile[]): string | null 
       const dirname = path => path.includes('/') ? path.slice(0, path.lastIndexOf('/')) : '';
       const normalize = path => {
         const parts = [];
-        path.replace(/\\\\/g, '/').split('/').forEach(part => {
+        path.replace(/\\/g, '/').split('/').forEach(part => {
           if (!part || part === '.') return;
           if (part === '..') parts.pop();
           else parts.push(part);
@@ -94,7 +94,7 @@ export function buildReactPreviewHtml(files: ReactPreviewFile[]): string | null 
       }
       function load(path) {
         if (cache[path]) return cache[path].exports;
-        if (/\\.json$/i.test(path)) {
+        if (/\.json$/i.test(path)) {
           const jsonModule = { exports: JSON.parse(sources[path]) };
           cache[path] = jsonModule;
           return jsonModule.exports;
