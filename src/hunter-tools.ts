@@ -745,15 +745,20 @@ export async function runBrowserRecon(
 
     await updateStep('python', 'running', 'فحص الأدوات وبناء مساعدة جديدة عند وجود حاجة فعلية.');
     let generatedTool: HunterTool | null = null;
+    let generatedToolTestPassed = false;
+    let generatedToolFailure = '';
     if (modelPlan.missingTool) {
       generatedTool = await generateHunterPythonTool(modelPlan.missingTool, {
         target: target.host, pageTitle: page.title,
         discoveredUrls: record.discoveredUrls.slice(0, 80), networkRequestCount: network.length,
       });
       if (generatedTool) record.notes.push(`بنى الموديل أداة Python Draft: ${generatedTool.name} v${generatedTool.version}.`);
-      else record.notes.push('تعذّر بناء أداة Python صالحة رغم اقتراح الموديل.');
+      else {
+        generatedToolFailure = 'تعذّر إنشاء مسودة الأداة التي اقترحها الموديل.';
+        record.notes.push(generatedToolFailure);
+      }
     } else {
-      record.notes.push('لا توجد أداة جديدة مطلوبة لهذه الأدلة؛ سيتم تشغيل الأدوات المعتمدة فقط.');
+      record.notes.push('لم يجد الموديل فجوة تستدعي أداة جديدة؛ سيتم تشغيل الأدوات المعتمدة فقط.');
     }
 
     const evidence: Record<string, unknown> = {
@@ -772,14 +777,21 @@ export async function runBrowserRecon(
         const properties = (generatedTool.inputSchema.properties ?? {}) as Record<string, unknown>;
         const args = Object.fromEntries(Object.keys(properties).filter((key) => key in evidence).map((key) => [key, evidence[key]]));
         const output = await checkAndRunDraftPythonTool(generatedTool.id, args);
+        generatedToolTestPassed = true;
         record.notes.push('اجتاز فحص الأداة المولدة وتنفيذها offline: ' + output.slice(0, 1200) + ' · بقيت Draft وتحتاج اعتمادك.');
       } catch (error) {
-        record.notes.push('فشل الفحص الآلي للأداة المولدة: ' + (error instanceof Error ? error.message : 'Python runtime error'));
+        generatedToolFailure = error instanceof Error ? error.message : 'Python runtime error';
+        record.notes.push('فشل الفحص الآلي للأداة المولدة: ' + generatedToolFailure);
       }
     }
-    await updateStep('python', 'done', generatedTool
-      ? 'تم إنشاء المسودة وفحصها وتشغيلها على الأدلة دون شبكة؛ لم يتم اعتمادها.'
-      : 'انتهى بناء الأدوات دون حاجة لأداة جديدة.');
+    const pythonStageFailed = !!generatedToolFailure || (!!generatedTool && !generatedToolTestPassed);
+    await updateStep('python', pythonStageFailed ? 'error' : 'done', generatedTool
+      ? generatedToolTestPassed
+        ? 'تم إنشاء المسودة وفحصها وتشغيلها على الأدلة دون شبكة؛ لم يتم اعتمادها.'
+        : 'تم إنشاء المسودة لكن فحص/تشغيل Python لم ينجح: ' + generatedToolFailure
+      : modelPlan.missingTool
+        ? 'اقترح الموديل أداة لكن تعذّر إنشاؤها.'
+        : 'لم تكن هناك حاجة لأداة جديدة؛ الأدوات المعتمدة فقط ستُستخدم.');
 
     await assertRunning();
     await updateStep('baseline', 'running', 'فحص HEAD غير المدمّر للروابط المكتشفة والمسموح بها فقط.');
@@ -836,7 +848,7 @@ export async function runBrowserRecon(
       await checkpoint();
     }
     await updateStep('reusable', 'done', `تم تشغيل ${reusableTools.length} أداة معتمدة على الأدلة.`);
-    record.status = 'completed';
+    record.status = plan.some((step) => step.status === 'error') ? 'partial' : 'completed';
   } catch (error) {
     record.status = signal?.aborted ? 'stopped' : record.pageUrl ? 'partial' : 'failed';
     record.notes.push(error instanceof Error ? error.message : 'تعذّر إكمال الاستطلاع.');
