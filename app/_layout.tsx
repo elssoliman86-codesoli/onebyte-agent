@@ -129,7 +129,7 @@ export default function RootLayout() {
             <WorkspaceProvider>
               <AssistantProvider>
                 <NotificationsBootstrap />
-                <HunterPythonRuntimeHost />
+                {Platform.OS !== 'web' ? <HunterPythonRuntimeHost /> : null}
                 <RootLayoutNav />
               </AssistantProvider>
             </WorkspaceProvider>
