@@ -72,26 +72,6 @@ function buildProjectPreviewHtml(files: DeveloperProject['files'], selectedPath:
   return html;
 }
 
-function renderHighlightedCode(source: string, colors: ReturnType<typeof useColors>) {
-  const tokenPattern = /(\/\/[^\n]*|\/\*[\s\S]*?\*\/|#[^\n]*|"(?:\\.|[^"\\])*"|'(?:\\.|[^'\\])*'|\b(?:const|let|var|function|return|if|else|for|while|class|new|import|from|export|default|async|await|try|catch|throw|true|false|null|undefined|public|private|static|void|int|string|bool|def|print|self|SELECT|FROM|WHERE|INSERT|UPDATE|DELETE|CREATE|TABLE)\b|\b\d+(?:\.\d+)?\b)/g;
-  const nodes: React.ReactNode[] = [];
-  let cursor = 0;
-  let match: RegExpExecArray | null;
-  while ((match = tokenPattern.exec(source)) !== null) {
-    if (match.index > cursor) nodes.push(source.slice(cursor, match.index));
-    const token = match[0];
-    const color = /^(?:\/\/|\/\*|#)/.test(token) ? colors.mutedForeground
-      : /^(?:["'])/.test(token) ? colors.success
-      : /^\d/.test(token) ? '#C084FC'
-      : /^(?:const|let|var|function|return|if|else|for|while|class|new|import|from|export|default|async|await|try|catch|throw|public|private|static|void|int|string|bool|def|print|self|SELECT|FROM|WHERE|INSERT|UPDATE|DELETE|CREATE|TABLE)$/.test(token) ? '#60A5FA'
-      : colors.foreground;
-    nodes.push(<Text key={match.index} style={{ color }}>{token}</Text>);
-    cursor = match.index + token.length;
-  }
-  if (cursor < source.length) nodes.push(source.slice(cursor));
-  return nodes;
-}
-
 export function DeveloperWorkspace() {
   const colors = useColors();
   const { width: viewportWidth } = useWindowDimensions();
@@ -109,7 +89,6 @@ export function DeveloperWorkspace() {
   const [draft, setDraft] = useState('');
   const editorInputRef = useRef<TextInput>(null);
   const lineGutterRef = useRef<ScrollView>(null);
-  const highlightScrollRef = useRef<ScrollView>(null);
   const draftRef = useRef('');
   const autosaveTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const saveQueueRef = useRef<Promise<void>>(Promise.resolve());
@@ -137,36 +116,6 @@ export function DeveloperWorkspace() {
   const [planOpen, setPlanOpen] = useState(false);
 
   useEffect(() => { draftRef.current = draft; }, [draft]);
-
-  // Debounced, serialized autosave: never write a full project snapshot for every keystroke.
-  useEffect(() => {
-    if (!activeSession || !selectedPath || !selectedFile || draft === selectedFile.content) {
-      if (autosaveTimerRef.current) clearTimeout(autosaveTimerRef.current);
-      if (selectedFile && draft === selectedFile.content) setSaveStatus('saved');
-      return;
-    }
-    setSaveStatus('pending');
-    if (autosaveTimerRef.current) clearTimeout(autosaveTimerRef.current);
-    const sessionId = activeSession.id;
-    const title = activeSession.title;
-    const path = selectedPath;
-    const content = draft;
-    autosaveTimerRef.current = setTimeout(() => {
-      setSaveStatus('saving');
-      saveQueueRef.current = saveQueueRef.current.catch(() => undefined).then(async () => {
-        await saveProjectFile(sessionId, title, path, content);
-        setProject(current => current && current.sessionId === sessionId
-          ? { ...current, files: current.files.map(file => file.path === path ? { ...file, content, updatedAt: new Date().toISOString() } : file) }
-          : current);
-        if (selectedPathRef.current === path && draftRef.current === content) setSaveStatus('saved');
-      }).catch(error => {
-        if (selectedPathRef.current === path && draftRef.current === content) setSaveStatus('error');
-      });
-    }, 850);
-    return () => {
-      if (autosaveTimerRef.current) clearTimeout(autosaveTimerRef.current);
-    };
-  }, [draft, selectedPath, activeSession?.id, activeSession?.title, selectedFile?.content]);
 
   const refresh = useCallback(async (preferredPath?: string) => {
     const sequence = ++refreshSequenceRef.current;
@@ -218,6 +167,35 @@ export function DeveloperWorkspace() {
     return true;
   }), [outline, collapsedFolders]);
   const selectedFile = project?.files.find(f => f.path === selectedPath);
+  // Debounced, serialized autosave: never write a full project snapshot for every keystroke.
+  useEffect(() => {
+    if (!activeSession || !selectedPath || !selectedFile || draft === selectedFile.content) {
+      if (autosaveTimerRef.current) clearTimeout(autosaveTimerRef.current);
+      if (selectedFile && draft === selectedFile.content) setSaveStatus('saved');
+      return;
+    }
+    setSaveStatus('pending');
+    if (autosaveTimerRef.current) clearTimeout(autosaveTimerRef.current);
+    const sessionId = activeSession.id;
+    const title = activeSession.title;
+    const path = selectedPath;
+    const content = draft;
+    autosaveTimerRef.current = setTimeout(() => {
+      setSaveStatus('saving');
+      saveQueueRef.current = saveQueueRef.current.catch(() => undefined).then(async () => {
+        await saveProjectFile(sessionId, title, path, content);
+        setProject(current => current && current.sessionId === sessionId
+          ? { ...current, files: current.files.map(file => file.path === path ? { ...file, content, updatedAt: new Date().toISOString() } : file) }
+          : current);
+        if (selectedPathRef.current === path && draftRef.current === content) setSaveStatus('saved');
+      }).catch(error => {
+        if (selectedPathRef.current === path && draftRef.current === content) setSaveStatus('error');
+      });
+    }, 850);
+    return () => {
+      if (autosaveTimerRef.current) clearTimeout(autosaveTimerRef.current);
+    };
+  }, [draft, selectedPath, activeSession?.id, activeSession?.title, selectedFile?.content]);
   const editorLineCount = Math.max(1, draft.split('\n').length);
   const pendingReviews = project?.reviews.filter(r => r.status === 'pending') ?? [];
 
