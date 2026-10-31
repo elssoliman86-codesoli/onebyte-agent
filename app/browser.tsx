@@ -558,13 +558,10 @@ export default function BrowserScreen() {
             scopeHost ? makeNetworkMonitorScript(scopeHost) : 'true;'
           }
           onShouldStartLoadWithRequest={(request) => {
-            if (!/^https?:\/\//i.test(request.url)) return false;
-            if (!scopeHostRef.current) return true;
-            try {
-              return isHostInScope(request.url, scopeHostRef.current);
-            } catch {
-              return false;
-            }
+            // Ordinary browsing must allow website redirects (www, CDN, SSO).
+            // Hunter requests, captured evidence and active tests are still
+            // constrained by the explicit authorized target in their own APIs.
+            return /^https?:\/\//i.test(request.url);
           }}
           onLoadStart={(event) => {
             currentUrlRef.current = event.nativeEvent.url;
@@ -623,9 +620,16 @@ export default function BrowserScreen() {
             });
           }}
           onHttpError={(event) => {
-            const message = 'فشل تحميل الصفحة: ' + event.nativeEvent.description;
+            const status = event.nativeEvent.statusCode;
+            const message = 'فشل تحميل الصفحة' + (typeof status === 'number' ? ' (HTTP ' + status + ')' : '') + ': ' + (event.nativeEvent.description || event.nativeEvent.url || 'استجابة HTTP غير ناجحة.');
             setBrowserError(message);
             setPageLoading(false);
+          }}
+          onRenderProcessGone={(event) => {
+            const detail = event.nativeEvent.didCrash ? 'تعطّل محرك WebView أثناء عرض الصفحة.' : 'أُغلق محرك WebView لتحرير الذاكرة.';
+            setBrowserError(detail + ' أعد تحميل الصفحة للمتابعة.');
+            setPageLoading(false);
+            pageReadyRef.current = false;
           }}
           onMessage={(event) => {
             try {
