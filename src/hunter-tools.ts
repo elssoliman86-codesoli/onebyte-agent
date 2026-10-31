@@ -569,12 +569,12 @@ async function callHunterModel(messages: { role: 'system' | 'user'; content: str
   } finally { clearTimeout(timeout); }
 }
 
-async function createAdaptiveHuntPlan(target: HunterTarget, page: EmbeddedBrowserSnapshot, network: EmbeddedBrowserNetworkEntry[], urls: string[]): Promise<AdaptiveHuntPlan> {
+async function createAdaptiveHuntPlan(target: HunterTarget, page: EmbeddedBrowserSnapshot, network: EmbeddedBrowserNetworkEntry[], urls: string[], scriptEvidence: { url: string; status: number; source: string }[] = []): Promise<AdaptiveHuntPlan> {
   const fallback: AdaptiveHuntPlan = { summary: 'استطلاع سلبي أولي؛ يلزم تحليل يدوي للـ JavaScript والـ endpoints قبل اقتراح اختبارات إضافية.', nextSteps: ['تحليل ملفات JavaScript المرصودة', 'تصنيف endpoints حسب الوظيفة', 'مراجعة النطاق والاستثناءات قبل أي اختبار نشط'] };
   try {
     const raw = await callHunterModel([
       { role: 'system', content: 'You are a defensive bug-bounty hunting planner. Use ONLY passive observations supplied. Never suggest brute force, credential attacks, denial of service, destructive actions, scope expansion, or requests to unapproved hosts. Return JSON only: {"summary":"...","next_steps":["..."],"missing_tool":{"name":"...","description":"...","purpose":"..."} or null}. Suggest a reusable Python tool only if the current registry lacks a useful capability. Do not claim execution or verification.' },
-      { role: 'user', content: JSON.stringify({ authorizedTarget: target.host, authorizationNote: target.authorization.slice(0, 1200), page: { url: page.url, title: page.title, visibleText: page.text.slice(0, 7000), sourcePreview: (page.source ?? '').slice(0, 5000) }, observedNetwork: network.slice(0, 60).map((entry) => ({ method: entry.method, url: entry.url, status: entry.status })), discoveredUrls: urls.slice(0, 100), toolRegistry: (await loadHunterTools()).map((tool) => ({ id: tool.id, name: tool.name, description: tool.description, kind: tool.kind, status: tool.status })) }) },
+      { role: 'user', content: JSON.stringify({ authorizedTarget: target.host, authorizationNote: target.authorization.slice(0, 1200), page: { url: page.url, title: page.title, visibleText: page.text.slice(0, 7000), sourcePreview: (page.source ?? '').slice(0, 5000) }, observedNetwork: network.slice(0, 60).map((entry) => ({ method: entry.method, url: entry.url, status: entry.status })), discoveredUrls: urls.slice(0, 150), discoveredJavaScript: scriptEvidence.slice(0, 5).map((item) => ({ url: item.url, status: item.status, sourcePreview: item.source.slice(0, 5000) })), toolRegistry: (await loadHunterTools()).map((tool) => ({ id: tool.id, name: tool.name, description: tool.description, kind: tool.kind, status: tool.status })) }) },
     ]);
     if (!raw) return fallback;
     const parsed = JSON.parse(raw.trim().replace(/^```(?:json)?\s*/i, '').replace(/\s*```$/, '')) as { summary?: unknown; next_steps?: unknown; missing_tool?: unknown };
@@ -688,9 +688,44 @@ export async function runBrowserRecon(
     const urls = (endpointData.endpoints ?? collectEndpointCandidates(page, network, target.host))
       .filter((candidate) => { try { return isAuthorized(candidate, [target]).ok; } catch { return false; } })
       .slice(0, 200);
-    record.discoveredUrls = [...new Set([page.url, ...urls])];
-    const jsResult = await runHunterRegistryTool('hunter.javascript-inventory', { urls: record.discoveredUrls });
-    const jsAssets = (JSON.parse(jsResult) as { javascriptAssets?: string[] }).javascriptAssets ?? [];
+    const initialUrls = [...new Set([page.url, ...urls])];
+    const jsResult = await runHunterRegistryTool('hunter.javascript-inventory', { urls: initialUrls });
+    const jsAssets = ((JSON.parse(jsResult) as { javascriptAssets?: string[] }).javascriptAssets ?? [])
+      .filter((candidate) => { try { return isAuthorized(candidate, [target]).ok; } catch { return false; } })
+      .slice(0, 5);
+    const scriptEvidence: { url: string; status: number; source: string }[] = [];
+    for (const scriptUrl of jsAssets) {
+      await assertRunning();
+      try {
+        const scriptResponse = await browser.sendRequest({
+          url: scriptUrl,
+          method: 'GET',
+          headers: { Accept: 'application/javascript, text/javascript;q=0.9, */*;q=0.1' },
+          body: '',
+          signal,
+        });
+        if (isAuthorized(scriptResponse.url, [target]).ok && scriptResponse.status >= 200 && scriptResponse.status < 300) {
+          const source = scriptResponse.body.slice(0, 5_000);
+          scriptEvidence.push({ url: scriptUrl, status: scriptResponse.status, source });
+          record.notes.push(`قراءة JS داخل النطاق: ${scriptUrl} · ${source.length} حرفًا من المصدر.`);
+        }
+      } catch (error) {
+        record.notes.push(`تعذّرت قراءة ملف JS ${scriptUrl}: ${error instanceof Error ? error.message : 'network error'}`);
+      }
+      await checkpoint();
+    }
+    // Extract additional API paths and absolute URLs from the bounded script
+    // previews. Everything is still filtered against the exact saved scope.
+    const scriptText = scriptEvidence.map((item) => item.source).join('\n');
+    const combined = collectEndpointCandidates({
+      ...page,
+      text: (page.text + '\n' + scriptText).slice(0, 32_000),
+      source: ((page.source ?? '') + '\n' + scriptText).slice(0, 40_000),
+    }, network, target.host);
+    record.discoveredUrls = [...new Set([...initialUrls, ...combined])]
+      .filter((candidate) => { try { return isAuthorized(candidate, [target]).ok; } catch { return false; } })
+      .slice(0, 200);
+    record.notes.push(`ملفات JavaScript: ${jsAssets.length} مرصودة، ${scriptEvidence.length} تمت قراءتها وتحليلها داخل النطاق.`);
     try {
       const subdomainResult = await runHunterRegistryTool('hunter.passive-subdomain-discovery', { targetHost: target.host });
       record.discoveredSubdomains = (JSON.parse(subdomainResult) as { subdomains?: string[] }).subdomains ?? [];
@@ -703,7 +738,7 @@ export async function runBrowserRecon(
 
     await assertRunning();
     await updateStep('planning', 'running', 'الموديل يحلل الأدلة ويقارنها بالأدوات المسجلة.');
-    const modelPlan = await createAdaptiveHuntPlan(target, page, network, record.discoveredUrls);
+    const modelPlan = await createAdaptiveHuntPlan(target, page, network, record.discoveredUrls, scriptEvidence);
     if (modelPlan.summary) record.notes.push('تحليل الموديل: ' + modelPlan.summary);
     if (modelPlan.nextSteps.length) record.notes.push('خطة الموديل: ' + modelPlan.nextSteps.join(' | '));
     await updateStep('planning', 'done', 'انتهى تحليل الأدلة ووضع الخطوات التالية.');
