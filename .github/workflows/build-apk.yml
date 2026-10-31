@@ -33,6 +33,12 @@ jobs:
       - name: TypeScript typecheck
         run: npm run typecheck
 
+      - name: Preview, safety and Hunter regression tests
+        run: |
+          npm run test:preview
+          npm run test:safety
+          npm run test:hunter
+
       - name: Generate native Android project
         run: npx expo prebuild -p android --clean
 
