@@ -514,7 +514,7 @@ export function DeveloperWorkspace() {
       }
       for(const file of finished.files.filter(item => generatedPaths.includes(item.path))) {
         try {
-          const review=await callModel([
+          const review=await callCodeModel([
             {role:'system',content:'Review the entire source file for correctness, security, logic bugs, and edge cases. Return ONLY JSON {"should_change":boolean,"reason":"short","proposed_code":"complete file contents"}. Never claim tests ran.'},
             {role:'user',content:`File: ${file.path}\n${file.content}\nReview the whole file.`},
           ],0.1);
